@@ -1,0 +1,119 @@
+<resources>
+    <!--
+      String policy
+      ─────────────
+      Voyager v1 ships English-only. Strings exposed to system surfaces
+      (notifications, permission rationale, recovery actions, error messages)
+      live here so they can be reviewed in one place and localized later.
+
+      Screen-level Compose copy is intentionally kept inline at the call site —
+      the cost of indirection outweighs the benefit while there's only one
+      locale and one developer. When localization becomes a goal, extract
+      composable strings then; until then, inline text is easier to read,
+      review, and tune in context.
+
+      Brand names ("Voyager", "Aravya by Anshul", "Cosmic Laboratory") and
+      developer-only / debug screen text are deliberately not externalized.
+    -->
+
+    <string name="app_name">Voyager</string>
+
+    <!-- Common action labels (used by error recovery + dialogs) -->
+    <string name="action_cancel">Cancel</string>
+    <string name="action_ok">OK</string>
+    <string name="action_save">Save</string>
+    <string name="action_dismiss">Dismiss</string>
+    <string name="action_back">Back</string>
+    <string name="action_close">Close</string>
+    <string name="action_done">Done</string>
+    <string name="action_share">Share</string>
+    <string name="action_delete">Delete</string>
+
+    <!-- Location tracking -->
+    <string name="location_tracking_notification_title">Voyager is tracking your location</string>
+    <string name="location_tracking_notification_text">Tap to view your journey</string>
+    <string name="location_tracking_active">Location tracking active</string>
+    <string name="location_tracking_starting">Starting location tracking...</string>
+    <string name="location_tracking_paused">Location tracking paused</string>
+    <string name="location_tracking_error">Location tracking error</string>
+    <string name="location_permission_required">Location permission required</string>
+    <string name="notification_action_pause">Pause</string>
+    <string name="notification_action_resume">Resume</string>
+    <string name="notification_action_stop">Stop</string>
+    <string name="notification_action_open_app">Open App</string>
+    <string name="locations_tracked">%d locations tracked</string>
+    <string name="last_update">Last update: %s</string>
+    <string name="tracking_paused_by_user">Tracking paused by user</string>
+    <string name="battery_optimization_warning">Battery optimization may affect tracking</string>
+    
+    <!-- Permissions -->
+    <string name="location_permission_rationale">Voyager needs location access to track your journeys and provide insights about your movement patterns.</string>
+    <string name="background_location_permission_rationale">Background location access allows Voyager to continuously track your location even when the app is closed.</string>
+    
+    <!-- Privacy -->
+    <string name="privacy_mode_enabled">Privacy mode enabled - tracking paused</string>
+    <string name="privacy_mode_disabled">Privacy mode disabled - tracking resumed</string>
+    
+    <!-- Maps -->
+    <string name="map_attribution">© OpenStreetMap contributors</string>
+    <string name="map_loading">Loading map...</string>
+    
+    <!-- Error Messages -->
+    <string name="error_location_tracking">Location Tracking Error</string>
+    <string name="error_place_detection">Place Detection Error</string>
+    <string name="error_data_validation">Data Validation Error</string>
+    <string name="error_database">Database Error</string>
+    <string name="error_network">Network Error</string>
+    <string name="error_system">System Error</string>
+    <string name="error_user_input">Input Error</string>
+    
+    <!-- Generic Error Messages -->
+    <string name="error_generic_title">Something went wrong</string>
+    <string name="error_generic_message">An unexpected error occurred. Please try again.</string>
+    <string name="error_retry">Try Again</string>
+    <string name="error_cancel">Cancel</string>
+    <string name="error_report">Report Issue</string>
+    
+    <!-- Location Error Messages -->
+    <string name="error_location_permission_denied">Location access is required for tracking. Please grant location permissions in settings.</string>
+    <string name="error_location_service_unavailable">Location services are currently unavailable. Please check your device settings.</string>
+    <string name="error_location_accuracy_low">GPS signal is weak. Moving to an open area may improve accuracy.</string>
+    <string name="error_location_tracking_failed">Location tracking stopped unexpectedly. Attempting to restart...</string>
+    
+    <!-- Place Detection Error Messages -->
+    <string name="error_place_insufficient_data">More location data is needed for accurate place detection. Continue using the app for better results.</string>
+    <string name="error_place_duplicate">A similar place already exists. Would you like to merge them or create a new place?</string>
+    <string name="error_place_geofence_failed">Could not set up automatic detection for this place. Manual tracking will still work.</string>
+    
+    <!-- Data Validation Error Messages -->
+    <string name="error_data_invalid_location">Location data appears corrupted. Skipping invalid data points.</string>
+    <string name="error_data_database_corrupted">Database corruption detected. A repair may be needed to restore your data.</string>
+    <string name="error_data_validation_failed">Data validation failed. Please check your input and try again.</string>
+    
+    <!-- Database Error Messages -->
+    <string name="error_database_connection">Database connection error. Retrying connection...</string>
+    <string name="error_database_timeout">Database operation is taking longer than expected. Please wait...</string>
+    <string name="error_database_transaction">Failed to save changes. Your data may not be up to date.</string>
+    <string name="error_database_state_init">App initialization failed. Attempting to recover...</string>
+    
+    <!-- Network Error Messages -->
+    <string name="error_network_no_connection">No internet connection. Some features may not work until connection is restored.</string>
+    <string name="error_network_sync_failed">Could not sync your data. Changes are saved locally and will sync when possible.</string>
+    
+    <!-- System Error Messages -->
+    <string name="error_system_config">App configuration issue detected. Resetting to default settings.</string>
+    <string name="error_system_memory">Low memory detected. Clearing cache to free up space.</string>
+    
+    <!-- Recovery Action Labels -->
+    <string name="action_grant_permissions">Grant Permissions</string>
+    <string name="action_open_settings">Open Settings</string>
+    <string name="action_enable_location">Enable Location</string>
+    <string name="action_improve_signal">Move to Open Area</string>
+    <string name="action_restart_app">Restart App</string>
+    <string name="action_clear_cache">Clear Cache</string>
+    <string name="action_contact_support">Contact Support</string>
+    <string name="action_retry_operation">Try Again</string>
+    <string name="action_ignore_error">Ignore</string>
+    <string name="action_manual_tracking">Use Manual Tracking</string>
+    <string name="action_continue_tracking">Continue Tracking</string>
+</resources>
