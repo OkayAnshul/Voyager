@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">Voyager</string>
+    
+    <!-- Location tracking -->
+    <string name="location_tracking_notification_title">Voyager is tracking your location</string>
+    <string name="location_tracking_notification_text">Tap to view your journey</string>
+    
+    <!-- Permissions -->
+    <string name="location_permission_rationale">Voyager needs location access to track your journeys and provide insights about your movement patterns.</string>
+    <string name="background_location_permission_rationale">Background location access allows Voyager to continuously track your location even when the app is closed.</string>
+    
+    <!-- Privacy -->
+    <string name="privacy_mode_enabled">Privacy mode enabled - tracking paused</string>
+    <string name="privacy_mode_disabled">Privacy mode disabled - tracking resumed</string>
+    
+    <!-- Maps -->
+    <string name="map_attribution">© OpenStreetMap contributors</string>
+    <string name="map_loading">Loading map...</string>
+</resources>
