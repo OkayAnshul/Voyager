@@ -20,10 +20,11 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
-        // Room schema export
-        kapt {
-            arguments {
-                arg("room.schemaLocation", "$projectDir/schemas")
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments += mapOf(
+                    "room.schemaLocation" to "$projectDir/schemas"
+                )
             }
         }
     }

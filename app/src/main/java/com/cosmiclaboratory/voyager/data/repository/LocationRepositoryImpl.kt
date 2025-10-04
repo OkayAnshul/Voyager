@@ -34,7 +34,9 @@ class LocationRepositoryImpl @Inject constructor(
     }
     
     override suspend fun getLocationCount(): Int {
-        return locationDao.getLocationCount()
+        val count = locationDao.getLocationCount()
+        android.util.Log.d("LocationRepository", "CRITICAL DEBUG: Total location count = $count")
+        return count
     }
     
     override suspend fun getLastLocation(): Location? {
@@ -42,7 +44,9 @@ class LocationRepositoryImpl @Inject constructor(
     }
     
     override suspend fun insertLocation(location: Location): Long {
-        return locationDao.insertLocation(location.toEntity())
+        val result = locationDao.insertLocation(location.toEntity())
+        android.util.Log.d("LocationRepository", "CRITICAL DEBUG: Location inserted - ID=$result, lat=${location.latitude}, lng=${location.longitude}")
+        return result
     }
     
     override suspend fun insertLocations(locations: List<Location>) {

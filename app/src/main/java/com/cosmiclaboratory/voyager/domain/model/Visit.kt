@@ -7,9 +7,92 @@ data class Visit(
     val placeId: Long,
     val entryTime: LocalDateTime,
     val exitTime: LocalDateTime? = null,
-    val duration: Long = 0L, // in milliseconds
+    private val _duration: Long = 0L, // stored duration
     val confidence: Float = 1.0f
-)
+) {
+    // Calculate duration on-demand to avoid circular dependency
+    val duration: Long 
+        get() = if (exitTime != null && _duration == 0L) {
+            // Calculate if not stored and visit is completed
+            java.time.Duration.between(entryTime, exitTime!!).toMillis()
+        } else if (_duration > 0L) {
+            // Use stored duration if available
+            _duration
+        } else {
+            // Active visit or no duration
+            0L
+        }
+    
+    companion object {
+        fun calculateDuration(entryTime: LocalDateTime, exitTime: LocalDateTime?): Long {
+            return if (exitTime != null) {
+                java.time.Duration.between(entryTime, exitTime).toMillis()
+            } else {
+                0L // Active visit, no duration yet
+            }
+        }
+        
+        // Factory method for creating visits with calculated duration
+        fun createWithDuration(
+            id: Long = 0L,
+            placeId: Long,
+            entryTime: LocalDateTime,
+            exitTime: LocalDateTime?,
+            confidence: Float = 1.0f
+        ): Visit {
+            val calculatedDuration = calculateDuration(entryTime, exitTime)
+            return Visit(
+                id = id,
+                placeId = placeId,
+                entryTime = entryTime,
+                exitTime = exitTime,
+                _duration = calculatedDuration,
+                confidence = confidence
+            )
+        }
+    }
+    
+    // Helper function to create a completed visit with proper duration
+    fun complete(exitTime: LocalDateTime): Visit {
+        val calculatedDuration = calculateDuration(entryTime, exitTime)
+        return Visit(
+            id = id,
+            placeId = placeId,
+            entryTime = entryTime,
+            exitTime = exitTime,
+            _duration = calculatedDuration,
+            confidence = confidence
+        )
+    }
+    
+    // Helper function to check if visit is active (not completed)
+    val isActive: Boolean get() = exitTime == null
+    
+    // Helper function to get current duration for active visits
+    fun getCurrentDuration(currentTime: LocalDateTime = java.time.LocalDateTime.now()): Long {
+        return if (isActive) {
+            java.time.Duration.between(entryTime, currentTime).toMillis()
+        } else {
+            duration
+        }
+    }
+    
+    // Helper function to update visit with proper duration storage
+    fun withStoredDuration(): Visit {
+        return if (exitTime != null && _duration == 0L) {
+            Visit(
+                id = id,
+                placeId = placeId,
+                entryTime = entryTime,
+                exitTime = exitTime,
+                _duration = calculateDuration(entryTime, exitTime),
+                confidence = confidence
+            )
+        } else {
+            this
+        }
+    }
+}
 
 data class VisitSummary(
     val place: Place,

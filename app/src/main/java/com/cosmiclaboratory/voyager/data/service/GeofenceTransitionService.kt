@@ -23,6 +23,7 @@ import java.time.LocalDateTime
 import javax.inject.Inject
 
 @AndroidEntryPoint
+@Deprecated("Use GeofenceTransitionWorker with WorkManager instead")
 class GeofenceTransitionService : JobIntentService() {
 
     @Inject

@@ -41,4 +41,9 @@ object DatabaseModule {
     fun provideGeofenceDao(database: VoyagerDatabase): GeofenceDao {
         return database.geofenceDao()
     }
+    
+    @Provides
+    fun provideCurrentStateDao(database: VoyagerDatabase): CurrentStateDao {
+        return database.currentStateDao()
+    }
 }

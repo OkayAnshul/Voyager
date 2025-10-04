@@ -1,6 +1,7 @@
 package com.cosmiclaboratory.voyager.di
 
 import android.content.Context
+import androidx.work.WorkManager
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.GeofencingClient
 import com.google.android.gms.location.LocationServices
@@ -26,4 +27,7 @@ object LocationModule {
     fun provideGeofencingClient(@ApplicationContext context: Context): GeofencingClient {
         return LocationServices.getGeofencingClient(context)
     }
+    
+    // NOTE: WorkManager is not provided here to avoid race conditions with custom Configuration.Provider
+    // Use WorkManager.getInstance(context) directly where needed, after Application.onCreate() completes
 }

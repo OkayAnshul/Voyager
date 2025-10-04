@@ -34,4 +34,11 @@ interface VisitRepository {
     suspend fun getVisitCountForPlace(placeId: Long, startTime: LocalDateTime, endTime: LocalDateTime): Int
     
     suspend fun getVisitSummaries(startTime: LocalDateTime, endTime: LocalDateTime): List<VisitSummary>
+    
+    // New methods for visit management
+    suspend fun completeActiveVisits(exitTime: LocalDateTime)
+    
+    suspend fun startVisit(placeId: Long, entryTime: LocalDateTime): Long
+    
+    suspend fun getCurrentVisit(): Visit?
 }

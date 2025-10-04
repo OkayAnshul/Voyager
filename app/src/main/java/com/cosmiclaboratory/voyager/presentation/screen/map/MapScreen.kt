@@ -14,10 +14,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.cosmiclaboratory.voyager.domain.model.Place
 import com.cosmiclaboratory.voyager.presentation.components.OpenStreetMapView
+import com.cosmiclaboratory.voyager.presentation.components.PermissionRequestCard
+import com.cosmiclaboratory.voyager.utils.PermissionStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
+    permissionStatus: PermissionStatus = PermissionStatus.ALL_GRANTED,
     viewModel: MapViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -29,15 +32,21 @@ fun MapScreen(
         TopAppBar(
             title = { Text("Map") },
             actions = {
-                IconButton(onClick = { viewModel.centerOnUser() }) {
+                IconButton(
+                    onClick = { viewModel.centerOnUser() },
+                    enabled = permissionStatus == PermissionStatus.ALL_GRANTED
+                ) {
                     Icon(Icons.Default.LocationOn, contentDescription = "Center on user")
                 }
                 IconButton(onClick = { viewModel.refreshMapData() }) {
                     Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                 }
-                IconButton(onClick = { viewModel.toggleLocationTracking() }) {
+                IconButton(
+                    onClick = { viewModel.toggleLocationTracking() },
+                    enabled = permissionStatus == PermissionStatus.ALL_GRANTED
+                ) {
                     Icon(
-                        if (uiState.isTracking) Icons.Default.Close else Icons.Default.Check,
+                        if (uiState.isTracking && permissionStatus == PermissionStatus.ALL_GRANTED) Icons.Default.Close else Icons.Default.Check,
                         contentDescription = if (uiState.isTracking) "Stop tracking" else "Start tracking"
                     )
                 }
@@ -77,8 +86,23 @@ fun MapScreen(
             }
             
             else -> {
-                if (uiState.locations.isEmpty() && uiState.places.isEmpty()) {
-                    // Show empty state
+                if (permissionStatus != PermissionStatus.ALL_GRANTED) {
+                    // Show permission request instead of empty state
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        PermissionRequestCard(
+                            permissionStatus = permissionStatus,
+                            onRequestPermissions = { /* This should be handled by parent */ },
+                            onOpenSettings = { /* This should be handled by parent */ }
+                        )
+                    }
+                } else if (uiState.locations.isEmpty() && uiState.places.isEmpty()) {
+                    // Show empty state when permissions are granted but no data
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -106,7 +130,8 @@ fun MapScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
-                            onClick = { viewModel.toggleLocationTracking() }
+                            onClick = { viewModel.toggleLocationTracking() },
+                            enabled = permissionStatus == PermissionStatus.ALL_GRANTED
                         ) {
                             Icon(Icons.Default.LocationOn, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))

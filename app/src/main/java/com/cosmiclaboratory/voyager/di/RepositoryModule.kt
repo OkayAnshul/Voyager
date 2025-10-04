@@ -41,4 +41,16 @@ abstract class RepositoryModule {
     abstract fun bindAnalyticsRepository(
         analyticsRepositoryImpl: AnalyticsRepositoryImpl
     ): AnalyticsRepository
+    
+    @Binds
+    @Singleton
+    abstract fun bindPreferencesRepository(
+        preferencesRepositoryImpl: PreferencesRepositoryImpl
+    ): PreferencesRepository
+    
+    @Binds
+    @Singleton
+    abstract fun bindCurrentStateRepository(
+        currentStateRepositoryImpl: CurrentStateRepositoryImpl
+    ): CurrentStateRepository
 }

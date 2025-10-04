@@ -8,6 +8,7 @@ import android.content.Context
 import com.cosmiclaboratory.voyager.data.database.converter.Converters
 import com.cosmiclaboratory.voyager.data.database.dao.*
 import com.cosmiclaboratory.voyager.data.database.entity.*
+import com.cosmiclaboratory.voyager.data.database.migration.DatabaseMigrations
 import net.sqlcipher.database.SQLiteDatabase
 import net.sqlcipher.database.SupportFactory
 
@@ -16,9 +17,10 @@ import net.sqlcipher.database.SupportFactory
         LocationEntity::class,
         PlaceEntity::class,
         VisitEntity::class,
-        GeofenceEntity::class
+        GeofenceEntity::class,
+        CurrentStateEntity::class
     ],
-    version = 1,
+    version = 3, // CRITICAL: Incremented version for foreign key constraints
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -28,6 +30,7 @@ abstract class VoyagerDatabase : RoomDatabase() {
     abstract fun placeDao(): PlaceDao
     abstract fun visitDao(): VisitDao
     abstract fun geofenceDao(): GeofenceDao
+    abstract fun currentStateDao(): CurrentStateDao
     
     companion object {
         private const val DATABASE_NAME = "voyager_database"
@@ -42,7 +45,7 @@ abstract class VoyagerDatabase : RoomDatabase() {
                 DATABASE_NAME
             )
                 .openHelperFactory(factory)
-                .fallbackToDestructiveMigration() // For development only
+                .addMigrations(*DatabaseMigrations.ALL_MIGRATIONS) // CRITICAL: Proper migrations for data integrity
                 .build()
         }
     }

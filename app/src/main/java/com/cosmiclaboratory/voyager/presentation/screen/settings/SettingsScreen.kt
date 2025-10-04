@@ -11,10 +11,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.cosmiclaboratory.voyager.utils.PermissionStatus
+import com.cosmiclaboratory.voyager.presentation.screen.settings.components.AnalyticsConfigSection
+import com.cosmiclaboratory.voyager.presentation.screen.settings.components.LocationQualitySection
+import com.cosmiclaboratory.voyager.presentation.screen.settings.components.NotificationSettingsSection
+import com.cosmiclaboratory.voyager.presentation.screen.settings.components.PlaceDetectionAutomationSection
+import com.cosmiclaboratory.voyager.presentation.screen.settings.components.PlaceDetectionSection
+import com.cosmiclaboratory.voyager.presentation.screen.settings.components.TrackingSettingsSection
 import java.time.LocalDateTime
 
 @Composable
 fun SettingsScreen(
+    permissionStatus: PermissionStatus = PermissionStatus.ALL_GRANTED,
+    onRequestNotificationPermission: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -76,14 +85,31 @@ fun SettingsScreen(
                     }
                     
                     item {
+                        val hasLocationAccess = permissionStatus in setOf(
+                            PermissionStatus.LOCATION_FULL_ACCESS, 
+                            PermissionStatus.ALL_GRANTED
+                        )
+                        
+                        val trackingStatus = when {
+                            !hasLocationAccess -> "Background location required"
+                            uiState.errorMessage?.contains("Location tracking stopped") == true -> "Stopped - Check permissions"
+                            uiState.isLocationTrackingEnabled -> "Currently tracking"
+                            else -> "Tracking paused"
+                        }
+                        
                         SettingsItem(
                             title = "Location Tracking",
-                            subtitle = if (uiState.isLocationTrackingEnabled) "Currently tracking" else "Tracking paused",
+                            subtitle = trackingStatus,
                             icon = Icons.Filled.LocationOn,
                             trailing = {
                                 Switch(
-                                    checked = uiState.isLocationTrackingEnabled,
-                                    onCheckedChange = { viewModel.toggleLocationTracking() }
+                                    checked = uiState.isLocationTrackingEnabled && hasLocationAccess,
+                                    onCheckedChange = { 
+                                        if (hasLocationAccess) {
+                                            viewModel.toggleLocationTracking()
+                                        }
+                                    },
+                                    enabled = hasLocationAccess
                                 )
                             }
                         )
@@ -122,6 +148,105 @@ fun SettingsScreen(
                             icon = Icons.Filled.Delete,
                             onClick = { showClearDataDialog = true }
                         )
+                    }
+                    
+                    // Configuration Sections
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        TrackingSettingsSection(
+                            preferences = uiState.preferences,
+                            onUpdateLocationInterval = viewModel::updateLocationUpdateInterval,
+                            onUpdateMinDistance = viewModel::updateMinDistanceChange,
+                            onUpdateAccuracyMode = viewModel::updateTrackingAccuracyMode
+                        )
+                    }
+                    
+                    // New Advanced Settings Sections
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        LocationQualitySection(
+                            preferences = uiState.preferences,
+                            onUpdateMaxAccuracy = viewModel::updateMaxGpsAccuracy,
+                            onUpdateMaxSpeed = viewModel::updateMaxSpeedKmh,
+                            onUpdateMinTimeBetween = viewModel::updateMinTimeBetweenUpdates
+                        )
+                    }
+                    
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        PlaceDetectionSection(
+                            preferences = uiState.preferences,
+                            onUpdateClusteringDistance = viewModel::updateClusteringDistance,
+                            onUpdateMinPoints = viewModel::updateMinPointsForCluster,
+                            onUpdateSessionBreakTime = viewModel::updateSessionBreakTime,
+                            onUpdateConfidenceThreshold = viewModel::updateAutoConfidenceThreshold
+                        )
+                    }
+                    
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        PlaceDetectionAutomationSection(
+                            preferences = uiState.preferences,
+                            onUpdateFrequency = viewModel::updatePlaceDetectionFrequency,
+                            onUpdateTriggerCount = viewModel::updateAutoDetectTriggerCount,
+                            onUpdateBatteryRequirement = viewModel::updateBatteryRequirement
+                        )
+                    }
+                    
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        AnalyticsConfigSection(
+                            preferences = uiState.preferences,
+                            onUpdateTimeRange = viewModel::updateActivityTimeRange,
+                            onUpdateBatchSize = viewModel::updateDataProcessingBatchSize
+                        )
+                    }
+                    
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        NotificationSettingsSection(
+                            preferences = uiState.preferences,
+                            onUpdateNotificationSettings = viewModel::updateNotificationSettings,
+                            onUpdateNotificationFrequency = viewModel::updateNotificationFrequency,
+                            onRequestNotificationPermission = onRequestNotificationPermission
+                        )
+                    }
+                    
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        // Reset button
+                        Card(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Text(
+                                    text = "Reset Settings",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(bottom = 8.dp)
+                                )
+                                
+                                Button(
+                                    onClick = viewModel::resetPreferencesToDefaults,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Reset All Settings to Defaults")
+                                }
+                            }
+                        }
                     }
                 }
             }

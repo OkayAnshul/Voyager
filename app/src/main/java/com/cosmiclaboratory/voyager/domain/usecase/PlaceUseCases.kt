@@ -64,27 +64,32 @@ class PlaceUseCases @Inject constructor(
         longitude: Double,
         visitCount: Int
     ): PlaceCategory {
-        // Get all locations at this place grouped by hour
-        val nearbyLocations = locationRepository.getLocationsInBounds(
-            latitude - 0.001, latitude + 0.001,
-            longitude - 0.001, longitude + 0.001
-        )
+        return try {
+            // Get all locations at this place grouped by hour
+            val nearbyLocations = locationRepository.getLocationsInBounds(
+                latitude - 0.001, latitude + 0.001,
+                longitude - 0.001, longitude + 0.001
+            )
         
-        val hourCounts = nearbyLocations.groupBy { it.timestamp.hour }
-            .mapValues { it.value.size }
-        
-        // Categorize based on time patterns
-        return when {
-            // Home: Most activity between 6PM and 8AM
-            hourCounts.filterKeys { it >= 18 || it <= 8 }.values.sum() > 
-            hourCounts.filterKeys { it in 9..17 }.values.sum() -> PlaceCategory.HOME
+            val hourCounts = nearbyLocations.groupBy { it.timestamp.hour }
+                .mapValues { it.value.size }
             
-            // Work: Most activity between 9AM and 5PM on weekdays
-            hourCounts.filterKeys { it in 9..17 }.values.sum() > 
-            hourCounts.filterKeys { it >= 18 || it <= 8 }.values.sum() -> PlaceCategory.WORK
-            
-            // Default to unknown for now
-            else -> PlaceCategory.UNKNOWN
+            // Categorize based on time patterns
+            when {
+                // Home: Most activity between 6PM and 8AM
+                hourCounts.filterKeys { it >= 18 || it <= 8 }.values.sum() > 
+                hourCounts.filterKeys { it in 9..17 }.values.sum() -> PlaceCategory.HOME
+                
+                // Work: Most activity between 9AM and 5PM on weekdays
+                hourCounts.filterKeys { it in 9..17 }.values.sum() > 
+                hourCounts.filterKeys { it >= 18 || it <= 8 }.values.sum() -> PlaceCategory.WORK
+                
+                // Default to unknown for now
+                else -> PlaceCategory.UNKNOWN
+            }
+        } catch (e: Exception) {
+            // Default to unknown if categorization fails
+            PlaceCategory.UNKNOWN
         }
     }
     

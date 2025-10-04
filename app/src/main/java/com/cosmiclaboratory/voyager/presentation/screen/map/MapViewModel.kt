@@ -45,18 +45,18 @@ class MapViewModel @Inject constructor(
                 // Get recent locations (last 24 hours)
                 val recentLocations = locationUseCases.getRecentLocations(1000)
                 
-                // Get all places
-                placeUseCases.getAllPlaces().collect { places ->
-                    val lastLocation = recentLocations.lastOrNull()
-                    
-                    _uiState.value = _uiState.value.copy(
-                        locations = recentLocations.takeLast(100), // Limit for performance
-                        places = places,
-                        userLocation = lastLocation,
-                        mapCenter = lastLocation?.let { it.latitude to it.longitude },
-                        isLoading = false
-                    )
-                }
+                // Get all places (get current data, not continuous stream for loading)
+                val places = placeUseCases.getAllPlaces().first()
+                
+                val lastLocation = recentLocations.lastOrNull()
+                
+                _uiState.value = _uiState.value.copy(
+                    locations = recentLocations.takeLast(100), // Limit for performance
+                    places = places,
+                    userLocation = lastLocation,
+                    mapCenter = lastLocation?.let { it.latitude to it.longitude },
+                    isLoading = false
+                )
                 
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(

@@ -60,3 +60,12 @@ data class DayAnalytics(
     val longestStay: Visit?,
     val mostFrequentPlace: Place?
 )
+
+data class CurrentStateAnalytics(
+    val isAtPlace: Boolean = false,
+    val currentPlace: Place? = null,
+    val currentVisitDuration: Long = 0L,
+    val todayTimeTracked: Long = 0L,
+    val todayPlacesVisited: Int = 0,
+    val isLocationTrackingActive: Boolean = false
+)

@@ -1,5 +1,6 @@
 package com.cosmiclaboratory.voyager.utils
 
+import com.cosmiclaboratory.voyager.domain.model.UserPreferences
 import kotlin.math.*
 
 object LocationUtils {
@@ -106,6 +107,10 @@ object LocationUtils {
     
     /**
      * Cluster nearby locations using DBSCAN algorithm
+     * @param locations List of (latitude, longitude) pairs
+     * @param maxDistanceMeters Maximum distance between points in same cluster (default 50m)
+     * @param minPoints Minimum points required to form a cluster (default 3)
+     * @return List of clusters, each containing coordinate pairs
      */
     fun clusterLocations(
         locations: List<Pair<Double, Double>>,
@@ -124,11 +129,15 @@ object LocationUtils {
             visited[i] = true
             val neighbors = getNeighbors(locations, i, maxDistanceMeters)
             
-            if (neighbors.size < minPoints) {
+            // DBSCAN: A point is a core point if it has at least minPoints neighbors (including itself)
+            val totalNeighbors = neighbors.size + 1 // +1 for the point itself
+            
+            if (totalNeighbors < minPoints) {
                 noise[i] = true
             } else {
+                // This is a core point, start a new cluster
                 val cluster = mutableListOf<Pair<Double, Double>>()
-                expandCluster(locations, i, neighbors, cluster, visited, maxDistanceMeters, minPoints)
+                expandCluster(locations, i, neighbors, cluster, visited, noise, maxDistanceMeters, minPoints)
                 if (cluster.isNotEmpty()) {
                     clusters.add(cluster)
                 }
@@ -136,6 +145,23 @@ object LocationUtils {
         }
         
         return clusters.filter { it.size >= minPoints }
+    }
+    
+    /**
+     * Cluster locations using user preferences
+     * @param locations List of (latitude, longitude) pairs
+     * @param preferences User preferences containing clustering parameters
+     * @return List of clusters, each containing coordinate pairs
+     */
+    fun clusterLocationsWithPreferences(
+        locations: List<Pair<Double, Double>>,
+        preferences: UserPreferences
+    ): List<List<Pair<Double, Double>>> {
+        return clusterLocations(
+            locations = locations,
+            maxDistanceMeters = preferences.clusteringDistanceMeters,
+            minPoints = preferences.minPointsForCluster
+        )
     }
     
     private fun getNeighbors(
@@ -168,6 +194,7 @@ object LocationUtils {
         neighbors: MutableList<Int>,
         cluster: MutableList<Pair<Double, Double>>,
         visited: BooleanArray,
+        noise: BooleanArray,
         maxDistanceMeters: Double,
         minPoints: Int
     ) {
@@ -181,12 +208,19 @@ object LocationUtils {
                 visited[neighborIndex] = true
                 val neighborNeighbors = getNeighbors(locations, neighborIndex, maxDistanceMeters)
                 
-                if (neighborNeighbors.size >= minPoints) {
-                    neighbors.addAll(neighborNeighbors.filter { it !in neighbors })
+                // If neighbor has enough neighbors (including itself), it's also a core point
+                if (neighborNeighbors.size + 1 >= minPoints) {
+                    // Add new neighbors that aren't already in the list
+                    for (newNeighbor in neighborNeighbors) {
+                        if (newNeighbor !in neighbors) {
+                            neighbors.add(newNeighbor)
+                        }
+                    }
                 }
             }
             
-            if (cluster.none { it == locations[neighborIndex] }) {
+            // Add point to cluster if not already added and not noise
+            if (!noise[neighborIndex] && cluster.none { it == locations[neighborIndex] }) {
                 cluster.add(locations[neighborIndex])
             }
             

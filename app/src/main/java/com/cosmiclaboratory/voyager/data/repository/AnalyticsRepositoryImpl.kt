@@ -38,14 +38,21 @@ class AnalyticsRepositoryImpl @Inject constructor(
         val timeByPlace = mutableMapOf<Place, Long>()
         
         visits.forEach { visit ->
-            if (visit.exitTime != null) {
-                val place = places.find { it.id == visit.placeId }
-                if (place != null) {
-                    timeByCategory[place.category] = 
-                        (timeByCategory[place.category] ?: 0L) + visit.duration
-                    timeByPlace[place] = 
-                        (timeByPlace[place] ?: 0L) + visit.duration
+            val place = places.find { it.id == visit.placeId }
+            if (place != null) {
+                // Calculate duration: use stored duration if completed, or current duration if active
+                val duration = if (visit.exitTime != null) {
+                    visit.duration
+                } else {
+                    // For active visits, calculate current duration up to endTime
+                    val visitDomain = visit.toDomainModel()
+                    visitDomain.getCurrentDuration(endTime)
                 }
+                
+                timeByCategory[place.category] = 
+                    (timeByCategory[place.category] ?: 0L) + duration
+                timeByPlace[place] = 
+                    (timeByPlace[place] ?: 0L) + duration
             }
         }
         
@@ -94,12 +101,19 @@ class AnalyticsRepositoryImpl @Inject constructor(
         // Calculate time by category for this day
         val timeByCategory = mutableMapOf<PlaceCategory, Long>()
         visits.forEach { visit ->
-            if (visit.exitTime != null) {
-                val place = places.find { it.id == visit.placeId }
-                if (place != null) {
-                    timeByCategory[place.category] = 
-                        (timeByCategory[place.category] ?: 0L) + visit.duration
+            val place = places.find { it.id == visit.placeId }
+            if (place != null) {
+                // Calculate duration: use stored duration if completed, or current duration if active
+                val duration = if (visit.exitTime != null) {
+                    visit.duration
+                } else {
+                    // For active visits, calculate current duration up to endTime
+                    val visitDomain = visit.toDomainModel()
+                    visitDomain.getCurrentDuration(endTime)
                 }
+                
+                timeByCategory[place.category] = 
+                    (timeByCategory[place.category] ?: 0L) + duration
             }
         }
         
@@ -252,12 +266,19 @@ class AnalyticsRepositoryImpl @Inject constructor(
         
         val timeByCategory = mutableMapOf<PlaceCategory, Long>()
         visits.forEach { visit ->
-            if (visit.exitTime != null) {
-                val place = places.find { it.id == visit.placeId }
-                if (place != null) {
-                    timeByCategory[place.category] = 
-                        (timeByCategory[place.category] ?: 0L) + visit.duration
+            val place = places.find { it.id == visit.placeId }
+            if (place != null) {
+                // Calculate duration: use stored duration if completed, or current duration if active
+                val duration = if (visit.exitTime != null) {
+                    visit.duration
+                } else {
+                    // For active visits, calculate current duration up to endTime
+                    val visitDomain = visit.toDomainModel()
+                    visitDomain.getCurrentDuration(endTime)
                 }
+                
+                timeByCategory[place.category] = 
+                    (timeByCategory[place.category] ?: 0L) + duration
             }
         }
         return timeByCategory

@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,10 +18,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.cosmiclaboratory.voyager.domain.model.DayAnalytics
+import com.cosmiclaboratory.voyager.utils.PermissionStatus
 import java.time.LocalDate
 
 @Composable
 fun TimelineScreen(
+    permissionStatus: PermissionStatus = PermissionStatus.ALL_GRANTED,
     viewModel: TimelineViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -141,7 +144,7 @@ private fun DateSelector(
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = { onDateSelected(selectedDate.minusDays(1)) }) {
-            Icon(Icons.Default.ArrowBack, contentDescription = "Previous day")
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous day")
         }
         
         Text(
@@ -158,7 +161,7 @@ private fun DateSelector(
             onClick = { onDateSelected(selectedDate.plusDays(1)) },
             enabled = selectedDate.isBefore(LocalDate.now())
         ) {
-            Icon(Icons.Default.ArrowForward, contentDescription = "Next day")
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next day")
         }
     }
 }
@@ -235,7 +238,7 @@ private fun TimelineEntryCard(entry: TimelineEntry) {
                         )
                     TimelineEntryType.VISIT_END -> 
                         Icon(
-                            Icons.Default.ExitToApp,
+                            Icons.AutoMirrored.Filled.ExitToApp,
                             contentDescription = null,
                             tint = Color.White,
                             modifier = Modifier.size(8.dp)

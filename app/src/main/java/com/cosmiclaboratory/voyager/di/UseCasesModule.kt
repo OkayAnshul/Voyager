@@ -2,7 +2,9 @@ package com.cosmiclaboratory.voyager.di
 
 import com.cosmiclaboratory.voyager.domain.repository.LocationRepository
 import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
+import com.cosmiclaboratory.voyager.domain.repository.PreferencesRepository
 import com.cosmiclaboratory.voyager.domain.repository.VisitRepository
+import com.cosmiclaboratory.voyager.domain.repository.CurrentStateRepository
 import com.cosmiclaboratory.voyager.domain.usecase.AnalyticsUseCases
 import com.cosmiclaboratory.voyager.domain.usecase.LocationUseCases
 import com.cosmiclaboratory.voyager.domain.usecase.PlaceDetectionUseCases
@@ -43,9 +45,11 @@ object UseCasesModule {
         locationRepository: LocationRepository,
         placeRepository: PlaceRepository,
         visitRepository: VisitRepository,
+        currentStateRepository: CurrentStateRepository,
+        locationServiceManager: LocationServiceManager,
         placeUseCases: PlaceUseCases
     ): AnalyticsUseCases {
-        return AnalyticsUseCases(locationRepository, placeRepository, visitRepository, placeUseCases)
+        return AnalyticsUseCases(locationRepository, placeRepository, visitRepository, currentStateRepository, locationServiceManager, placeUseCases)
     }
     
     @Provides
@@ -53,8 +57,9 @@ object UseCasesModule {
     fun providePlaceDetectionUseCases(
         locationRepository: LocationRepository,
         placeRepository: PlaceRepository,
-        visitRepository: VisitRepository
+        visitRepository: VisitRepository,
+        preferencesRepository: PreferencesRepository
     ): PlaceDetectionUseCases {
-        return PlaceDetectionUseCases(locationRepository, placeRepository, visitRepository)
+        return PlaceDetectionUseCases(locationRepository, placeRepository, visitRepository, preferencesRepository)
     }
 }

@@ -4,6 +4,19 @@
     <!-- Location tracking -->
     <string name="location_tracking_notification_title">Voyager is tracking your location</string>
     <string name="location_tracking_notification_text">Tap to view your journey</string>
+    <string name="location_tracking_active">Location tracking active</string>
+    <string name="location_tracking_starting">Starting location tracking...</string>
+    <string name="location_tracking_paused">Location tracking paused</string>
+    <string name="location_tracking_error">Location tracking error</string>
+    <string name="location_permission_required">Location permission required</string>
+    <string name="notification_action_pause">Pause</string>
+    <string name="notification_action_resume">Resume</string>
+    <string name="notification_action_stop">Stop</string>
+    <string name="notification_action_open_app">Open App</string>
+    <string name="locations_tracked">%d locations tracked</string>
+    <string name="last_update">Last update: %s</string>
+    <string name="tracking_paused_by_user">Tracking paused by user</string>
+    <string name="battery_optimization_warning">Battery optimization may affect tracking</string>
     
     <!-- Permissions -->
     <string name="location_permission_rationale">Voyager needs location access to track your journeys and provide insights about your movement patterns.</string>

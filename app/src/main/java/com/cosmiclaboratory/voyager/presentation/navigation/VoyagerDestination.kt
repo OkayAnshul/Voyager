@@ -1,11 +1,8 @@
 package com.cosmiclaboratory.voyager.presentation.navigation
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Place
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.vector.ImageVector
 
 sealed class VoyagerDestination(
@@ -28,7 +25,7 @@ sealed class VoyagerDestination(
     object Timeline : VoyagerDestination(
         route = "timeline",
         title = "Timeline",
-        icon = Icons.Filled.List
+        icon = Icons.AutoMirrored.Filled.List
     )
     
     object Insights : VoyagerDestination(
@@ -41,6 +38,12 @@ sealed class VoyagerDestination(
         route = "settings",
         title = "Settings",
         icon = Icons.Filled.Settings
+    )
+    
+    object PermissionGateway : VoyagerDestination(
+        route = "permission_gateway",
+        title = "Permissions",
+        icon = Icons.Filled.Lock
     )
     
     companion object {

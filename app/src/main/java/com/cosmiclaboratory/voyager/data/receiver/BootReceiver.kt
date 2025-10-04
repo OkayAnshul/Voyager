@@ -19,7 +19,7 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_MY_PACKAGE_REPLACED,
             Intent.ACTION_PACKAGE_REPLACED -> {
                 // Check if location tracking was previously enabled
-                val prefs = context.getSharedPreferences("voyager_prefs", Context.MODE_PRIVATE)
+                val prefs = context.getSharedPreferences("voyager_user_preferences", Context.MODE_PRIVATE)
                 val wasTrackingEnabled = prefs.getBoolean("location_tracking_enabled", false)
                 
                 if (wasTrackingEnabled) {

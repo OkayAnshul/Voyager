@@ -4,12 +4,11 @@ import com.cosmiclaboratory.voyager.data.database.entity.VisitEntity
 import com.cosmiclaboratory.voyager.domain.model.Visit
 
 fun VisitEntity.toDomainModel(): Visit {
-    return Visit(
+    return Visit.createWithDuration(
         id = id,
         placeId = placeId,
         entryTime = entryTime,
         exitTime = exitTime,
-        duration = duration,
         confidence = confidence
     )
 }
@@ -20,7 +19,7 @@ fun Visit.toEntity(): VisitEntity {
         placeId = placeId,
         entryTime = entryTime,
         exitTime = exitTime,
-        duration = duration,
+        duration = duration, // Use the calculated property
         confidence = confidence
     )
 }

@@ -1,8 +1,7 @@
 package com.cosmiclaboratory.voyager.presentation.components
 
 import android.content.Context
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
+import android.graphics.Color
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -16,6 +15,11 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
+import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun OpenStreetMapView(
@@ -32,26 +36,83 @@ fun OpenStreetMapView(
     
     // Initialize OSMDroid configuration
     LaunchedEffect(Unit) {
-        Configuration.getInstance().load(context, context.getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
-        Configuration.getInstance().userAgentValue = "Voyager"
+        withContext(Dispatchers.IO) {
+            try {
+                // Initialize OSMDroid configuration
+                val prefs = context.getSharedPreferences("osmdroid", Context.MODE_PRIVATE)
+                Configuration.getInstance().load(context, prefs)
+                
+                // Set user agent
+                Configuration.getInstance().userAgentValue = "Voyager/1.0"
+                
+                // Configure cache and storage
+                val osmConfig = Configuration.getInstance()
+                
+                // Set cache path for offline tiles
+                val tileCache = File(context.cacheDir, "osmdroid")
+                if (!tileCache.exists()) {
+                    tileCache.mkdirs()
+                }
+                osmConfig.osmdroidTileCache = tileCache
+                
+                // Configure network settings (userAgentValue already set above)
+                
+                // Set reasonable tile download policy
+                osmConfig.tileDownloadThreads = 2
+                osmConfig.tileFileSystemThreads = 4
+                
+                // Enable debug mode for troubleshooting (disable in production)
+                osmConfig.isDebugMode = false
+                
+            } catch (exception: Exception) {
+                // Fallback configuration if initialization fails
+                Configuration.getInstance().userAgentValue = "Voyager"
+                android.util.Log.w("OpenStreetMapView", "OSMDroid configuration failed, using defaults", exception)
+            }
+        }
     }
     
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
             MapView(ctx).apply {
-                setTileSource(TileSourceFactory.MAPNIK)
-                setMultiTouchControls(true)
-                setBuiltInZoomControls(true)
-                
-                // Set initial position
-                val mapController: IMapController = controller
-                center?.let { (lat, lng) ->
-                    mapController.setCenter(GeoPoint(lat, lng))
+                try {
+                    // Set tile source with fallback handling
+                    setTileSource(TileSourceFactory.MAPNIK)
+                    
+                    // Enable multi-touch controls
+                    setMultiTouchControls(true)
+                    
+                    // Note: setBuiltInZoomControls is deprecated but still functional
+                    @Suppress("DEPRECATION")
+                    setBuiltInZoomControls(false)
+                    
+                    // Enable hardware acceleration (always available on modern Android)
+                    setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+                    
+                    // Configure zoom limits
+                    minZoomLevel = 3.0
+                    maxZoomLevel = 20.0
+                    
+                    // Set initial position
+                    val mapController: IMapController = controller
+                    center?.let { (lat, lng) ->
+                        mapController.setCenter(GeoPoint(lat, lng))
+                    }
+                    mapController.setZoom(zoomLevel.toDouble())
+                    
+                    // Add my location overlay for user position
+                    val myLocationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this)
+                    myLocationOverlay.enableMyLocation()
+                    myLocationOverlay.enableFollowLocation()
+                    overlays.add(myLocationOverlay)
+                    
+                    onMapReady(this)
+                    
+                } catch (e: Exception) {
+                    // Handle map initialization errors gracefully
+                    android.util.Log.e("OpenStreetMapView", "Map initialization failed", e)
                 }
-                mapController.setZoom(zoomLevel.toDouble())
-                
-                onMapReady(this)
             }
         },
         update = { mapView ->
@@ -89,17 +150,31 @@ fun OpenStreetMapView(
 private fun addLocationPath(mapView: MapView, locations: List<Location>) {
     if (locations.size < 2) return
     
-    val polyline = Polyline().apply {
-        color = android.graphics.Color.BLUE
-        width = 5f
+    try {
+        val polyline = Polyline(mapView).apply {
+            // Fix deprecated color and width properties
+            outlinePaint.color = Color.BLUE
+            outlinePaint.strokeWidth = 8f
+            outlinePaint.isAntiAlias = true
+            
+            // Add some transparency for better visibility
+            outlinePaint.alpha = 200
+            
+            // Set polyline info
+            title = "Your Path"
+            snippet = "${locations.size} location points"
+        }
+        
+        val geoPoints = locations.sortedBy { it.timestamp }.map { location ->
+            GeoPoint(location.latitude, location.longitude)
+        }
+        
+        polyline.setPoints(geoPoints)
+        mapView.overlays.add(polyline)
+        
+    } catch (e: Exception) {
+        android.util.Log.e("OpenStreetMapView", "Failed to add location path", e)
     }
-    
-    val geoPoints = locations.map { location ->
-        GeoPoint(location.latitude, location.longitude)
-    }
-    
-    polyline.setPoints(geoPoints)
-    mapView.overlays.add(polyline)
 }
 
 private fun addPlaceMarker(mapView: MapView, place: Place, onPlaceClick: (Place) -> Unit) {
@@ -131,14 +206,28 @@ private fun addPlaceMarker(mapView: MapView, place: Place, onPlaceClick: (Place)
 }
 
 private fun addUserLocationMarker(mapView: MapView, location: Location) {
-    val userMarker = Marker(mapView).apply {
-        position = GeoPoint(location.latitude, location.longitude)
-        title = "Your Location"
-        snippet = "Current position"
+    try {
+        val userMarker = Marker(mapView).apply {
+            position = GeoPoint(location.latitude, location.longitude)
+            title = "Your Current Location"
+            snippet = "Accuracy: ${location.accuracy}m\nTime: ${location.timestamp}"
+            
+            // Set marker anchor for proper positioning
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            
+            // Use default user location icon
+            icon = mapView.context.getDrawable(android.R.drawable.ic_menu_mylocation)
+            
+            // Make marker draggable for manual correction if needed
+            isDraggable = false
+        }
         
-        // Set blue dot for user location
-        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+        mapView.overlays.add(userMarker)
+        
+        // Center map on user location
+        mapView.controller.animateTo(GeoPoint(location.latitude, location.longitude))
+        
+    } catch (e: Exception) {
+        android.util.Log.e("OpenStreetMapView", "Failed to add user location marker", e)
     }
-    
-    mapView.overlays.add(userMarker)
 }

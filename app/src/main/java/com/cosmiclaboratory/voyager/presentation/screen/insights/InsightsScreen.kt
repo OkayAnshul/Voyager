@@ -15,9 +15,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.cosmiclaboratory.voyager.domain.model.MovementPattern
 import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
 import com.cosmiclaboratory.voyager.domain.model.TimeAnalytics
+import com.cosmiclaboratory.voyager.utils.PermissionStatus
 
 @Composable
 fun InsightsScreen(
+    permissionStatus: PermissionStatus = PermissionStatus.ALL_GRANTED,
     viewModel: InsightsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()

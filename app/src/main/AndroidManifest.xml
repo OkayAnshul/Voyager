@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     
+    <!-- Notification permissions (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    
     <!-- Foreground service permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
@@ -41,7 +44,8 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Voyager">
+        android:theme="@style/Theme.Voyager"
+        android:enableOnBackInvokedCallback="true">
         
         <!-- OSMDroid Configuration -->
         <meta-data
@@ -68,12 +72,7 @@
             android:exported="false"
             android:foregroundServiceType="location" />
         
-        <!-- Geofence Transition Service (modernized JobIntentService) -->
-        <service
-            android:name=".data.service.GeofenceTransitionService"
-            android:enabled="true"
-            android:exported="false"
-            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- Note: GeofenceTransitionService replaced with GeofenceTransitionWorker using WorkManager -->
         
         <!-- Boot Receiver for restarting location tracking -->
         <receiver
@@ -94,12 +93,13 @@
             android:enabled="true"
             android:exported="false" />
             
-        <!-- WorkManager initialization -->
+        <!-- WorkManager initialization - disabled for custom HiltWorkerFactory configuration -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
             android:exported="false"
             tools:node="merge">
+            <!-- Disable automatic WorkManager initialization since we provide custom Configuration.Provider -->
             <meta-data
                 android:name="androidx.work.WorkManagerInitializer"
                 android:value="androidx.startup"

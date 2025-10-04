@@ -26,6 +26,9 @@ interface VisitDao {
     @Query("SELECT * FROM visits WHERE placeId = :placeId ORDER BY entryTime DESC LIMIT 1")
     suspend fun getLastVisitForPlace(placeId: Long): VisitEntity?
     
+    @Query("SELECT * FROM visits WHERE id = :id")
+    suspend fun getVisitById(id: Long): VisitEntity?
+    
     @Insert
     suspend fun insertVisit(visit: VisitEntity): Long
     

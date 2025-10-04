@@ -1,9 +1,12 @@
 package com.cosmiclaboratory.voyager.domain.usecase
 
+import android.util.Log
 import com.cosmiclaboratory.voyager.domain.model.*
 import com.cosmiclaboratory.voyager.domain.repository.LocationRepository
 import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
 import com.cosmiclaboratory.voyager.domain.repository.VisitRepository
+import com.cosmiclaboratory.voyager.domain.repository.CurrentStateRepository
+import com.cosmiclaboratory.voyager.utils.LocationServiceManager
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -16,8 +19,14 @@ class AnalyticsUseCases @Inject constructor(
     private val locationRepository: LocationRepository,
     private val placeRepository: PlaceRepository,
     private val visitRepository: VisitRepository,
+    private val currentStateRepository: CurrentStateRepository,
+    private val locationServiceManager: LocationServiceManager,
     private val placeUseCases: PlaceUseCases
 ) {
+    
+    companion object {
+        private const val TAG = "AnalyticsUseCases"
+    }
     
     suspend fun generateTimeAnalytics(
         startTime: LocalDateTime,
@@ -31,14 +40,20 @@ class AnalyticsUseCases @Inject constructor(
         val timeByPlace = mutableMapOf<Place, Long>()
         
         visits.forEach { visit ->
-            if (visit.exitTime != null) {
-                val place = places.find { it.id == visit.placeId }
-                if (place != null) {
-                    timeByCategory[place.category] = 
-                        (timeByCategory[place.category] ?: 0L) + visit.duration
-                    timeByPlace[place] = 
-                        (timeByPlace[place] ?: 0L) + visit.duration
+            val place = places.find { it.id == visit.placeId }
+            if (place != null) {
+                // Calculate duration: use stored duration if completed, or current duration if active
+                val duration = if (visit.exitTime != null) {
+                    visit.duration
+                } else {
+                    // For active visits, calculate current duration
+                    visit.getCurrentDuration(endTime)
                 }
+                
+                timeByCategory[place.category] = 
+                    (timeByCategory[place.category] ?: 0L) + duration
+                timeByPlace[place] = 
+                    (timeByPlace[place] ?: 0L) + duration
             }
         }
         
@@ -71,47 +86,142 @@ class AnalyticsUseCases @Inject constructor(
         )
     }
     
+    suspend fun getCurrentStateAnalytics(): CurrentStateAnalytics {
+        return try {
+            val currentState = currentStateRepository.getCurrentState().first()
+            val todayAnalytics = generateDayAnalytics(LocalDate.now())
+            
+            // Use robust tracking status check - CurrentState should now be accurate
+            // But fall back to LocationServiceManager if needed
+            val isTrackingActive = currentState?.isLocationTrackingActive ?: false ||
+                    locationServiceManager.isLocationServiceRunning()
+            
+            Log.d(TAG, "Current state analytics: " +
+                "currentState.isLocationTrackingActive=${currentState?.isLocationTrackingActive}, " +
+                "locationServiceManager.isRunning=${locationServiceManager.isLocationServiceRunning()}, " +
+                "final isTrackingActive=$isTrackingActive")
+            
+            CurrentStateAnalytics(
+                isAtPlace = currentState?.isAtPlace ?: false,
+                currentPlace = currentState?.currentPlace,
+                currentVisitDuration = currentState?.currentVisitDuration ?: 0L,
+                todayTimeTracked = currentState?.totalTimeTrackedToday ?: 0L,
+                todayPlacesVisited = todayAnalytics.placesVisited,
+                isLocationTrackingActive = isTrackingActive
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get current state analytics", e)
+            CurrentStateAnalytics()
+        }
+    }
+    
     suspend fun generateDayAnalytics(date: LocalDate): DayAnalytics {
-        val startTime = date.atStartOfDay()
-        val endTime = date.plusDays(1).atStartOfDay()
-        
-        val locations = locationRepository.getLocationsSince(startTime)
-            .filter { it.timestamp.isBefore(endTime) }
-        
-        val visits = visitRepository.getVisitsBetween(startTime, endTime).first()
-        val places = placeRepository.getAllPlaces().first()
-        
-        val placesVisited = visits.map { it.placeId }.distinct().size
-        val distanceTraveled = calculateDistanceTraveled(locations)
-        
-        // Calculate time by category for this day
-        val timeByCategory = mutableMapOf<PlaceCategory, Long>()
-        visits.forEach { visit ->
-            if (visit.exitTime != null) {
+        return try {
+            Log.d(TAG, "CRITICAL DEBUG: Generating day analytics for $date")
+            
+            val startTime = date.atStartOfDay()
+            val endTime = date.plusDays(1).atStartOfDay()
+            
+            val locations = try {
+                locationRepository.getLocationsSince(startTime)
+                    .filter { it.timestamp.isBefore(endTime) }
+            } catch (e: Exception) {
+                Log.e(TAG, "CRITICAL ERROR: Failed to get locations for analytics", e)
+                emptyList()
+            }
+            
+            val visits = try {
+                visitRepository.getVisitsBetween(startTime, endTime).first()
+            } catch (e: Exception) {
+                Log.e(TAG, "CRITICAL ERROR: Failed to get visits for analytics", e)
+                emptyList()
+            }
+            
+            val places = try {
+                placeRepository.getAllPlaces().first()
+            } catch (e: Exception) {
+                Log.e(TAG, "CRITICAL ERROR: Failed to get places for analytics", e)
+                emptyList()
+            }
+            
+            Log.d(TAG, "CRITICAL DEBUG: Analytics data - ${locations.size} locations, ${visits.size} visits, ${places.size} places")
+            
+            val placesVisited = visits.map { it.placeId }.distinct().size
+            val distanceTraveled = calculateDistanceTraveled(locations)
+            
+            // CRITICAL FIX: Standardized time calculation
+            val timeByCategory = mutableMapOf<PlaceCategory, Long>()
+            var totalTimeCalculated = 0L
+            
+            visits.forEach { visit ->
                 val place = places.find { it.id == visit.placeId }
                 if (place != null) {
+                    // CRITICAL FIX: Unified duration calculation method
+                    val duration = calculateVisitDuration(visit, endTime)
+                    totalTimeCalculated += duration
+                    
                     timeByCategory[place.category] = 
-                        (timeByCategory[place.category] ?: 0L) + visit.duration
+                        (timeByCategory[place.category] ?: 0L) + duration
+                    
+                    Log.d(TAG, "CRITICAL DEBUG: Visit duration calculated - placeId=${visit.placeId}, duration=${duration}ms")
                 }
             }
+            
+            val longestStay = visits.maxByOrNull { it.duration }
+            val mostFrequentPlace = visits.groupBy { it.placeId }
+                .maxByOrNull { it.value.size }
+                ?.let { entry ->
+                    places.find { it.id == entry.key }
+                }
+            
+            val analytics = DayAnalytics(
+                date = date,
+                totalTimeTracked = totalTimeCalculated, // Use calculated total instead of sum
+                placesVisited = placesVisited,
+                distanceTraveled = distanceTraveled,
+                timeByCategory = timeByCategory,
+                longestStay = longestStay,
+                mostFrequentPlace = mostFrequentPlace
+            )
+            
+            Log.d(TAG, "CRITICAL DEBUG: Generated analytics - totalTime=${analytics.totalTimeTracked}ms, " +
+                "placesVisited=${analytics.placesVisited}, " +
+                "distance=${analytics.distanceTraveled}m")
+            
+            analytics
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "CRITICAL ERROR: Failed to generate day analytics", e)
+            // Return empty analytics on error
+            DayAnalytics(
+                date = date,
+                totalTimeTracked = 0L,
+                placesVisited = 0,
+                distanceTraveled = 0.0,
+                timeByCategory = emptyMap(),
+                longestStay = null,
+                mostFrequentPlace = null
+            )
         }
-        
-        val longestStay = visits.maxByOrNull { it.duration }
-        val mostFrequentPlace = visits.groupBy { it.placeId }
-            .maxByOrNull { it.value.size }
-            ?.let { entry ->
-                places.find { it.id == entry.key }
+    }
+    
+    /**
+     * CRITICAL FIX: Standardized visit duration calculation
+     * Single source of truth for all duration calculations
+     */
+    private fun calculateVisitDuration(visit: com.cosmiclaboratory.voyager.domain.model.Visit, currentTime: LocalDateTime = LocalDateTime.now()): Long {
+        return if (visit.exitTime != null) {
+            // Completed visit - use stored duration
+            visit.duration
+        } else {
+            // Active visit - calculate current duration from entry time
+            if (visit.entryTime != null) {
+                val duration = java.time.Duration.between(visit.entryTime, currentTime)
+                maxOf(0L, duration.toMillis()) // Ensure non-negative
+            } else {
+                0L // No entry time available
             }
-        
-        return DayAnalytics(
-            date = date,
-            totalTimeTracked = timeByCategory.values.sum(),
-            placesVisited = placesVisited,
-            distanceTraveled = distanceTraveled,
-            timeByCategory = timeByCategory,
-            longestStay = longestStay,
-            mostFrequentPlace = mostFrequentPlace
-        )
+        }
     }
     
     suspend fun detectMovementPatterns(): List<MovementPattern> {

@@ -72,6 +72,36 @@ class VisitRepositoryImpl @Inject constructor(
         }
     }
     
+    // New function to complete all active visits
+    override suspend fun completeActiveVisits(exitTime: LocalDateTime) {
+        val activeVisits = getActiveVisits()
+        activeVisits.forEach { visit ->
+            val completedVisit = visit.complete(exitTime)
+            updateVisit(completedVisit)
+        }
+    }
+    
+    // New function to start a visit at a place
+    override suspend fun startVisit(placeId: Long, entryTime: LocalDateTime): Long {
+        // End any existing active visits first
+        completeActiveVisits(entryTime)
+        
+        // Create new visit using factory method
+        val newVisit = Visit.createWithDuration(
+            placeId = placeId,
+            entryTime = entryTime,
+            exitTime = null,
+            confidence = 1.0f
+        )
+        
+        return insertVisit(newVisit)
+    }
+    
+    // New function to get current active visit
+    override suspend fun getCurrentVisit(): Visit? {
+        return getActiveVisits().firstOrNull()
+    }
+    
     override suspend fun deleteVisitsBefore(beforeDate: LocalDateTime): Int {
         return visitDao.deleteVisitsBefore(beforeDate)
     }

@@ -5,6 +5,7 @@ import com.cosmiclaboratory.voyager.domain.repository.LocationRepository
 import com.cosmiclaboratory.voyager.utils.LocationServiceManager
 import com.cosmiclaboratory.voyager.utils.LocationUtils
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import java.time.LocalDateTime
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -16,11 +17,21 @@ class LocationUseCases @Inject constructor(
 ) {
     
     suspend fun startLocationTracking() {
-        locationServiceManager.startLocationTracking()
+        try {
+            locationServiceManager.startLocationTracking()
+        } catch (e: Exception) {
+            android.util.Log.e("LocationUseCases", "Failed to start location tracking", e)
+            throw e
+        }
     }
     
     suspend fun stopLocationTracking() {
-        locationServiceManager.stopLocationTracking()
+        try {
+            locationServiceManager.stopLocationTracking()
+        } catch (e: Exception) {
+            android.util.Log.e("LocationUseCases", "Failed to stop location tracking", e)
+            throw e
+        }
     }
     
     fun isLocationTrackingActive(): Flow<Boolean> {
@@ -28,11 +39,12 @@ class LocationUseCases @Inject constructor(
     }
     
     suspend fun getRecentLocations(limit: Int = 1000): List<Location> {
-        return locationRepository.getRecentLocations(limit).let { flow ->
-            // Convert Flow to List for immediate use
-            val locations = mutableListOf<Location>()
-            flow.collect { locations.addAll(it) }
-            locations
+        return try {
+            // Get the first emission from the Flow (current data)
+            locationRepository.getRecentLocations(limit).first()
+        } catch (e: Exception) {
+            // Return empty list if there's an error or no data
+            emptyList()
         }
     }
     

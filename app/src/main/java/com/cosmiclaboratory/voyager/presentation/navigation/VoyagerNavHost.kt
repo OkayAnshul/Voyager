@@ -11,10 +11,13 @@ import com.cosmiclaboratory.voyager.presentation.screen.insights.InsightsScreen
 import com.cosmiclaboratory.voyager.presentation.screen.map.MapScreen
 import com.cosmiclaboratory.voyager.presentation.screen.settings.SettingsScreen
 import com.cosmiclaboratory.voyager.presentation.screen.timeline.TimelineScreen
+import com.cosmiclaboratory.voyager.utils.PermissionStatus
 
 @Composable
 fun VoyagerNavHost(
     navController: NavHostController,
+    permissionStatus: PermissionStatus,
+    onRequestNotificationPermission: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     NavHost(
@@ -23,23 +26,26 @@ fun VoyagerNavHost(
         modifier = modifier
     ) {
         composable(VoyagerDestination.Dashboard.route) {
-            DashboardScreen()
+            DashboardScreen(permissionStatus = permissionStatus)
         }
         
         composable(VoyagerDestination.Map.route) {
-            MapScreen()
+            MapScreen(permissionStatus = permissionStatus)
         }
         
         composable(VoyagerDestination.Timeline.route) {
-            TimelineScreen()
+            TimelineScreen(permissionStatus = permissionStatus)
         }
         
         composable(VoyagerDestination.Insights.route) {
-            InsightsScreen()
+            InsightsScreen(permissionStatus = permissionStatus)
         }
         
         composable(VoyagerDestination.Settings.route) {
-            SettingsScreen()
+            SettingsScreen(
+                permissionStatus = permissionStatus,
+                onRequestNotificationPermission = onRequestNotificationPermission
+            )
         }
     }
 }

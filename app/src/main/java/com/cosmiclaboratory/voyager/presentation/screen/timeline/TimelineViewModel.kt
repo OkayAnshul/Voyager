@@ -10,9 +10,19 @@ import com.cosmiclaboratory.voyager.domain.usecase.AnalyticsUseCases
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalDateTime
 import javax.inject.Inject
+
+private data class TimelineLoadResult(
+    val visits: List<com.cosmiclaboratory.voyager.domain.model.Visit>,
+    val placesMap: Map<Long, com.cosmiclaboratory.voyager.domain.model.Place>,
+    val locations: List<com.cosmiclaboratory.voyager.domain.model.Location>,
+    val dayAnalytics: com.cosmiclaboratory.voyager.domain.model.DayAnalytics,
+    val timelineEntries: List<TimelineEntry>
+)
 
 data class TimelineEntry(
     val id: String,
@@ -53,6 +63,11 @@ class TimelineViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(TimelineUiState())
     val uiState: StateFlow<TimelineUiState> = _uiState.asStateFlow()
     
+    // Cache analytics by date to prevent excessive recalculation
+    private val analyticsCache = mutableMapOf<LocalDate, com.cosmiclaboratory.voyager.domain.model.DayAnalytics>()
+    private val cacheTimestamps = mutableMapOf<LocalDate, Long>()
+    private val cacheTimeoutMs = 30_000L // 30 seconds cache
+    
     init {
         loadTimelineForDate(LocalDate.now())
     }
@@ -67,25 +82,47 @@ class TimelineViewModel @Inject constructor(
             try {
                 _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
                 
-                val startOfDay = date.atStartOfDay()
-                val endOfDay = date.plusDays(1).atStartOfDay()
-                
-                // Get visits for the day
-                val visits = visitRepository.getVisitsBetween(startOfDay, endOfDay).first()
-                
-                // Get all places
-                val places = placeRepository.getAllPlaces().first()
-                val placesMap = places.associateBy { it.id }
-                
-                // Get locations for the day
-                val locations = locationRepository.getLocationsSince(startOfDay)
-                    .filter { it.timestamp.isBefore(endOfDay) }
-                
-                // Generate day analytics
-                val dayAnalytics = analyticsUseCases.generateDayAnalytics(date)
-                
-                // Build timeline entries
-                val timelineEntries = buildTimelineEntries(visits, placesMap, locations, date)
+                // Run heavy database operations on IO dispatcher
+                val (visits, placesMap, locations, dayAnalytics, timelineEntries) = withContext(Dispatchers.IO) {
+                    val startTime = System.currentTimeMillis()
+                    
+                    val startOfDay = date.atStartOfDay()
+                    val endOfDay = date.plusDays(1).atStartOfDay()
+                    
+                    // Get visits for the day
+                    val visits = visitRepository.getVisitsBetween(startOfDay, endOfDay).first()
+                    
+                    // Get all places
+                    val places = placeRepository.getAllPlaces().first()
+                    val placesMap = places.associateBy { it.id }
+                    
+                    // Get locations for the day
+                    val locations = locationRepository.getLocationsSince(startOfDay)
+                        .filter { it.timestamp.isBefore(endOfDay) }
+                    
+                    // Use cached analytics if available and not expired
+                    val currentTime = System.currentTimeMillis()
+                    val dayAnalytics = if (analyticsCache.containsKey(date) &&
+                        cacheTimestamps[date]?.let { (currentTime - it) < cacheTimeoutMs } == true) {
+                        android.util.Log.d("TimelineViewModel", "Using cached analytics for $date")
+                        analyticsCache[date]!!
+                    } else {
+                        android.util.Log.d("TimelineViewModel", "Generating fresh analytics for $date")
+                        val analytics = analyticsUseCases.generateDayAnalytics(date)
+                        // Update cache
+                        analyticsCache[date] = analytics
+                        cacheTimestamps[date] = currentTime
+                        analytics
+                    }
+                    
+                    // Build timeline entries
+                    val timelineEntries = buildTimelineEntries(visits, placesMap, locations, date)
+                    
+                    val duration = System.currentTimeMillis() - startTime
+                    android.util.Log.d("TimelineViewModel", "Timeline data loaded in ${duration}ms")
+                    
+                    TimelineLoadResult(visits, placesMap, locations, dayAnalytics, timelineEntries)
+                }
                 
                 _uiState.value = _uiState.value.copy(
                     timelineEntries = timelineEntries,
