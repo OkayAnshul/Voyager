@@ -47,6 +47,7 @@ interface PreferencesRepository {
     suspend fun updateBatteryRequirement(requirement: com.cosmiclaboratory.voyager.domain.model.BatteryRequirement)
     suspend fun updateActivityTimeRange(startHour: Int, endHour: Int)
     suspend fun updateDataProcessingBatchSize(size: Int)
+    suspend fun updateDataMigrationVersion(version: Int)
     
     /**
      * Reset preferences to defaults

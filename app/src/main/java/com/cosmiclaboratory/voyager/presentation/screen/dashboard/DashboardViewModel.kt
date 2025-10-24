@@ -11,7 +11,18 @@ import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
 import com.cosmiclaboratory.voyager.domain.repository.PreferencesRepository
 import com.cosmiclaboratory.voyager.domain.usecase.AnalyticsUseCases
 import com.cosmiclaboratory.voyager.domain.usecase.LocationUseCases
+import com.cosmiclaboratory.voyager.domain.usecase.PlaceDetectionUseCases
 import com.cosmiclaboratory.voyager.utils.LocationServiceManager
+import com.cosmiclaboratory.voyager.utils.ProductionLogger
+import com.cosmiclaboratory.voyager.data.state.AppStateManager
+import com.cosmiclaboratory.voyager.data.event.StateEventDispatcher
+import com.cosmiclaboratory.voyager.data.event.EventListener
+import com.cosmiclaboratory.voyager.data.event.StateEvent
+import com.cosmiclaboratory.voyager.data.event.EventTypes
+import com.cosmiclaboratory.voyager.utils.WorkManagerHelper
+import com.cosmiclaboratory.voyager.utils.EnqueueResult
+import com.cosmiclaboratory.voyager.domain.model.UserPreferences
+import android.util.Log
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -26,6 +37,7 @@ data class DashboardUiState(
     val isTracking: Boolean = false,
     val isLoading: Boolean = true,
     val isDetectingPlaces: Boolean = false,
+    val errorMessage: String? = null,
     // Real-time state fields
     val currentPlace: com.cosmiclaboratory.voyager.domain.model.Place? = null,
     val isAtPlace: Boolean = false,
@@ -37,7 +49,7 @@ private data class DashboardData(
     val locationCount: Int,
     val totalPlaces: Int,
     val dayAnalytics: com.cosmiclaboratory.voyager.domain.model.DayAnalytics,
-    val currentStateAnalytics: com.cosmiclaboratory.voyager.domain.model.CurrentStateAnalytics
+    val currentStateAnalytics: com.cosmiclaboratory.voyager.domain.model.CurrentStateAnalytics?
 )
 
 @HiltViewModel
@@ -48,8 +60,13 @@ class DashboardViewModel @Inject constructor(
     private val locationServiceManager: LocationServiceManager,
     private val analyticsUseCases: AnalyticsUseCases,
     private val locationUseCases: LocationUseCases,
-    private val preferencesRepository: PreferencesRepository
-) : ViewModel() {
+    private val placeDetectionUseCases: PlaceDetectionUseCases,
+    private val preferencesRepository: PreferencesRepository,
+    private val logger: ProductionLogger,
+    private val appStateManager: AppStateManager,
+    private val eventDispatcher: StateEventDispatcher,
+    private val workManagerHelper: WorkManagerHelper
+) : ViewModel(), EventListener {
     
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
@@ -61,10 +78,48 @@ class DashboardViewModel @Inject constructor(
     
     init {
         loadDashboardData()
+        observeAppState()
         observeServiceStatus()
         startPeriodicRefresh()
+        registerForEvents()
     }
     
+    /**
+     * Observe centralized app state for real-time updates
+     */
+    private fun observeAppState() {
+        viewModelScope.launch {
+            appStateManager.appState.collect { appState ->
+                logger.d("DashboardViewModel", "App state updated: tracking=${appState.locationTracking.isActive}, placeId=${appState.currentPlace?.placeId}")
+                
+                // Calculate visit duration for current place
+                val visitDuration = appState.currentPlace?.let { placeState ->
+                    placeState.entryTime?.let { entryTime ->
+                        java.time.Duration.between(entryTime, java.time.LocalDateTime.now()).toMillis()
+                    } ?: 0L
+                } ?: 0L
+                
+                // Batch all state updates together for efficiency
+                _uiState.value = _uiState.value.copy(
+                    isLocationTrackingActive = appState.locationTracking.isActive,
+                    isAtPlace = appState.currentPlace != null,
+                    totalTimeTracked = appState.dailyStats.timeTracked,
+                    totalLocations = appState.dailyStats.locationCount,
+                    currentVisitDuration = visitDuration,
+                    isTracking = appState.locationTracking.isActive,
+                    isLoading = false
+                )
+                
+                // Load current place details only if we don't have them or if place changed
+                appState.currentPlace?.let { placeState ->
+                    if (_uiState.value.currentPlace?.id != placeState.placeId) {
+                        loadCurrentPlaceDetails(placeState.placeId)
+                    }
+                }
+            }
+        }
+    }
+
     private fun observeServiceStatus() {
         viewModelScope.launch {
             locationServiceManager.isServiceRunning.collect { isRunning ->
@@ -76,71 +131,119 @@ class DashboardViewModel @Inject constructor(
     private fun loadDashboardData() {
         viewModelScope.launch {
             try {
-                // Run heavy database operations on IO dispatcher to avoid blocking main thread
+                _uiState.value = _uiState.value.copy(isLoading = true)
+                
+                // Get current app state first - this is our primary data source
+                val currentAppState = appStateManager.getCurrentState()
+                logger.d("DashboardViewModel", "Loading dashboard data with app state: tracking=${currentAppState.locationTracking.isActive}")
+                
+                // Only fetch additional data if app state doesn't have what we need
                 val dashboardData = withContext(Dispatchers.IO) {
                     val startTime = System.currentTimeMillis()
                     
-                    // Get total location count using use cases
-                    val locationCount = locationUseCases.getTotalLocationCount()
-                    android.util.Log.d("DashboardViewModel", "CRITICAL DEBUG: Location count = $locationCount")
+                    // Get total places count only if not available in app state
+                    val totalPlaces = try {
+                        placeRepository.getAllPlaces().first().size
+                    } catch (e: Exception) {
+                        logger.e("DashboardViewModel", "Failed to get places count", e)
+                        0
+                    }
                     
-                    // Get all places count
-                    val totalPlaces = placeRepository.getAllPlaces().first().size
-                    android.util.Log.d("DashboardViewModel", "CRITICAL DEBUG: Total places = $totalPlaces")
-                    
-                    // Get real-time state analytics (no caching for real-time data)
-                    val currentStateAnalytics = analyticsUseCases.getCurrentStateAnalytics()
-                    android.util.Log.d("DashboardViewModel", "CRITICAL DEBUG: Current state analytics - tracking=${currentStateAnalytics.isLocationTrackingActive}, todayTime=${currentStateAnalytics.todayTimeTracked}")
-                    
-                    // Use cached day analytics if available and not expired
+                    // Use cached analytics with longer timeout for better performance
                     val currentTime = System.currentTimeMillis()
                     val dayAnalytics = if (cachedAnalytics != null && 
                         (currentTime - lastAnalyticsUpdate) < analyticsCache_TimeoutMs) {
-                        android.util.Log.d("DashboardViewModel", "CRITICAL DEBUG: Using cached day analytics - totalTime=${cachedAnalytics!!.totalTimeTracked}")
+                        logger.d("DashboardViewModel", "Using cached day analytics")
                         cachedAnalytics!!
                     } else {
-                        android.util.Log.d("DashboardViewModel", "CRITICAL DEBUG: Generating fresh day analytics")
-                        val today = java.time.LocalDate.now()
-                        val analytics = analyticsUseCases.generateDayAnalytics(today)
-                        android.util.Log.d("DashboardViewModel", "CRITICAL DEBUG: Fresh analytics generated - totalTime=${analytics.totalTimeTracked}")
-                        // Update cache
-                        cachedAnalytics = analytics
-                        lastAnalyticsUpdate = currentTime
-                        analytics
+                        logger.d("DashboardViewModel", "Generating fresh day analytics")
+                        // CRITICAL FIX: Run heavy analytics generation on IO dispatcher
+                        withContext(Dispatchers.IO) {
+                            try {
+                                val today = java.time.LocalDate.now()
+                                val analytics = analyticsUseCases.generateDayAnalytics(today)
+                                // Update cache
+                                cachedAnalytics = analytics
+                                lastAnalyticsUpdate = currentTime
+                                analytics
+                            } catch (e: Exception) {
+                                logger.e("DashboardViewModel", "Failed to generate analytics", e)
+                                // Return empty analytics as fallback
+                                com.cosmiclaboratory.voyager.domain.model.DayAnalytics(
+                                    date = java.time.LocalDate.now(),
+                                    placesVisited = 0,
+                                    totalTimeTracked = 0L,
+                                    distanceTraveled = 0.0,
+                                    timeByCategory = emptyMap(),
+                                    longestStay = null,
+                                    mostFrequentPlace = null
+                                )
+                            }
+                        }
                     }
                     
                     val duration = System.currentTimeMillis() - startTime
-                    android.util.Log.d("DashboardViewModel", "CRITICAL DEBUG: Dashboard data loaded in ${duration}ms")
+                    logger.perf("DashboardViewModel", "DashboardDataLoad", duration)
                     
-                    // Return both analytics
-                    DashboardData(locationCount, totalPlaces, dayAnalytics, currentStateAnalytics)
+                    DashboardData(
+                        locationCount = currentAppState.dailyStats.locationCount,
+                        totalPlaces = totalPlaces,
+                        dayAnalytics = dayAnalytics,
+                        currentStateAnalytics = null // Not needed for basic dashboard
+                    )
                 }
                 
-                // Update UI on main thread - combine both day analytics and real-time state
-                val combinedTimeTracked = maxOf(
-                    dashboardData.dayAnalytics.totalTimeTracked,
-                    dashboardData.currentStateAnalytics.todayTimeTracked
-                )
-                
+                // Update UI state with batch operation for efficiency
                 _uiState.value = _uiState.value.copy(
                     totalLocations = dashboardData.locationCount,
                     totalPlaces = dashboardData.totalPlaces,
-                    totalTimeTracked = combinedTimeTracked,
-                    isTracking = locationServiceManager.isLocationServiceRunning(),
-                    isLoading = false,
-                    // Real-time state updates
-                    currentPlace = dashboardData.currentStateAnalytics.currentPlace,
-                    isAtPlace = dashboardData.currentStateAnalytics.isAtPlace,
-                    currentVisitDuration = dashboardData.currentStateAnalytics.currentVisitDuration,
-                    isLocationTrackingActive = dashboardData.currentStateAnalytics.isLocationTrackingActive
-                )
-            } catch (e: Exception) {
-                android.util.Log.e("DashboardViewModel", "Failed to load dashboard data", e)
-                _uiState.value = _uiState.value.copy(
+                    totalTimeTracked = maxOf(currentAppState.dailyStats.timeTracked, dashboardData.dayAnalytics.totalTimeTracked),
+                    isTracking = currentAppState.locationTracking.isActive,
+                    isLocationTrackingActive = currentAppState.locationTracking.isActive,
+                    isAtPlace = currentAppState.currentPlace != null,
                     isLoading = false
                 )
+                
+                // Load current place details if available
+                currentAppState.currentPlace?.let { placeState ->
+                    loadCurrentPlaceDetails(placeState.placeId)
+                }
+                
+            } catch (e: Exception) {
+                logger.e("DashboardViewModel", "Failed to load dashboard data", e)
+                _uiState.value = _uiState.value.copy(isLoading = false)
             }
         }
+    }
+    
+    /**
+     * Load details for the current place from app state
+     */
+    private suspend fun loadCurrentPlaceDetails(placeId: Long) {
+        try {
+            val place = placeRepository.getPlaceById(placeId)
+            place?.let {
+                _uiState.value = _uiState.value.copy(
+                    currentPlace = it,
+                    currentVisitDuration = calculateCurrentVisitDuration()
+                )
+                logger.d("DashboardViewModel", "Loaded current place details: ${it.name}")
+            }
+        } catch (e: Exception) {
+            logger.e("DashboardViewModel", "Failed to load current place details for ID: $placeId", e)
+        }
+    }
+    
+    /**
+     * Calculate current visit duration from app state
+     */
+    private fun calculateCurrentVisitDuration(): Long {
+        val currentAppState = appStateManager.getCurrentState()
+        return currentAppState.currentPlace?.let { placeState ->
+            val entryTime = placeState.entryTime
+            val now = java.time.LocalDateTime.now()
+            java.time.Duration.between(entryTime, now).toMillis()
+        } ?: 0L
     }
     
     fun toggleLocationTracking() {
@@ -159,10 +262,13 @@ class DashboardViewModel @Inject constructor(
     private fun startPeriodicRefresh() {
         viewModelScope.launch {
             while (true) {
-                // Dynamic refresh interval based on activity
-                val refreshInterval = if (_uiState.value.isAtPlace) {
+                // Get current app state for accurate timing decisions
+                val currentAppState = appStateManager.getCurrentState()
+                
+                // Dynamic refresh interval based on centralized state
+                val refreshInterval = if (currentAppState.currentPlace != null) {
                     30000L // 30 seconds when user is at a place (active visit)
-                } else if (_uiState.value.isTracking) {
+                } else if (currentAppState.locationTracking.isActive) {
                     60000L // 60 seconds when tracking but not at a place
                 } else {
                     120000L // 2 minutes when not tracking
@@ -170,12 +276,12 @@ class DashboardViewModel @Inject constructor(
                 
                 kotlinx.coroutines.delay(refreshInterval)
                 
-                if (_uiState.value.isTracking) {
-                    // Always refresh real-time state, but respect cache for day analytics
+                // Only refresh if tracking is active or cache is expired
+                if (currentAppState.locationTracking.isActive) {
                     val currentTime = System.currentTimeMillis()
-                    if (_uiState.value.isAtPlace || cachedAnalytics == null || 
+                    if (currentAppState.currentPlace != null || cachedAnalytics == null || 
                         (currentTime - lastAnalyticsUpdate) > analyticsCache_TimeoutMs) {
-                        android.util.Log.d("DashboardViewModel", "Periodic refresh triggered (interval: ${refreshInterval}ms)")
+                        logger.d("DashboardViewModel", "Periodic refresh triggered (interval: ${refreshInterval}ms, state: tracking=${currentAppState.locationTracking.isActive})")
                         loadDashboardData()
                     }
                 }
@@ -187,6 +293,30 @@ class DashboardViewModel @Inject constructor(
         loadDashboardData()
     }
     
+    /**
+     * Refresh dashboard data - called by pull to refresh
+     */
+    fun refreshDashboard() {
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isLoading = true)
+                
+                // Clear cache to force fresh data
+                cachedAnalytics = null
+                lastAnalyticsUpdate = 0
+                
+                // Reload all data
+                loadDashboardData()
+                
+                logger.d("DashboardViewModel", "Dashboard refreshed successfully")
+                
+            } catch (e: Exception) {
+                logger.e("DashboardViewModel", "Failed to refresh dashboard", e)
+                _uiState.value = _uiState.value.copy(isLoading = false)
+            }
+        }
+    }
+    
     fun triggerPlaceDetection() {
         viewModelScope.launch {
             try {
@@ -195,24 +325,288 @@ class DashboardViewModel @Inject constructor(
                 // Get user preferences for the worker
                 val preferences = preferencesRepository.getCurrentPreferences()
                 
-                // Trigger immediate place detection
-                val immediateWork = PlaceDetectionWorker.createOneTimeWorkRequest(preferences)
-                val workManager = WorkManager.getInstance(context)
-                workManager.enqueue(immediateWork)
+                // CRITICAL FIX: Use robust WorkManager enqueuing with verification
+                enqueueWorkWithRetry(preferences)
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Failed to trigger place detection", e)
+                _uiState.value = _uiState.value.copy(
+                    isDetectingPlaces = false,
+                    errorMessage = "Failed to trigger place detection: ${e.message}"
+                )
+            }
+        }
+    }
+    
+    /**
+     * DEBUG: Get current preferences and location stats for troubleshooting
+     */
+    fun debugGetDiagnosticInfo() {
+        viewModelScope.launch {
+            try {
+                val preferences = preferencesRepository.getCurrentPreferences()
+                val locationCount = locationRepository.getRecentLocations(Int.MAX_VALUE).first().size
+                val placeCount = placeRepository.getAllPlaces().first().size
+                
+                val diagnosticInfo = """
+                🔧 DIAGNOSTIC INFO:
+                📍 Total Locations: $locationCount
+                🏠 Total Places: $placeCount
+                
+                ⚙️ KEY SETTINGS:
+                • Place Detection: ${if (preferences.enablePlaceDetection) "✅ ENABLED" else "❌ DISABLED"}
+                • Auto Trigger Count: ${preferences.autoDetectTriggerCount} (current: $locationCount)
+                • Max GPS Accuracy: ${preferences.maxGpsAccuracyMeters}m
+                • Max Speed: ${preferences.maxSpeedKmh} km/h
+                • Clustering Distance: ${preferences.clusteringDistanceMeters}m
+                • Min Points for Cluster: ${preferences.minPointsForCluster}
+                
+                🔍 PIPELINE STATUS:
+                • Should Auto-Trigger: ${locationCount >= preferences.autoDetectTriggerCount}
+                • Detection Ready: ${preferences.enablePlaceDetection && locationCount >= 3}
+                """.trimIndent()
+                
+                Log.i("DashboardViewModel", diagnosticInfo)
+                _uiState.value = _uiState.value.copy(errorMessage = diagnosticInfo)
+                
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Diagnostic failed", e)
+                _uiState.value = _uiState.value.copy(errorMessage = "❌ Diagnostic failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * DEBUG: Check WorkManager health and initialization status
+     */
+    fun debugWorkManagerHealth() {
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isDetectingPlaces = true)
+                
+                Log.i("DashboardViewModel", "Starting WorkManager health check...")
+                val healthResult = workManagerHelper.performHealthCheck()
+                
+                val healthInfo = """
+                🔧 WORKMANAGER HEALTH CHECK:
+                
+                📊 Overall Status: ${if (healthResult.isHealthy) "✅ HEALTHY" else "❌ UNHEALTHY"}
+                
+                🔍 Individual Checks:
+                • Initialization: ${if (healthResult.checks["initialization"] == true) "✅" else "❌"}
+                • Instance Creation: ${if (healthResult.checks["instance_creation"] == true) "✅" else "❌"}
+                • Hilt Factory: ${if (healthResult.checks["hilt_factory"] == true) "✅" else "❌"}
+                • Work Scheduling: ${if (healthResult.checks["work_scheduling"] == true) "✅" else "❌"}
+                
+                ⚠️ Errors Found:
+                ${healthResult.errors.joinToString("\n") { "• $it" }}
+                
+                🕒 Check Time: ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(healthResult.timestamp))}
+                """.trimIndent()
+                
+                Log.i("DashboardViewModel", healthInfo)
+                _uiState.value = _uiState.value.copy(
+                    isDetectingPlaces = false,
+                    errorMessage = healthInfo
+                )
+                
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "WorkManager health check failed", e)
+                _uiState.value = _uiState.value.copy(
+                    isDetectingPlaces = false,
+                    errorMessage = "❌ Health check failed: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * DEBUG: Reset preferences to fix configuration issues
+     */
+    fun debugResetPreferences() {
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isDetectingPlaces = true)
+                
+                Log.i("DashboardViewModel", "Resetting preferences to defaults...")
+                preferencesRepository.resetToDefaults()
+                
+                // Get updated preferences
+                val newPreferences = preferencesRepository.getCurrentPreferences()
+                
+                val resetInfo = """
+                🔄 PREFERENCES RESET COMPLETE:
+                
+                📊 Updated Settings:
+                • Place Detection: ${if (newPreferences.enablePlaceDetection) "✅ ENABLED" else "❌ DISABLED"}
+                • Auto Trigger Count: ${newPreferences.autoDetectTriggerCount}
+                • Max GPS Accuracy: ${newPreferences.maxGpsAccuracyMeters}m
+                • Max Speed: ${newPreferences.maxSpeedKmh} km/h
+                • Clustering Distance: ${newPreferences.clusteringDistanceMeters}m
+                • Min Points for Cluster: ${newPreferences.minPointsForCluster}
+                • Battery Requirement: ${newPreferences.batteryRequirement}
+                
+                ✅ All settings restored to optimal defaults
+                """.trimIndent()
+                
+                Log.i("DashboardViewModel", resetInfo)
+                _uiState.value = _uiState.value.copy(
+                    isDetectingPlaces = false,
+                    errorMessage = resetInfo
+                )
+                
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Preferences reset failed", e)
+                _uiState.value = _uiState.value.copy(
+                    isDetectingPlaces = false,
+                    errorMessage = "❌ Reset failed: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * DEBUG: Manual place detection bypass WorkManager for immediate testing
+     */
+    fun debugManualPlaceDetection() {
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isDetectingPlaces = true)
+                
+                Log.i("DashboardViewModel", "Starting debug manual place detection...")
+                val result = placeDetectionUseCases.debugManualPlaceDetection()
+                
+                Log.i("DashboardViewModel", "Debug place detection completed: $result")
+                
+                // Refresh dashboard data to show any new places
+                loadDashboardData()
+                _uiState.value = _uiState.value.copy(
+                    isDetectingPlaces = false,
+                    errorMessage = "Debug completed: $result"
+                )
+                
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Debug place detection failed", e)
+                _uiState.value = _uiState.value.copy(
+                    isDetectingPlaces = false,
+                    errorMessage = "Debug failed: ${e.message}"
+                )
+            }
+        }
+    }
+    
+    /**
+     * Enqueue WorkManager tasks using centralized WorkManagerHelper
+     */
+    private suspend fun enqueueWorkWithRetry(preferences: UserPreferences) {
+        Log.d("DashboardViewModel", "Enqueuing place detection work using WorkManagerHelper...")
+        
+        val result = workManagerHelper.enqueuePlaceDetectionWork(preferences, isOneTime = true)
+        
+        when (result) {
+            is EnqueueResult.Success -> {
+                Log.d("DashboardViewModel", "Place detection work enqueued successfully: ${result.workId}")
                 
                 // Monitor work completion and refresh data
-                workManager.getWorkInfoByIdFlow(immediateWork.id).collect { workInfo ->
+                val workInfoFlow = workManagerHelper.getWorkInfoFlow(result.workId)
+                workInfoFlow?.collect { workInfo ->
                     if (workInfo?.state?.isFinished == true) {
                         _uiState.value = _uiState.value.copy(isDetectingPlaces = false)
                         // Refresh dashboard data to show new places
                         loadDashboardData()
                     }
+                } ?: run {
+                    // Fallback: Just wait and refresh after a reasonable time
+                    kotlinx.coroutines.delay(10000) // Wait 10 seconds
+                    _uiState.value = _uiState.value.copy(isDetectingPlaces = false)
+                    loadDashboardData()
                 }
+            }
+            is EnqueueResult.Failed -> {
+                Log.e("DashboardViewModel", "WorkManager enqueue failed", result.exception)
+                _uiState.value = _uiState.value.copy(
+                    isDetectingPlaces = false,
+                    errorMessage = "Failed to start place detection: ${result.exception.message}"
+                )
                 
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isDetectingPlaces = false)
-                // Could show error message here
+                // FALLBACK: Try manual place detection as last resort
+                try {
+                    Log.w("DashboardViewModel", "Attempting fallback manual place detection...")
+                    val places = placeDetectionUseCases.detectNewPlaces()
+                    Log.d("DashboardViewModel", "Fallback manual place detection completed with ${places.size} places")
+                    _uiState.value = _uiState.value.copy(
+                        isDetectingPlaces = false,
+                        errorMessage = null
+                    )
+                    loadDashboardData() // Refresh to show new places
+                } catch (fallbackException: Exception) {
+                    Log.e("DashboardViewModel", "Fallback manual place detection also failed", fallbackException)
+                }
             }
         }
+    }
+    
+    /**
+     * Register for event-driven updates
+     */
+    private fun registerForEvents() {
+        // Register as event listener for real-time updates
+        eventDispatcher.registerListener("DashboardViewModel", this)
+        
+        // Observe specific event streams for reactive UI updates
+        viewModelScope.launch {
+            eventDispatcher.trackingEvents.collect { trackingEvent ->
+                logger.d("DashboardViewModel", "Tracking event received: ${trackingEvent.type}")
+                when (trackingEvent.type) {
+                    EventTypes.TRACKING_STARTED, EventTypes.TRACKING_STOPPED -> {
+                        refreshData() // Refresh dashboard when tracking status changes
+                    }
+                }
+            }
+        }
+        
+        viewModelScope.launch {
+            eventDispatcher.placeEvents.collect { placeEvent ->
+                logger.d("DashboardViewModel", "Place event received: ${placeEvent.type}")
+                when (placeEvent.type) {
+                    EventTypes.PLACE_ENTERED, EventTypes.PLACE_EXITED -> {
+                        refreshData() // Refresh dashboard when place status changes
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Handle incoming state events
+     */
+    override suspend fun onStateEvent(event: StateEvent) {
+        try {
+            logger.d("DashboardViewModel", "State event received: ${event.type}")
+            
+            when (event.type) {
+                EventTypes.LOCATION_UPDATE -> {
+                    // Refresh statistics when new location is processed
+                    if (_uiState.value.isAtPlace) {
+                        loadDashboardData() // More frequent updates when at a place
+                    }
+                }
+                EventTypes.PLACE_DETECTED -> {
+                    // Refresh place count when new place is detected
+                    loadDashboardData()
+                }
+                EventTypes.VISIT_STARTED, EventTypes.VISIT_ENDED -> {
+                    // Refresh visit duration and statistics
+                    loadDashboardData()
+                }
+            }
+        } catch (e: Exception) {
+            logger.e("DashboardViewModel", "Error handling state event: ${event.type}", e)
+        }
+    }
+    
+    override fun onCleared() {
+        super.onCleared()
+        // Unregister from event dispatcher when ViewModel is cleared
+        eventDispatcher.unregisterListener("DashboardViewModel")
     }
 }

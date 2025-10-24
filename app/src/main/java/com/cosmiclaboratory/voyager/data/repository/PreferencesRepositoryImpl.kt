@@ -171,6 +171,12 @@ class PreferencesRepositoryImpl @Inject constructor(
         updateUserPreferences(updated)
     }
     
+    override suspend fun updateDataMigrationVersion(version: Int) {
+        val current = _userPreferences.value
+        val updated = current.copy(dataMigrationVersion = version)
+        updateUserPreferences(updated)
+    }
+    
     private fun loadPreferences(): UserPreferences {
         return try {
             UserPreferences(
@@ -196,6 +202,7 @@ class PreferencesRepositoryImpl @Inject constructor(
                 dataRetentionDays = sharedPreferences.getInt(KEY_DATA_RETENTION_DAYS, 365),
                 maxLocationsToProcess = sharedPreferences.getInt(KEY_MAX_LOCATIONS_PROCESS, 10000),
                 maxRecentLocationsDisplay = sharedPreferences.getInt(KEY_MAX_RECENT_LOCATIONS, 1000),
+                dataMigrationVersion = sharedPreferences.getInt(KEY_DATA_MIGRATION_VERSION, 0),
                 enableArrivalNotifications = sharedPreferences.getBoolean(KEY_ENABLE_ARRIVAL_NOTIFICATIONS, true),
                 enableDepartureNotifications = sharedPreferences.getBoolean(KEY_ENABLE_DEPARTURE_NOTIFICATIONS, false),
                 enablePatternNotifications = sharedPreferences.getBoolean(KEY_ENABLE_PATTERN_NOTIFICATIONS, true),
@@ -218,10 +225,10 @@ class PreferencesRepositoryImpl @Inject constructor(
                 maxSpeedKmh = sharedPreferences.getFloat(KEY_MAX_SPEED_KMH, 200f).toDouble(),
                 minTimeBetweenUpdatesSeconds = sharedPreferences.getInt(KEY_MIN_TIME_BETWEEN_UPDATES, 10),
                 placeDetectionFrequencyHours = sharedPreferences.getInt(KEY_PLACE_DETECTION_FREQUENCY, 6),
-                autoDetectTriggerCount = sharedPreferences.getInt(KEY_AUTO_DETECT_TRIGGER_COUNT, 50),
+                autoDetectTriggerCount = sharedPreferences.getInt(KEY_AUTO_DETECT_TRIGGER_COUNT, 25),
                 batteryRequirement = BatteryRequirement.valueOf(
-                    sharedPreferences.getString(KEY_BATTERY_REQUIREMENT, BatteryRequirement.NOT_LOW.name) 
-                        ?: BatteryRequirement.NOT_LOW.name
+                    sharedPreferences.getString(KEY_BATTERY_REQUIREMENT, BatteryRequirement.ANY.name) 
+                        ?: BatteryRequirement.ANY.name
                 ),
                 activityTimeRangeStart = sharedPreferences.getInt(KEY_ACTIVITY_TIME_START, 6),
                 activityTimeRangeEnd = sharedPreferences.getInt(KEY_ACTIVITY_TIME_END, 23),
@@ -278,6 +285,7 @@ class PreferencesRepositoryImpl @Inject constructor(
             putInt(KEY_ACTIVITY_TIME_START, preferences.activityTimeRangeStart)
             putInt(KEY_ACTIVITY_TIME_END, preferences.activityTimeRangeEnd)
             putInt(KEY_DATA_PROCESSING_BATCH_SIZE, preferences.dataProcessingBatchSize)
+            putInt(KEY_DATA_MIGRATION_VERSION, preferences.dataMigrationVersion)
             apply()
         }
     }
@@ -311,6 +319,7 @@ class PreferencesRepositoryImpl @Inject constructor(
         private const val KEY_DATA_RETENTION_DAYS = "data_retention_days"
         private const val KEY_MAX_LOCATIONS_PROCESS = "max_locations_process"
         private const val KEY_MAX_RECENT_LOCATIONS = "max_recent_locations"
+        private const val KEY_DATA_MIGRATION_VERSION = "data_migration_version"
         
         // Notification Keys
         private const val KEY_ENABLE_ARRIVAL_NOTIFICATIONS = "enable_arrival_notifications"

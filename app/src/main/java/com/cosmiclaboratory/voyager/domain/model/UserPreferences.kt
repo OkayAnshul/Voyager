@@ -32,10 +32,10 @@ data class UserPreferences(
     val maxSpeedKmh: Double = 200.0, // Max speed to filter GPS errors (100-300 km/h)
     val minTimeBetweenUpdatesSeconds: Int = 10, // Min time gap to avoid GPS jitter (5-60s)
     
-    // Place Detection Automation Settings
+    // Place Detection Automation Settings  
     val placeDetectionFrequencyHours: Int = 6, // How often to run detection (1-24 hours)
-    val autoDetectTriggerCount: Int = 50, // Trigger detection after N new locations
-    val batteryRequirement: BatteryRequirement = BatteryRequirement.NOT_LOW,
+    val autoDetectTriggerCount: Int = 25, // CRITICAL FIX: Trigger detection after 25 locations (was 50)
+    val batteryRequirement: BatteryRequirement = BatteryRequirement.ANY,
     
     // Analytics Calculation Settings
     val activityTimeRangeStart: Int = 6, // Start hour for activity analysis (0-23)
@@ -46,6 +46,7 @@ data class UserPreferences(
     val dataRetentionDays: Int = 365, // Keep data for 1 year by default
     val maxLocationsToProcess: Int = 10000, // Limit for performance
     val maxRecentLocationsDisplay: Int = 1000, // Map display limit
+    val dataMigrationVersion: Int = 0, // Current data migration version
     
     // Notification Settings
     val enableArrivalNotifications: Boolean = true,

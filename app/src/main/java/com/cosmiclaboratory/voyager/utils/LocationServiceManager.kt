@@ -10,6 +10,11 @@ import androidx.core.content.ContextCompat
 import com.cosmiclaboratory.voyager.data.service.LocationTrackingService
 import com.cosmiclaboratory.voyager.data.state.AppStateManager
 import com.cosmiclaboratory.voyager.data.state.StateUpdateSource
+import com.cosmiclaboratory.voyager.data.state.StateUpdateResult
+import com.cosmiclaboratory.voyager.utils.ErrorHandler
+import com.cosmiclaboratory.voyager.utils.ErrorContext
+import com.cosmiclaboratory.voyager.domain.exception.*
+import com.cosmiclaboratory.voyager.domain.validation.ValidationService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +27,9 @@ import javax.inject.Singleton
 class LocationServiceManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val currentStateRepository: com.cosmiclaboratory.voyager.domain.repository.CurrentStateRepository,
-    private val appStateManager: AppStateManager
+    private val appStateManager: AppStateManager,
+    private val errorHandler: ErrorHandler,
+    private val validationService: ValidationService
 ) {
     
     private val _isServiceRunning = MutableStateFlow(false)
@@ -42,40 +49,67 @@ class LocationServiceManager @Inject constructor(
     }
     
     fun startLocationTracking() {
-        try {
-            clearError()
-            
-            // CRITICAL: Check permissions BEFORE attempting to start service
-            if (!hasAllRequiredPermissions()) {
-                val missingPermissions = getMissingPermissions()
-                val errorMsg = "Missing required permissions: ${missingPermissions.joinToString(", ")}"
-                Log.e(TAG, errorMsg)
-                handleServiceFailure(errorMsg)
-                return
+        scope.launch {
+            errorHandler.executeWithErrorHandling(
+                operation = {
+                    clearError()
+                    
+                    // CRITICAL: Check permissions BEFORE attempting to start service
+                    if (!hasAllRequiredPermissions()) {
+                        val missingPermissions = getMissingPermissions()
+                        throw LocationTrackingException.PermissionDeniedException(
+                            missingPermissions
+                        )
+                    }
+                    
+                    // Update app state manager before starting service
+                    val stateResult = appStateManager.updateTrackingStatus(
+                        isActive = true,
+                        startTime = java.time.LocalDateTime.now(),
+                        source = StateUpdateSource.LOCATION_SERVICE
+                    )
+                    
+                    if (stateResult !is com.cosmiclaboratory.voyager.data.state.StateUpdateResult.Success) {
+                        throw SystemException.StateManagementException(
+                            "Failed to update tracking status in app state"
+                        )
+                    }
+                    
+                    val intent = Intent(context, LocationTrackingService::class.java).apply {
+                        action = LocationTrackingService.ACTION_START_TRACKING
+                    }
+                    context.startForegroundService(intent)
+                    
+                    // Save tracking state for boot receiver
+                    prefs.edit().putBoolean("location_tracking_enabled", true).apply()
+                    
+                    // Start monitoring service startup
+                    monitorServiceStartup()
+                    
+                    Log.d(TAG, "Location tracking start initiated successfully")
+                    Unit
+                },
+                context = ErrorContext(
+                    operation = "startLocationTracking",
+                    component = "LocationServiceManager"
+                )
+            ).onFailure { error ->
+                Log.e(TAG, "Failed to start location tracking: ${error.message}")
+                handleServiceFailure("Failed to start location tracking: ${error.message}")
             }
-            
-            val intent = Intent(context, LocationTrackingService::class.java).apply {
-                action = LocationTrackingService.ACTION_START_TRACKING
-            }
-            context.startForegroundService(intent)
-            
-            // Don't immediately set to true - wait for service confirmation
-            // The service will call notifyServiceStarted() when it's actually running
-            
-            // Save tracking state for boot receiver
-            prefs.edit().putBoolean("location_tracking_enabled", true).apply()
-            
-            // Start monitoring service startup
-            scope.launch {
-                delay(5000) // Wait 5 seconds for service to start
-                if (!isServiceActuallyRunning()) {
-                    // Service failed to start
-                    handleServiceFailure("Service failed to start within 5 seconds")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start location tracking", e)
-            handleServiceFailure("Failed to start location tracking: ${e.message}")
+        }
+    }
+    
+    private suspend fun monitorServiceStartup() {
+        delay(5000) // Wait 5 seconds for service to start
+        if (!isServiceActuallyRunning()) {
+            // Service failed to start - update app state
+            appStateManager.updateTrackingStatus(
+                isActive = false,
+                startTime = null,
+                source = StateUpdateSource.LOCATION_SERVICE
+            )
+            handleServiceFailure("Service failed to start within 5 seconds")
         }
     }
     
@@ -118,27 +152,81 @@ class LocationServiceManager @Inject constructor(
         lastKnownServiceState = isRunning
     }
     
-    @Suppress("DEPRECATION")
+    /**
+     * Enhanced service detection with multiple fallback mechanisms
+     * CRITICAL FIX: getRunningServices is deprecated and unreliable on newer Android
+     */
     private fun isServiceActuallyRunning(): Boolean {
-        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         try {
-            val runningServices = activityManager.getRunningServices(Integer.MAX_VALUE)
-            for (serviceInfo in runningServices) {
-                if (LocationTrackingService::class.java.name == serviceInfo.service.className) {
-                    return true
+            // Method 1: Check the location service static flag (most reliable)
+            if (LocationTrackingService.isServiceRunning()) {
+                Log.d(TAG, "✅ Service status: RUNNING (via service flag)")
+                return true
+            }
+            
+            // Method 2: Try deprecated getRunningServices as fallback
+            @Suppress("DEPRECATION")
+            val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            try {
+                val runningServices = activityManager.getRunningServices(Integer.MAX_VALUE)
+                for (serviceInfo in runningServices) {
+                    if (LocationTrackingService::class.java.name == serviceInfo.service.className) {
+                        Log.d(TAG, "✅ Service status: RUNNING (via ActivityManager)")
+                        return true
+                    }
+                }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "⚠️ Cannot use getRunningServices due to security restrictions (Android 8+)")
+            }
+            
+            // Method 3: Check stored preferences state
+            val storedState = prefs.getBoolean("location_tracking_enabled", false)
+            if (storedState) {
+                Log.d(TAG, "⚠️ Service status: ASSUMED RUNNING (via stored preferences)")
+                return true
+            }
+            
+            // Method 4: Check app state manager
+            scope.launch {
+                val appState = appStateManager.appState.value
+                if (appState.locationTracking.isActive) {
+                    Log.d(TAG, "⚠️ Service status: ASSUMED RUNNING (via app state)")
+                    // Don't return here since we're in a coroutine
                 }
             }
+            
+            Log.d(TAG, "❌ Service status: NOT RUNNING (all checks failed)")
+            return false
+            
         } catch (e: Exception) {
-            // Handle potential security exceptions on newer Android versions
-            // Fall back to stored state
-            Log.w(TAG, "Unable to check service status: ${e.message}")
+            Log.e(TAG, "Error checking service status", e)
+            // If we can't determine status, assume it's not running for safety
+            return false
         }
-        return false
     }
     
     fun notifyServiceStarted() {
         Log.d(TAG, "CRITICAL: Service started notification received")
         _isServiceRunning.value = true
+        
+        // ENHANCED: Synchronize with app state manager
+        scope.launch {
+            try {
+                val syncResult = appStateManager.updateTrackingStatus(
+                    isActive = true,
+                    startTime = null, // Service provides its own start time
+                    source = StateUpdateSource.LOCATION_SERVICE
+                )
+                
+                if (syncResult is StateUpdateResult.Success) {
+                    Log.d(TAG, "CRITICAL: AppStateManager updated directly - tracking started")
+                } else {
+                    Log.w(TAG, "WARNING: Failed to sync app state with service start: ${syncResult}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "CRITICAL: Exception while syncing app state with service start", e)
+            }
+        }
         lastKnownServiceState = true
         clearError()
         

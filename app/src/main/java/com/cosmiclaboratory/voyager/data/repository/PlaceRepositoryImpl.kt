@@ -10,6 +10,9 @@ import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
 import com.cosmiclaboratory.voyager.domain.model.PlaceWithVisits
 import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
 import com.cosmiclaboratory.voyager.utils.LocationUtils
+import com.cosmiclaboratory.voyager.utils.ErrorHandler
+import com.cosmiclaboratory.voyager.utils.ErrorContext
+import com.cosmiclaboratory.voyager.domain.exception.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -18,7 +21,8 @@ import javax.inject.Singleton
 @Singleton
 class PlaceRepositoryImpl @Inject constructor(
     private val placeDao: PlaceDao,
-    private val visitDao: VisitDao
+    private val visitDao: VisitDao,
+    private val errorHandler: ErrorHandler
 ) : PlaceRepository {
     
     override fun getAllPlaces(): Flow<List<Place>> {
@@ -57,7 +61,36 @@ class PlaceRepositoryImpl @Inject constructor(
     }
     
     override suspend fun insertPlace(place: Place): Long {
-        return placeDao.insertPlace(place.toEntity())
+        return errorHandler.executeWithErrorHandling(
+            operation = {
+                // Validate place before insertion
+                if (place.name.isBlank()) {
+                    throw DataValidationException.PlaceValidationException(
+                        "Place name cannot be blank",
+                        recoveryAction = RecoveryAction.SKIP_INVALID_DATA
+                    )
+                }
+                
+                if (place.latitude == 0.0 && place.longitude == 0.0) {
+                    throw DataValidationException.PlaceValidationException(
+                        "Invalid place coordinates: 0,0",
+                        recoveryAction = RecoveryAction.SKIP_INVALID_DATA
+                    )
+                }
+                
+                placeDao.insertPlace(place.toEntity())
+            },
+            context = ErrorContext(
+                operation = "insertPlace",
+                component = "PlaceRepository",
+                metadata = mapOf(
+                    "placeName" to place.name,
+                    "latitude" to place.latitude.toString(),
+                    "longitude" to place.longitude.toString(),
+                    "category" to place.category.toString()
+                )
+            )
+        ).getOrThrow()
     }
     
     override suspend fun updatePlace(place: Place) {
@@ -73,7 +106,29 @@ class PlaceRepositoryImpl @Inject constructor(
     }
     
     override suspend fun incrementVisitStats(id: Long, duration: Long) {
-        placeDao.incrementVisitStats(id, duration)
+        errorHandler.executeWithErrorHandling(
+            operation = {
+                if (duration < 0) {
+                    throw DataValidationException.PlaceValidationException(
+                        "Visit duration cannot be negative: $duration",
+                        recoveryAction = RecoveryAction.SKIP_INVALID_DATA
+                    )
+                }
+                
+                placeDao.incrementVisitStats(id, duration)
+                Unit
+            },
+            context = ErrorContext(
+                operation = "incrementVisitStats",
+                component = "PlaceRepository",
+                metadata = mapOf(
+                    "placeId" to id.toString(),
+                    "duration" to duration.toString()
+                )
+            )
+        ).getOrElse {
+            // Log error but don't fail - visit stats are not critical
+        }
     }
     
     override suspend fun getPlaceCountByCategory(category: PlaceCategory): Int {

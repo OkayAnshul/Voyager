@@ -15,7 +15,8 @@ import java.util.concurrent.TimeUnit
 class PlaceDetectionWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted workerParams: WorkerParameters,
-    private val placeDetectionUseCases: PlaceDetectionUseCases
+    private val placeDetectionUseCases: PlaceDetectionUseCases,
+    private val placeUseCases: com.cosmiclaboratory.voyager.domain.usecase.PlaceUseCases
 ) : CoroutineWorker(context, workerParams) {
 
     init {
@@ -29,6 +30,17 @@ class PlaceDetectionWorker @AssistedInject constructor(
             // Detect new places from location clusters
             val newPlaces = placeDetectionUseCases.detectNewPlaces()
             Log.d(TAG, "Detected ${newPlaces.size} new places")
+            
+            // CRITICAL FIX: Automatically setup geofences for newly detected places
+            if (newPlaces.isNotEmpty()) {
+                var geofenceSuccessCount = 0
+                newPlaces.forEach { place ->
+                    if (placeUseCases.createGeofenceForPlace(place)) {
+                        geofenceSuccessCount++
+                    }
+                }
+                Log.d(TAG, "Successfully created geofences for $geofenceSuccessCount/${newPlaces.size} new places")
+            }
             
             // Improve existing place categorizations
             placeDetectionUseCases.improveExistingPlaces()

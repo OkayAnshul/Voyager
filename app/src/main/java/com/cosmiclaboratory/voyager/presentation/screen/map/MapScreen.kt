@@ -1,5 +1,6 @@
 package com.cosmiclaboratory.voyager.presentation.screen.map
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -139,51 +140,126 @@ fun MapScreen(
                         }
                     }
                 } else {
-                    // Show map and places
-                    Row(modifier = Modifier.fillMaxSize()) {
-                        // Map view
-                        OpenStreetMapView(
-                            modifier = Modifier
-                                .weight(2f)
-                                .fillMaxHeight(),
-                            center = uiState.mapCenter,
-                            zoomLevel = uiState.zoomLevel,
-                            locations = uiState.locations,
-                            places = uiState.places,
-                            userLocation = uiState.userLocation,
-                            onPlaceClick = { place ->
-                                viewModel.selectPlace(place)
-                            }
-                        )
-                        
-                        // Side panel with places list
-                        if (uiState.places.isNotEmpty()) {
-                            Card(
+                    // Show map and places with floating action buttons
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        Row(modifier = Modifier.fillMaxSize()) {
+                            // Map view
+                            OpenStreetMapView(
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .padding(8.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(16.dp)
+                                    .weight(if (uiState.places.isNotEmpty()) 2f else 1f)
+                                    .fillMaxHeight(),
+                                center = uiState.mapCenter,
+                                zoomLevel = uiState.zoomLevel,
+                                locations = uiState.locations,
+                                places = uiState.places,
+                                userLocation = uiState.userLocation,
+                                currentPlace = uiState.currentPlace,
+                                isTracking = uiState.isTracking,
+                                onPlaceClick = { place ->
+                                    viewModel.selectPlace(place)
+                                },
+                                onMapClick = { lat, lng ->
+                                    viewModel.onMapClick(lat, lng)
+                                },
+                                onMapReady = { mapView ->
+                                    viewModel.onMapReady(mapView)
+                                }
+                            )
+                            
+                            // Side panel with places list
+                            if (uiState.places.isNotEmpty()) {
+                                Card(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .padding(8.dp)
                                 ) {
-                                    Text(
-                                        text = "Places",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    
-                                    LazyColumn {
-                                        items(uiState.places) { place ->
-                                            PlaceListItem(
-                                                place = place,
-                                                isSelected = place == uiState.selectedPlace,
-                                                onClick = { viewModel.selectPlace(place) }
-                                            )
+                                    Column(
+                                        modifier = Modifier.padding(16.dp)
+                                    ) {
+                                        Text(
+                                            text = "Places (${uiState.places.size})",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        
+                                        LazyColumn {
+                                            items(uiState.places) { place ->
+                                                PlaceListItem(
+                                                    place = place,
+                                                    isSelected = place == uiState.selectedPlace,
+                                                    isCurrent = place == uiState.currentPlace,
+                                                    onClick = { viewModel.selectPlace(place) }
+                                                )
+                                            }
                                         }
                                     }
+                                }
+                            }
+                        }
+                        
+                        // Floating action buttons
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Current location button
+                            if (uiState.userLocation != null) {
+                                FloatingActionButton(
+                                    onClick = { viewModel.centerOnUser() },
+                                    modifier = Modifier.size(48.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.LocationOn,
+                                        contentDescription = "Center on my location"
+                                    )
+                                }
+                            }
+                            
+                            // Refresh button
+                            FloatingActionButton(
+                                onClick = { viewModel.refreshMapData() },
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "Refresh map data"
+                                )
+                            }
+                        }
+                        
+                        // Real-time status indicator
+                        if (uiState.isTracking) {
+                            Card(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .background(
+                                                color = androidx.compose.ui.graphics.Color.Green,
+                                                shape = androidx.compose.foundation.shape.CircleShape
+                                            )
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Live Tracking",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
                         }
@@ -213,6 +289,7 @@ fun MapScreen(
 private fun PlaceListItem(
     place: Place,
     isSelected: Boolean,
+    isCurrent: Boolean = false,
     onClick: () -> Unit
 ) {
     Card(
@@ -221,31 +298,43 @@ private fun PlaceListItem(
             .padding(vertical = 4.dp),
         onClick = onClick,
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surface
+            containerColor = when {
+                isCurrent -> MaterialTheme.colorScheme.tertiaryContainer
+                isSelected -> MaterialTheme.colorScheme.primaryContainer
+                else -> MaterialTheme.colorScheme.surface
             }
         )
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp)
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = place.name,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = place.category.name,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = "${place.visitCount} visits",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = place.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = place.category.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "${place.visitCount} visits",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            if (isCurrent) {
+                Icon(
+                    Icons.Default.LocationOn,
+                    contentDescription = "Current location",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }

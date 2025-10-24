@@ -7,6 +7,7 @@ import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
 import com.cosmiclaboratory.voyager.domain.repository.VisitRepository
 import com.cosmiclaboratory.voyager.domain.repository.CurrentStateRepository
 import com.cosmiclaboratory.voyager.utils.LocationServiceManager
+import com.cosmiclaboratory.voyager.utils.ProductionLogger
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -21,7 +22,8 @@ class AnalyticsUseCases @Inject constructor(
     private val visitRepository: VisitRepository,
     private val currentStateRepository: CurrentStateRepository,
     private val locationServiceManager: LocationServiceManager,
-    private val placeUseCases: PlaceUseCases
+    private val placeUseCases: PlaceUseCases,
+    private val logger: ProductionLogger
 ) {
     
     companion object {
@@ -117,7 +119,7 @@ class AnalyticsUseCases @Inject constructor(
     
     suspend fun generateDayAnalytics(date: LocalDate): DayAnalytics {
         return try {
-            Log.d(TAG, "CRITICAL DEBUG: Generating day analytics for $date")
+            logger.d(TAG, "Generating day analytics for $date")
             
             val startTime = date.atStartOfDay()
             val endTime = date.plusDays(1).atStartOfDay()
@@ -126,25 +128,25 @@ class AnalyticsUseCases @Inject constructor(
                 locationRepository.getLocationsSince(startTime)
                     .filter { it.timestamp.isBefore(endTime) }
             } catch (e: Exception) {
-                Log.e(TAG, "CRITICAL ERROR: Failed to get locations for analytics", e)
+                logger.e(TAG, "Failed to get locations for analytics", e)
                 emptyList()
             }
             
             val visits = try {
                 visitRepository.getVisitsBetween(startTime, endTime).first()
             } catch (e: Exception) {
-                Log.e(TAG, "CRITICAL ERROR: Failed to get visits for analytics", e)
+                logger.e(TAG, "Failed to get visits for analytics", e)
                 emptyList()
             }
             
             val places = try {
                 placeRepository.getAllPlaces().first()
             } catch (e: Exception) {
-                Log.e(TAG, "CRITICAL ERROR: Failed to get places for analytics", e)
+                logger.e(TAG, "Failed to get places for analytics", e)
                 emptyList()
             }
             
-            Log.d(TAG, "CRITICAL DEBUG: Analytics data - ${locations.size} locations, ${visits.size} visits, ${places.size} places")
+            logger.d(TAG, "Analytics data - ${locations.size} locations, ${visits.size} visits, ${places.size} places")
             
             val placesVisited = visits.map { it.placeId }.distinct().size
             val distanceTraveled = calculateDistanceTraveled(locations)
@@ -163,7 +165,7 @@ class AnalyticsUseCases @Inject constructor(
                     timeByCategory[place.category] = 
                         (timeByCategory[place.category] ?: 0L) + duration
                     
-                    Log.d(TAG, "CRITICAL DEBUG: Visit duration calculated - placeId=${visit.placeId}, duration=${duration}ms")
+                    logger.d(TAG, "Visit duration calculated - placeId=${visit.placeId}, duration=${duration}ms")
                 }
             }
             
@@ -184,14 +186,16 @@ class AnalyticsUseCases @Inject constructor(
                 mostFrequentPlace = mostFrequentPlace
             )
             
-            Log.d(TAG, "CRITICAL DEBUG: Generated analytics - totalTime=${analytics.totalTimeTracked}ms, " +
-                "placesVisited=${analytics.placesVisited}, " +
-                "distance=${analytics.distanceTraveled}m")
+            logger.analytics(TAG, "DayAnalytics", mapOf(
+                "totalTime" to "${analytics.totalTimeTracked}ms",
+                "placesVisited" to analytics.placesVisited,
+                "distance" to "${analytics.distanceTraveled}m"
+            ))
             
             analytics
             
         } catch (e: Exception) {
-            Log.e(TAG, "CRITICAL ERROR: Failed to generate day analytics", e)
+            logger.e(TAG, "Failed to generate day analytics", e)
             // Return empty analytics on error
             DayAnalytics(
                 date = date,

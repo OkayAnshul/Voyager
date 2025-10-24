@@ -5,7 +5,9 @@
       "Bash(find:*)",
       "Bash(adb logcat:*)",
       "Bash(adb:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(sed:*)",
+      "WebSearch"
     ],
     "deny": [],
     "ask": []

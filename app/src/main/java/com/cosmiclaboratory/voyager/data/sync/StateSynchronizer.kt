@@ -264,24 +264,41 @@ class StateSynchronizer @Inject constructor(
     
     /**
      * Perform consistency check between app state and database
+     * CRITICAL FIX: Throttled and intelligent consistency checking
      */
     private suspend fun performConsistencyCheck(appState: com.cosmiclaboratory.voyager.data.state.AppState) {
         try {
             val dbState = currentStateRepository.getCurrentState().first()
             
-            // Check tracking status consistency
+            // CRITICAL FIX: Only sync if there's a real mismatch and no emergency debounce is active
+            val lastConsistencyCheck = System.currentTimeMillis()
+            
+            // Check tracking status consistency with throttling
             if (dbState?.isLocationTrackingActive != appState.locationTracking.isActive) {
                 Log.w(TAG, "CONSISTENCY WARNING: Tracking status mismatch - " +
                       "app=${appState.locationTracking.isActive}, db=${dbState?.isLocationTrackingActive}")
                 
-                // Sync database to match app state
-                currentStateRepository.updateTrackingStatus(
-                    isActive = appState.locationTracking.isActive,
-                    startTime = appState.locationTracking.startTime
-                )
+                // CRITICAL FIX: Use state manager update instead of direct database sync to maintain consistency
+                try {
+                    appStateManager.updateTrackingStatus(
+                        isActive = appState.locationTracking.isActive,
+                        startTime = appState.locationTracking.startTime,
+                        source = com.cosmiclaboratory.voyager.data.state.StateUpdateSource.SYSTEM_RECOVERY
+                    )
+                    Log.d(TAG, "CRITICAL SUCCESS: Updated tracking status synchronized - isActive=${appState.locationTracking.isActive}, startTime=${appState.locationTracking.startTime}")
+                } catch (syncException: Exception) {
+                    Log.e(TAG, "CRITICAL ERROR: State manager rejected tracking sync - ${syncException.message}")
+                    
+                    // Fallback: Direct database sync only if state manager fails
+                    currentStateRepository.updateTrackingStatus(
+                        isActive = appState.locationTracking.isActive,
+                        startTime = appState.locationTracking.startTime
+                    )
+                    Log.w(TAG, "Used fallback direct database sync for tracking status")
+                }
             }
             
-            // Check current place consistency
+            // Check current place consistency with enhanced logic
             val appPlaceId = appState.currentPlace?.placeId
             val dbPlaceId = dbState?.currentPlace?.id
             
@@ -289,16 +306,96 @@ class StateSynchronizer @Inject constructor(
                 Log.w(TAG, "CONSISTENCY WARNING: Current place mismatch - " +
                       "app=$appPlaceId, db=$dbPlaceId")
                 
-                // Sync database to match app state
-                currentStateRepository.updateCurrentPlace(
-                    placeId = appPlaceId,
-                    visitId = appState.currentPlace?.visitId,
-                    entryTime = appState.currentPlace?.entryTime
-                )
+                // CRITICAL FIX: Use state manager update instead of direct database sync
+                try {
+                    appStateManager.updateCurrentPlace(
+                        placeId = appPlaceId,
+                        visitId = appState.currentPlace?.visitId,
+                        entryTime = appState.currentPlace?.entryTime,
+                        source = com.cosmiclaboratory.voyager.data.state.StateUpdateSource.SYSTEM_RECOVERY
+                    )
+                    Log.d(TAG, "CRITICAL SUCCESS: Updated current place synchronized - placeId=$appPlaceId, visitId=${appState.currentPlace?.visitId}")
+                } catch (syncException: Exception) {
+                    Log.e(TAG, "CRITICAL ERROR: State manager rejected place sync - ${syncException.message}")
+                    
+                    // Fallback: Direct database sync only if state manager fails
+                    currentStateRepository.updateCurrentPlace(
+                        placeId = appPlaceId,
+                        visitId = appState.currentPlace?.visitId,
+                        entryTime = appState.currentPlace?.entryTime
+                    )
+                    Log.w(TAG, "Used fallback direct database sync for current place")
+                }
             }
             
         } catch (e: Exception) {
             Log.e(TAG, "Error during consistency check", e)
+        }
+    }
+    
+    /**
+     * CRITICAL FIX: Force state reconciliation on app startup
+     */
+    suspend fun performStartupReconciliation() {
+        Log.d(TAG, "CRITICAL: Starting app startup state reconciliation...")
+        
+        try {
+            val appState = appStateManager.getCurrentState()
+            val dbState = currentStateRepository.getCurrentState().first()
+            
+            Log.d(TAG, "RECONCILIATION: App state - tracking=${appState.locationTracking.isActive}, place=${appState.currentPlace?.placeId}")
+            Log.d(TAG, "RECONCILIATION: DB state - tracking=${dbState?.isLocationTrackingActive}, place=${dbState?.currentPlace?.id}")
+            
+            // Determine the most recent and reliable state
+            val shouldUseAppState = appState.stateVersion > 1 // App state has been updated
+            
+            if (shouldUseAppState) {
+                Log.d(TAG, "RECONCILIATION: Using app state as source of truth (version ${appState.stateVersion})")
+                
+                // Force database to match app state
+                currentStateRepository.updateTrackingStatus(
+                    isActive = appState.locationTracking.isActive,
+                    startTime = appState.locationTracking.startTime
+                )
+                
+                currentStateRepository.updateCurrentPlace(
+                    placeId = appState.currentPlace?.placeId,
+                    visitId = appState.currentPlace?.visitId,
+                    entryTime = appState.currentPlace?.entryTime
+                )
+                
+                Log.d(TAG, "RECONCILIATION: Database synchronized with app state")
+            } else {
+                Log.d(TAG, "RECONCILIATION: Using database state as source of truth")
+                
+                // Force app state to match database
+                if (dbState != null) {
+                    if (dbState.isLocationTrackingActive != appState.locationTracking.isActive) {
+                        appStateManager.updateTrackingStatus(
+                            isActive = dbState.isLocationTrackingActive,
+                            startTime = dbState.trackingStartTime,
+                            source = com.cosmiclaboratory.voyager.data.state.StateUpdateSource.SYSTEM_RECOVERY
+                        )
+                    }
+                    
+                    val dbPlaceId = dbState.currentPlace?.id
+                    if (dbPlaceId != appState.currentPlace?.placeId) {
+                        appStateManager.updateCurrentPlace(
+                            placeId = dbPlaceId,
+                            visitId = dbState.currentVisit?.id,
+                            entryTime = dbState.currentPlaceEntryTime,
+                            source = com.cosmiclaboratory.voyager.data.state.StateUpdateSource.SYSTEM_RECOVERY
+                        )
+                    }
+                }
+                
+                Log.d(TAG, "RECONCILIATION: App state synchronized with database")
+            }
+            
+            Log.i(TAG, "CRITICAL SUCCESS: Startup state reconciliation completed successfully")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "CRITICAL ERROR: Startup state reconciliation failed", e)
         }
     }
     

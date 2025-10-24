@@ -7,6 +7,10 @@ import com.cosmiclaboratory.voyager.data.mapper.toEntity
 import com.cosmiclaboratory.voyager.data.mapper.toEntities
 import com.cosmiclaboratory.voyager.domain.model.Location
 import com.cosmiclaboratory.voyager.domain.repository.LocationRepository
+import com.cosmiclaboratory.voyager.utils.ProductionLogger
+import com.cosmiclaboratory.voyager.utils.ErrorHandler
+import com.cosmiclaboratory.voyager.utils.ErrorContext
+import com.cosmiclaboratory.voyager.domain.exception.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.LocalDateTime
@@ -15,7 +19,9 @@ import javax.inject.Singleton
 
 @Singleton
 class LocationRepositoryImpl @Inject constructor(
-    private val locationDao: LocationDao
+    private val locationDao: LocationDao,
+    private val logger: ProductionLogger,
+    private val errorHandler: ErrorHandler
 ) : LocationRepository {
     
     override fun getRecentLocations(limit: Int): Flow<List<Location>> {
@@ -34,9 +40,17 @@ class LocationRepositoryImpl @Inject constructor(
     }
     
     override suspend fun getLocationCount(): Int {
-        val count = locationDao.getLocationCount()
-        android.util.Log.d("LocationRepository", "CRITICAL DEBUG: Total location count = $count")
-        return count
+        return errorHandler.executeWithErrorHandling(
+            operation = {
+                val count = locationDao.getLocationCount()
+                logger.d("LocationRepository", "Total location count = $count")
+                count
+            },
+            context = ErrorContext(
+                operation = "getLocationCount",
+                component = "LocationRepository"
+            )
+        ).getOrElse { 0 }
     }
     
     override suspend fun getLastLocation(): Location? {
@@ -44,9 +58,30 @@ class LocationRepositoryImpl @Inject constructor(
     }
     
     override suspend fun insertLocation(location: Location): Long {
-        val result = locationDao.insertLocation(location.toEntity())
-        android.util.Log.d("LocationRepository", "CRITICAL DEBUG: Location inserted - ID=$result, lat=${location.latitude}, lng=${location.longitude}")
-        return result
+        return errorHandler.executeWithErrorHandling(
+            operation = {
+                // Validate location before insertion
+                if (location.latitude == 0.0 && location.longitude == 0.0) {
+                    throw DataValidationException.LocationValidationException(
+                        "Invalid location coordinates: 0,0",
+                        recoveryAction = RecoveryAction.SKIP_INVALID_DATA
+                    )
+                }
+                
+                val result = locationDao.insertLocation(location.toEntity())
+                logger.d("LocationRepository", "Location inserted - ID=$result, lat=${location.latitude}, lng=${location.longitude}")
+                result
+            },
+            context = ErrorContext(
+                operation = "insertLocation",
+                component = "LocationRepository",
+                metadata = mapOf(
+                    "latitude" to location.latitude.toString(),
+                    "longitude" to location.longitude.toString(),
+                    "accuracy" to location.accuracy.toString()
+                )
+            )
+        ).getOrThrow()
     }
     
     override suspend fun insertLocations(locations: List<Location>) {
@@ -58,7 +93,18 @@ class LocationRepositoryImpl @Inject constructor(
     }
     
     override suspend fun deleteLocationsBefore(beforeDate: LocalDateTime): Int {
-        return locationDao.deleteLocationsBefore(beforeDate)
+        return errorHandler.executeWithErrorHandling(
+            operation = {
+                val count = locationDao.deleteLocationsBefore(beforeDate)
+                logger.d("LocationRepository", "Deleted $count locations before $beforeDate")
+                count
+            },
+            context = ErrorContext(
+                operation = "deleteLocationsBefore",
+                component = "LocationRepository",
+                metadata = mapOf("beforeDate" to beforeDate.toString())
+            )
+        ).getOrElse { 0 }
     }
     
     override suspend fun deleteAllLocations() {

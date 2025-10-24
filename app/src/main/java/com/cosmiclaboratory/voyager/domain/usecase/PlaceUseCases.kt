@@ -16,7 +16,8 @@ import javax.inject.Singleton
 class PlaceUseCases @Inject constructor(
     private val placeRepository: PlaceRepository,
     private val locationRepository: LocationRepository,
-    private val visitRepository: VisitRepository
+    private val visitRepository: VisitRepository,
+    private val geofenceRepository: com.cosmiclaboratory.voyager.domain.repository.GeofenceRepository
 ) {
     
     suspend fun detectPlacesFromLocations(): List<Place> {
@@ -164,6 +165,65 @@ class PlaceUseCases @Inject constructor(
         return placeIds.mapNotNull { placeId ->
             placeRepository.getPlaceById(placeId)
         }
+    }
+    
+    /**
+     * CRITICAL FIX: Automatically create geofences for new places
+     */
+    suspend fun createGeofenceForPlace(place: Place): Boolean {
+        return try {
+            val geofence = com.cosmiclaboratory.voyager.domain.model.Geofence(
+                name = "${place.name} Geofence",
+                latitude = place.latitude,
+                longitude = place.longitude,
+                radius = place.radius,
+                isActive = true,
+                enterAlert = true,
+                exitAlert = true,
+                placeId = place.id
+            )
+            
+            geofenceRepository.registerGeofence(geofence)
+        } catch (e: Exception) {
+            android.util.Log.e("PlaceUseCases", "Failed to create geofence for place ${place.id}", e)
+            false
+        }
+    }
+    
+    /**
+     * CRITICAL FIX: Automatically setup geofences for all existing places
+     */
+    suspend fun setupGeofencesForAllPlaces(): Int {
+        return try {
+            val places = placeRepository.getAllPlaces().first()
+            var successCount = 0
+            
+            places.forEach { place ->
+                if (createGeofenceForPlace(place)) {
+                    successCount++
+                }
+            }
+            
+            android.util.Log.d("PlaceUseCases", "Successfully created geofences for $successCount/${places.size} places")
+            successCount
+        } catch (e: Exception) {
+            android.util.Log.e("PlaceUseCases", "Failed to setup geofences for places", e)
+            0
+        }
+    }
+    
+    /**
+     * CRITICAL FIX: Enhanced place detection that includes geofence setup
+     */
+    suspend fun detectPlacesAndSetupGeofences(): List<Place> {
+        val detectedPlaces = detectPlacesFromLocations()
+        
+        // Automatically create geofences for newly detected places
+        detectedPlaces.forEach { place ->
+            createGeofenceForPlace(place)
+        }
+        
+        return detectedPlaces
     }
 }
 

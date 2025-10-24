@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -20,6 +21,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import com.cosmiclaboratory.voyager.MainActivity
 import com.cosmiclaboratory.voyager.R
+import com.cosmiclaboratory.voyager.VoyagerApplication
 import com.cosmiclaboratory.voyager.domain.model.Location
 import com.cosmiclaboratory.voyager.domain.repository.LocationRepository
 import com.cosmiclaboratory.voyager.domain.repository.PreferencesRepository
@@ -37,9 +39,22 @@ import java.util.Date
 import javax.inject.Inject
 import androidx.work.WorkManager
 import com.cosmiclaboratory.voyager.data.worker.PlaceDetectionWorker
+import com.cosmiclaboratory.voyager.utils.ProductionLogger
+import com.cosmiclaboratory.voyager.utils.logLocationProcessing
+import com.cosmiclaboratory.voyager.utils.ErrorHandler
+import com.cosmiclaboratory.voyager.utils.ErrorContext
+import com.cosmiclaboratory.voyager.domain.exception.*
+import com.cosmiclaboratory.voyager.data.event.StateEventDispatcher
+import com.cosmiclaboratory.voyager.data.event.LocationEvent
+import com.cosmiclaboratory.voyager.data.event.TrackingEvent
+import com.cosmiclaboratory.voyager.data.event.EventTypes
+import com.cosmiclaboratory.voyager.utils.WorkManagerHelper
+import com.cosmiclaboratory.voyager.utils.EnqueueResult
+import com.cosmiclaboratory.voyager.domain.usecase.PlaceDetectionUseCases
 
 @AndroidEntryPoint
 class LocationTrackingService : Service() {
+    
     
     @Inject
     lateinit var locationRepository: LocationRepository
@@ -59,7 +74,22 @@ class LocationTrackingService : Service() {
     @Inject
     lateinit var currentStateRepository: com.cosmiclaboratory.voyager.domain.repository.CurrentStateRepository
     
-    private var serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    @Inject
+    lateinit var logger: ProductionLogger
+    
+    @Inject
+    lateinit var eventDispatcher: StateEventDispatcher
+    
+    @Inject
+    lateinit var errorHandler: ErrorHandler
+    
+    @Inject
+    lateinit var workManagerHelper: WorkManagerHelper
+    
+    @Inject
+    lateinit var placeDetectionUseCases: PlaceDetectionUseCases
+    
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var isTracking = false
     private var isPaused = false
     private var locationCount = 0
@@ -70,7 +100,7 @@ class LocationTrackingService : Service() {
     private var stationaryStartTime: Long = 0
     private var isInStationaryMode = false
     private var locationsSinceLastDetection = 0
-    private var lastPlaceDetectionTime: Long = 0
+    private var lastPlaceDetectionTime: Long = System.currentTimeMillis() - (6 * 60 * 60 * 1000L) // Start 6 hours ago to enable immediate detection
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
     private var permissionCheckJob: Job? = null
     
@@ -79,13 +109,26 @@ class LocationTrackingService : Service() {
             super.onLocationResult(locationResult)
             
             locationResult.lastLocation?.let { androidLocation ->
-                serviceScope.launch {
-                    saveLocation(androidLocation)
+                // CRITICAL FIX: Check if scope is active before launching
+                if (serviceScope.isActive) {
+                    serviceScope.launch {
+                        try {
+                            saveLocation(androidLocation)
+                        } catch (e: CancellationException) {
+                            // Expected during service shutdown, don't log as error
+                            Log.d(TAG, "Location processing cancelled during service shutdown")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error saving location", e)
+                        }
+                    }
+                } else {
+                    Log.w(TAG, "Service scope not active, skipping location save")
                 }
             }
         }
     }
     
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -101,10 +144,17 @@ class LocationTrackingService : Service() {
         }
     }
     
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START_TRACKING -> startLocationTracking()
-            ACTION_STOP_TRACKING -> stopLocationTracking()
+            ACTION_START_TRACKING -> {
+                setServiceRunning(true)
+                startLocationTracking()
+            }
+            ACTION_STOP_TRACKING -> {
+                setServiceRunning(false)
+                stopLocationTracking()
+            }
             ACTION_PAUSE_TRACKING -> pauseLocationTracking()
             ACTION_RESUME_TRACKING -> resumeLocationTracking()
         }
@@ -113,6 +163,7 @@ class LocationTrackingService : Service() {
     
     override fun onBind(intent: Intent?): IBinder? = null
     
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun startLocationTracking() {
         if (isTracking) return
         
@@ -179,6 +230,34 @@ class LocationTrackingService : Service() {
                         Looper.getMainLooper()
                     )
                     isTracking = true
+                    
+                    // CRITICAL FIX: Update AppStateManager directly instead of using events to prevent circular dependencies
+                    serviceScope.launch {
+                        try {
+                            // Import the AppStateManager
+                            val appStateManager = applicationContext.let { context ->
+                                dagger.hilt.android.EntryPointAccessors
+                                    .fromApplication(context, com.cosmiclaboratory.voyager.di.StateEntryPoint::class.java)
+                                    .appStateManager()
+                            }
+                            appStateManager.updateTrackingStatus(
+                                isActive = true, 
+                                startTime = LocalDateTime.now(),
+                                source = com.cosmiclaboratory.voyager.data.state.StateUpdateSource.LOCATION_SERVICE
+                            )
+                            Log.d(TAG, "CRITICAL: AppStateManager updated directly - tracking started")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to update AppStateManager directly, fallback to event", e)
+                            // Fallback to event dispatch only if direct update fails
+                            val trackingEvent = TrackingEvent(
+                                type = EventTypes.TRACKING_STARTED,
+                                isActive = true,
+                                reason = "User started location tracking",
+                                source = "LocationTrackingService"
+                            )
+                            eventDispatcher.dispatchTrackingEvent(trackingEvent)
+                        }
+                    }
                     isPaused = false
                     updateNotification(getString(R.string.location_tracking_active))
                     Log.d(TAG, "Location tracking started successfully")
@@ -226,6 +305,34 @@ class LocationTrackingService : Service() {
         fusedLocationClient.removeLocationUpdates(locationCallback)
         isTracking = false
         
+        // CRITICAL FIX: Update AppStateManager directly instead of using events to prevent circular dependencies
+        serviceScope.launch {
+            try {
+                // Import the AppStateManager
+                val appStateManager = applicationContext.let { context ->
+                    dagger.hilt.android.EntryPointAccessors
+                        .fromApplication(context, com.cosmiclaboratory.voyager.di.StateEntryPoint::class.java)
+                        .appStateManager()
+                }
+                appStateManager.updateTrackingStatus(
+                    isActive = false,
+                    startTime = null,
+                    source = com.cosmiclaboratory.voyager.data.state.StateUpdateSource.LOCATION_SERVICE
+                )
+                Log.d(TAG, "CRITICAL: AppStateManager updated directly - tracking stopped")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to update AppStateManager directly, fallback to event", e)
+                // Fallback to event dispatch only if direct update fails
+                val trackingEvent = TrackingEvent(
+                    type = EventTypes.TRACKING_STOPPED,
+                    isActive = false,
+                    reason = "User stopped location tracking",
+                    source = "LocationTrackingService"
+                )
+                eventDispatcher.dispatchTrackingEvent(trackingEvent)
+            }
+        }
+        
         // Stop permission monitoring
         permissionCheckJob?.cancel()
         
@@ -242,60 +349,76 @@ class LocationTrackingService : Service() {
     private suspend fun saveLocation(androidLocation: AndroidLocation) {
         if (isPaused) return
         
-        try {
-            val startTime = System.currentTimeMillis()
-            
-            // Smart location filtering to prevent spam when stationary
-            if (!shouldSaveLocation(androidLocation)) {
-                Log.d(TAG, "CRITICAL DEBUG: Location filtered out - this may cause zero data! Accuracy=${androidLocation.accuracy}m")
-                return
-            }
-            
-            val location = Location(
-                latitude = androidLocation.latitude,
-                longitude = androidLocation.longitude,
-                timestamp = ApiCompatibilityUtils.getCurrentDateTime(),
-                accuracy = androidLocation.accuracy,
-                speed = if (androidLocation.hasSpeed()) androidLocation.speed else null,
-                altitude = if (androidLocation.hasAltitude()) androidLocation.altitude else null,
-                bearing = if (androidLocation.hasBearing()) androidLocation.bearing else null
+        errorHandler.executeWithErrorHandling(
+            operation = {
+                val startTime = System.currentTimeMillis()
+                
+                // Smart location filtering to prevent spam when stationary
+                if (!shouldSaveLocation(androidLocation)) {
+                    logger.d(TAG, "Location filtered - accuracy=${androidLocation.accuracy}m")
+                    return@executeWithErrorHandling Unit
+                }
+                
+                val location = Location(
+                    latitude = androidLocation.latitude,
+                    longitude = androidLocation.longitude,
+                    timestamp = ApiCompatibilityUtils.getCurrentDateTime(),
+                    accuracy = androidLocation.accuracy,
+                    speed = if (androidLocation.hasSpeed()) androidLocation.speed else null,
+                    altitude = if (androidLocation.hasAltitude()) androidLocation.altitude else null,
+                    bearing = if (androidLocation.hasBearing()) androidLocation.bearing else null
+                )
+                
+                logger.logLocationProcessing(TAG, location.latitude, location.longitude, location.accuracy)
+                
+                // CRITICAL: Dispatch location event for real-time updates
+                dispatchLocationEventSafely(location)
+                
+                withContext(Dispatchers.IO) {
+                    // Use SmartDataProcessor for intelligent location processing
+                    smartDataProcessor.processNewLocation(location)
+                }
+                
+                locationCount++
+                locationsSinceLastDetection++
+                lastLocationTime = System.currentTimeMillis()
+                lastSavedLocation = androidLocation
+                
+                val processingTime = System.currentTimeMillis() - startTime
+                logger.perf(TAG, "LocationProcessing", processingTime)
+                
+                // Update stationary detection and adapt location request if needed
+                val wasStationary = isInStationaryMode
+                updateStationaryMode(androidLocation)
+                
+                // If stationary mode changed, update location request for better performance
+                if (wasStationary != isInStationaryMode) {
+                    updateLocationRequestForStationaryMode()
+                }
+                
+                // Check if we should trigger automatic place detection
+                checkForAutomaticPlaceDetection()
+                
+                // Update notification based on user preferences
+                val updateFrequency = currentPreferences?.notificationUpdateFrequency ?: 10
+                if (locationCount % updateFrequency == 0) {
+                    val statusText = getString(R.string.locations_tracked, locationCount)
+                    updateNotification(statusText)
+                }
+                
+                Unit
+            },
+            context = ErrorContext(
+                operation = "saveLocation",
+                component = "LocationTrackingService",
+                metadata = mapOf(
+                    "latitude" to androidLocation.latitude.toString(),
+                    "longitude" to androidLocation.longitude.toString(),
+                    "accuracy" to androidLocation.accuracy.toString(),
+                    "locationCount" to locationCount.toString()
+                )
             )
-            
-            Log.d(TAG, "CRITICAL DEBUG: Processing location - lat=${location.latitude}, lng=${location.longitude}, accuracy=${location.accuracy}")
-            
-            withContext(Dispatchers.IO) {
-                // Use SmartDataProcessor for intelligent location processing
-                // This handles location validation, place proximity, visit management, and analytics
-                smartDataProcessor.processNewLocation(location)
-            }
-            locationCount++
-            locationsSinceLastDetection++
-            lastLocationTime = System.currentTimeMillis()
-            lastSavedLocation = androidLocation
-            
-            val processingTime = System.currentTimeMillis() - startTime
-            Log.d(TAG, "CRITICAL DEBUG: Location saved and processed in ${processingTime}ms, total count=${locationCount}")
-            
-            // Update stationary detection and adapt location request if needed
-            val wasStationary = isInStationaryMode
-            updateStationaryMode(androidLocation)
-            
-            // If stationary mode changed, update location request for better performance
-            if (wasStationary != isInStationaryMode) {
-                updateLocationRequestForStationaryMode()
-            }
-            
-            // Check if we should trigger automatic place detection
-            checkForAutomaticPlaceDetection()
-            
-            // Update notification based on user preferences
-            val updateFrequency = currentPreferences?.notificationUpdateFrequency ?: 10
-            if (locationCount % updateFrequency == 0) {
-                val statusText = getString(R.string.locations_tracked, locationCount)
-                updateNotification(statusText)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error saving location: ${e.message}", e)
+        ).onFailure {
             // Update notification to show error but don't crash the service
             updateNotification(getString(R.string.location_tracking_error))
         }
@@ -309,20 +432,15 @@ class LocationTrackingService : Service() {
     private fun shouldSaveLocation(newLocation: AndroidLocation): Boolean {
         val preferences = currentPreferences ?: return true
         
-        // DEBUG MODE: Save more locations during testing to diagnose zero data issues
-        val isDebugMode = true // TODO: Make this configurable via preferences
-        
         // Always save the first location
         val lastLocation = lastSavedLocation ?: return true
         
         val currentTime = System.currentTimeMillis()
         val timeSinceLastSave = currentTime - lastLocationTime
         
-        // 1. Basic accuracy filtering - MUCH more permissive for debugging
-        val maxAccuracyMeters = if (isDebugMode) {
-            200f // Very permissive during debug mode
-        } else if (isInStationaryMode) {
-            minOf(preferences.maxGpsAccuracyMeters, 100f) // Doubled threshold when stationary
+        // 1. Basic accuracy filtering with adaptive thresholds
+        val maxAccuracyMeters = if (isInStationaryMode) {
+            minOf(preferences.maxGpsAccuracyMeters, 100f) // More lenient when stationary
         } else {
             preferences.maxGpsAccuracyMeters
         }
@@ -337,20 +455,16 @@ class LocationTrackingService : Service() {
             newLocation.latitude, newLocation.longitude
         )
         
-        // 3. Movement-based filtering - MUCH more permissive for debugging
-        val minMovementThreshold = if (isDebugMode) {
-            5.0 // Very low threshold in debug mode - catch any movement
-        } else if (isInStationaryMode) {
-            maxOf(newLocation.accuracy * 1.5, 10.0) // Reduced from 15m to 10m when stationary
+        // 3. Movement-based filtering with adaptive thresholds
+        val minMovementThreshold = if (isInStationaryMode) {
+            maxOf(newLocation.accuracy * 1.5, 10.0) // More lenient when stationary
         } else {
             maxOf(preferences.getEffectiveMinDistance().toDouble(), newLocation.accuracy.toDouble())
         }
         
-        // 4. Time-based filtering - MUCH more permissive for debugging
-        val minTimeBetweenSaves = if (isDebugMode) {
-            10000L // Save every 10 seconds in debug mode
-        } else if (isInStationaryMode) {
-            preferences.minTimeBetweenUpdatesSeconds * 1000L * 2 // Reduced from 3x to 2x when stationary
+        // 4. Time-based filtering with adaptive intervals
+        val minTimeBetweenSaves = if (isInStationaryMode) {
+            preferences.minTimeBetweenUpdatesSeconds * 1000L * 2 // Longer intervals when stationary
         } else {
             preferences.minTimeBetweenUpdatesSeconds * 1000L // Use user setting when moving
         }
@@ -367,27 +481,21 @@ class LocationTrackingService : Service() {
         
         // 6. Enhanced decision logic - MUCH more permissive for debugging
         return when {
-            // DEBUG MODE: Save more frequently to diagnose data flow
-            isDebugMode && timeSinceLastSave >= minTimeBetweenSaves -> {
-                Log.d(TAG, "Location saved: debug mode time interval (${timeSinceLastSave / 1000}s, ${String.format("%.1f", distanceMoved)}m)")
-                true
-            }
-            
-            // Force save if it's been too long (prevents data gaps) - max 5 minutes in debug, 10 minutes normal
-            timeSinceLastSave > maxOf(minTimeBetweenSaves * (if (isDebugMode) 2 else 4), if (isDebugMode) 300000L else 600000L) -> {
-                Log.d(TAG, "Location saved: long time gap (${timeSinceLastSave / 1000}s)")
+            // Force save if it's been too long (prevents data gaps)
+            timeSinceLastSave > maxOf(minTimeBetweenSaves * 4, 600000L) -> {
+                logger.d(TAG, "Location saved: long time gap (${timeSinceLastSave / 1000}s)")
                 true
             }
             
             // Save if significant movement detected
             distanceMoved >= minMovementThreshold -> {
-                Log.d(TAG, "Location saved: significant movement (${String.format("%.1f", distanceMoved)}m)")
+                logger.d(TAG, "Location saved: significant movement (${String.format("%.1f", distanceMoved)}m)")
                 true
             }
             
-            // Save if minimum time has passed AND some movement (much more lenient in debug mode)
-            timeSinceLastSave >= minTimeBetweenSaves && distanceMoved >= (if (isDebugMode) 1.0 else 3.0) -> {
-                Log.d(TAG, "Location saved: time + movement (${timeSinceLastSave / 1000}s, ${String.format("%.1f", distanceMoved)}m)")
+            // Save if minimum time has passed AND some movement
+            timeSinceLastSave >= minTimeBetweenSaves && distanceMoved >= 3.0 -> {
+                logger.d(TAG, "Location saved: time + movement (${timeSinceLastSave / 1000}s, ${String.format("%.1f", distanceMoved)}m)")
                 true
             }
             
@@ -477,6 +585,7 @@ class LocationTrackingService : Service() {
         }
     }
     
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun createNotificationChannel() {
         if (!hasNotificationPermission()) {
             Log.w(TAG, "Notification permission not granted - notification channel creation skipped")
@@ -584,14 +693,29 @@ class LocationTrackingService : Service() {
             .addAction(pauseResumeAction)
             .addAction(stopAction)
         
-        // Add color and priority based on tracking state
-        if (isPaused) {
-            notificationBuilder.setColor(resources.getColor(android.R.color.holo_orange_dark, null))
-        } else {
-            notificationBuilder.setColor(resources.getColor(android.R.color.holo_green_dark, null))
+        // CRITICAL FIX: Add color and priority based on tracking state with null safety
+        try {
+            if (isPaused) {
+                notificationBuilder.setColor(resources.getColor(android.R.color.holo_orange_dark, null))
+            } else {
+                notificationBuilder.setColor(resources.getColor(android.R.color.holo_green_dark, null))
+            }
+        } catch (e: Exception) {
+            // If color setting fails, continue without color
+            Log.w(TAG, "Failed to set notification color", e)
         }
         
-        return notificationBuilder.build()
+        return try {
+            notificationBuilder.build()
+        } catch (e: Exception) {
+            Log.e(TAG, "CRITICAL: Failed to build notification", e)
+            // Return a simple fallback notification
+            NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+                .setContentTitle("Location Tracking")
+                .setContentText("Service running")
+                .setSmallIcon(R.drawable.ic_notification_location)
+                .build()
+        }
     }
     
     private fun updateNotification(status: String) {
@@ -611,6 +735,9 @@ class LocationTrackingService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         
+        Log.d(TAG, "CRITICAL: Service destroyed notification received")
+        setServiceRunning(false)
+        
         // Stop permission monitoring
         permissionCheckJob?.cancel()
         
@@ -620,11 +747,30 @@ class LocationTrackingService : Service() {
         }
         
         stopLocationTracking()
-        serviceScope.cancel()
+        
+        // CRITICAL FIX: Graceful scope cancellation to prevent JobCancellationException
+        try {
+            // Cancel scope but give time for ongoing operations to complete
+            serviceScope.launch {
+                delay(500) // Give 500ms for ongoing operations to finish
+                serviceScope.cancel()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error during graceful scope cancellation", e)
+            // Force cancel if graceful cancellation fails
+            serviceScope.cancel()
+        }
     }
     
     private fun startPermissionMonitoring() {
         permissionCheckJob?.cancel()
+        
+        // CRITICAL FIX: Check if scope is active before launching
+        if (!serviceScope.isActive) {
+            Log.w(TAG, "Service scope is not active, skipping permission monitoring")
+            return
+        }
+        
         permissionCheckJob = serviceScope.launch {
             while (isActive && isTracking) {
                 delay(60000) // Check every minute
@@ -756,33 +902,89 @@ class LocationTrackingService : Service() {
         val timeSinceLastDetection = currentTime - lastPlaceDetectionTime
         val hoursToMs = preferences.placeDetectionFrequencyHours * 60 * 60 * 1000L
         
-        // Trigger detection if either condition is met:
+        // CRITICAL FIX: More aggressive trigger logic for better place detection
         // 1. Enough new locations have been collected
         // 2. Enough time has passed since last detection
+        // 3. First detection after service restart (when lastPlaceDetectionTime is very old)
         val shouldTriggerByCount = locationsSinceLastDetection >= preferences.autoDetectTriggerCount
         val shouldTriggerByTime = timeSinceLastDetection >= hoursToMs && locationsSinceLastDetection > 0
+        val shouldTriggerFirstTime = timeSinceLastDetection > (24 * 60 * 60 * 1000L) && locationsSinceLastDetection >= 10 // First detection after 10 locations
         
-        if (shouldTriggerByCount || shouldTriggerByTime) {
-            Log.d(TAG, "Triggering automatic place detection: " +
+        if (shouldTriggerByCount || shouldTriggerByTime || shouldTriggerFirstTime) {
+            val triggerReason = when {
+                shouldTriggerFirstTime -> "first detection"
+                shouldTriggerByCount -> "location count"
+                shouldTriggerByTime -> "time elapsed"
+                else -> "unknown"
+            }
+            Log.d(TAG, "Triggering automatic place detection ($triggerReason): " +
                 "newLocations=$locationsSinceLastDetection (trigger=${preferences.autoDetectTriggerCount}), " +
                 "hours=${timeSinceLastDetection / (60 * 60 * 1000)} (trigger=${preferences.placeDetectionFrequencyHours})")
             
             serviceScope.launch {
+                enqueueWorkWithRetry(preferences, currentTime)
+            }
+        }
+    }
+    
+    /**
+     * Enqueue WorkManager tasks using centralized WorkManagerHelper
+     */
+     private suspend fun enqueueWorkWithRetry(preferences: UserPreferences, currentTime: Long) {
+        Log.d(TAG, "Enqueuing place detection work using WorkManagerHelper...")
+        
+        val result = workManagerHelper.enqueuePlaceDetectionWork(preferences, isOneTime = true)
+        
+        when (result) {
+            is EnqueueResult.Success -> {
+                // Success - reset counters
+                locationsSinceLastDetection = 0
+                lastPlaceDetectionTime = currentTime
+                Log.d(TAG, "Place detection work enqueued successfully: ${result.workId}")
+            }
+            is EnqueueResult.Failed -> {
+                Log.e(TAG, "WorkManager enqueue failed", result.exception)
+                
+                // FALLBACK: Try manual place detection as last resort
                 try {
-                    // Create one-time work request for place detection
-                    val workRequest = PlaceDetectionWorker.createOneTimeWorkRequest(preferences)
-                    val workManager = WorkManager.getInstance(this@LocationTrackingService)
-                    workManager.enqueue(workRequest)
+                    Log.w(TAG, "Attempting fallback manual place detection...")
+                    val newPlaces = placeDetectionUseCases.detectNewPlaces()
+                    Log.d(TAG, "Fallback manual place detection completed with ${newPlaces.size} places")
                     
-                    // Reset counters
+                    // Reset counters on successful manual detection
                     locationsSinceLastDetection = 0
                     lastPlaceDetectionTime = currentTime
-                    
-                    Log.d(TAG, "Place detection work enqueued successfully")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to enqueue place detection work", e)
+                } catch (fallbackException: Exception) {
+                    Log.e(TAG, "Fallback manual place detection also failed", fallbackException)
                 }
             }
+        }
+    }
+    
+    /**
+     * Dispatch location event with standardized error handling
+     */
+    private suspend fun dispatchLocationEventSafely(location: Location) {
+        errorHandler.executeWithErrorHandling(
+            operation = {
+                val locationEvent = LocationEvent(
+                    type = EventTypes.LOCATION_UPDATE,
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    accuracy = location.accuracy,
+                    speed = location.speed,
+                    source = "LocationTrackingService"
+                )
+                eventDispatcher.dispatchLocationEvent(locationEvent)
+                Unit
+            },
+            context = ErrorContext(
+                operation = "dispatchLocationEvent",
+                component = "LocationTrackingService"
+            )
+        ).onFailure {
+            // Continue processing even if event dispatch fails
+            Log.d(TAG, "Failed to dispatch location event but continuing processing")
         }
     }
     
@@ -790,14 +992,34 @@ class LocationTrackingService : Service() {
      * Update CurrentState tracking status to sync with service state
      */
     private fun updateCurrentStateTrackingStatus(isActive: Boolean) {
+        // CRITICAL FIX: Check if scope is active before launching to prevent JobCancellationException
+        if (!serviceScope.isActive) {
+            Log.w(TAG, "Service scope is not active, skipping state update")
+            return
+        }
+        
         serviceScope.launch {
             try {
-                val startTime = if (isActive) LocalDateTime.now() else null
-                currentStateRepository.updateTrackingStatus(isActive, startTime)
-                Log.d(TAG, "Updated CurrentState tracking status: isActive=$isActive")
+                errorHandler.executeWithErrorHandling(
+                    operation = {
+                        val startTime = if (isActive) LocalDateTime.now() else null
+                        currentStateRepository.updateTrackingStatus(isActive, startTime)
+                        Log.d(TAG, "Updated CurrentState tracking status: isActive=$isActive")
+                        Unit
+                },
+                context = ErrorContext(
+                    operation = "updateCurrentStateTrackingStatus",
+                    component = "LocationTrackingService",
+                    metadata = mapOf("isActive" to isActive.toString())
+                )
+                ).onFailure {
+                    Log.d(TAG, "Failed to update CurrentState tracking status but continuing service operation")
+                }
+            } catch (e: CancellationException) {
+                Log.w(TAG, "CRITICAL ERROR: Failed to update tracking status", e)
+                // Don't rethrow CancellationException as it's expected during service shutdown
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to update CurrentState tracking status", e)
-                // Don't crash the service for this
+                Log.e(TAG, "Unexpected error updating tracking status", e)
             }
         }
     }
@@ -811,5 +1033,21 @@ class LocationTrackingService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val NOTIFICATION_CHANNEL_ID = "location_tracking_channel"
         private const val TAG = "LocationTrackingService"
+        
+        // CRITICAL FIX: Static flag to track service running state reliably
+        @Volatile
+        private var serviceRunning = false
+        
+        /**
+         * Reliable method to check if service is running
+         * This replaces the deprecated getRunningServices() approach
+         */
+        @JvmStatic
+        fun isServiceRunning(): Boolean = serviceRunning
+        
+        private fun setServiceRunning(running: Boolean) {
+            serviceRunning = running
+            Log.d(TAG, "Service running state: $running")
+        }
     }
 }

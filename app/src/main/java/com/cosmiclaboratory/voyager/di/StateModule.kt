@@ -27,9 +27,10 @@ object StateModule {
     @Provides
     @Singleton
     fun provideAppStateManager(
-        eventDispatcher: StateEventDispatcher
+        eventDispatcher: StateEventDispatcher,
+        placeRepository: PlaceRepository
     ): AppStateManager {
-        return AppStateManager(eventDispatcher)
+        return AppStateManager(eventDispatcher, placeRepository)
     }
     
     @Provides

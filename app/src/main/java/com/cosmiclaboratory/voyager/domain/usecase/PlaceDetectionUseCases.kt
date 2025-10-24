@@ -7,6 +7,10 @@ import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
 import com.cosmiclaboratory.voyager.domain.repository.PreferencesRepository
 import com.cosmiclaboratory.voyager.domain.repository.VisitRepository
 import com.cosmiclaboratory.voyager.utils.LocationUtils
+import com.cosmiclaboratory.voyager.utils.ErrorHandler
+import com.cosmiclaboratory.voyager.utils.ErrorContext
+import com.cosmiclaboratory.voyager.domain.exception.*
+import com.cosmiclaboratory.voyager.domain.validation.ValidationService
 import kotlinx.coroutines.flow.first
 import java.time.DayOfWeek
 import java.time.LocalDateTime
@@ -18,48 +22,133 @@ class PlaceDetectionUseCases @Inject constructor(
     private val locationRepository: LocationRepository,
     private val placeRepository: PlaceRepository,
     private val visitRepository: VisitRepository,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val errorHandler: ErrorHandler,
+    private val validationService: ValidationService
 ) {
     
     companion object {
         private const val TAG = "PlaceDetectionUseCases"
     }
     
-    suspend fun detectNewPlaces(): List<Place> {
-        val preferences = preferencesRepository.getCurrentPreferences()
-        Log.d(TAG, "Starting place detection with preferences: " +
-            "placeDetectionEnabled=${preferences.enablePlaceDetection}, " +
-            "maxAccuracy=${preferences.maxGpsAccuracyMeters}m, " +
-            "maxSpeed=${preferences.maxSpeedKmh}km/h")
-        
-        if (!preferences.enablePlaceDetection) {
-            Log.d(TAG, "Place detection is disabled in preferences")
-            return emptyList()
+    /**
+     * Debug function to manually trigger place detection with comprehensive logging
+     * This bypasses WorkManager and runs place detection immediately
+     */
+    suspend fun debugManualPlaceDetection(): String {
+        return try {
+            Log.i(TAG, "=== DEBUG MANUAL PLACE DETECTION STARTED ===")
+            
+            val preferences = preferencesRepository.getCurrentPreferences()
+            Log.i(TAG, "Current preferences: enablePlaceDetection=${preferences.enablePlaceDetection}")
+            
+            val totalLocations = locationRepository.getRecentLocations(Int.MAX_VALUE).first().size
+            Log.i(TAG, "Total locations in database: $totalLocations")
+            
+            val existingPlaces = placeRepository.getAllPlaces().first()
+            Log.i(TAG, "Existing places in database: ${existingPlaces.size}")
+            
+            // Force place detection even if disabled
+            val originalEnabled = preferences.enablePlaceDetection
+            val testPreferences = preferences.copy(enablePlaceDetection = true)
+            
+            val detectedPlaces = detectNewPlacesInternal(testPreferences)
+            
+            val result = """
+                DEBUG PLACE DETECTION RESULTS:
+                - Total locations: $totalLocations
+                - Existing places: ${existingPlaces.size}
+                - Places detected: ${detectedPlaces.size}
+                - Place detection enabled: $originalEnabled
+                - Detection forced: ${!originalEnabled}
+            """.trimIndent()
+            
+            Log.i(TAG, result)
+            Log.i(TAG, "=== DEBUG MANUAL PLACE DETECTION COMPLETED ===")
+            
+            result
+        } catch (e: Exception) {
+            val errorResult = "DEBUG PLACE DETECTION FAILED: ${e.message}"
+            Log.e(TAG, errorResult, e)
+            errorResult
         }
+    }
+    
+    suspend fun detectNewPlaces(): List<Place> {
+        return errorHandler.executeWithErrorHandling(
+            operation = {
+                Log.i(TAG, "=== PLACE DETECTION STARTED ===")
+                val startTime = System.currentTimeMillis()
+                
+                val preferences = preferencesRepository.getCurrentPreferences()
+                Log.i(TAG, "PREFERENCES: placeDetectionEnabled=${preferences.enablePlaceDetection}, " +
+                    "maxAccuracy=${preferences.maxGpsAccuracyMeters}m, " +
+                    "maxSpeed=${preferences.maxSpeedKmh}km/h, " +
+                    "triggerCount=${preferences.autoDetectTriggerCount}")
+                
+                if (!preferences.enablePlaceDetection) {
+                    Log.w(TAG, "CRITICAL: Place detection is DISABLED in preferences - no places will be detected!")
+                    return@executeWithErrorHandling emptyList<Place>()
+                }
+                
+                val result = detectNewPlacesInternal(preferences)
+                val duration = System.currentTimeMillis() - startTime
+                
+                Log.i(TAG, "=== PLACE DETECTION COMPLETED in ${duration}ms: ${result.size} places detected ===")
+                if (result.isEmpty()) {
+                    Log.w(TAG, "WARNING: No places detected - check location quality and clustering parameters")
+                }
+                
+                result
+            },
+            context = ErrorContext(
+                operation = "detectNewPlaces", 
+                component = "PlaceDetectionUseCases"
+            )
+        ).getOrElse { 
+            Log.e(TAG, "CRITICAL: Place detection failed with exception")
+            emptyList() 
+        }
+    }
+    
+    private suspend fun detectNewPlacesInternal(preferences: UserPreferences): List<Place> {
         
         // Limit processing to prevent OOM on older devices
         val maxLocationsToProcess = minOf(preferences.maxLocationsToProcess, 5000)
         val recentLocations = locationRepository.getRecentLocations(maxLocationsToProcess).first()
-        Log.d(TAG, "Retrieved ${recentLocations.size} recent locations for processing (limited to $maxLocationsToProcess)")
+        Log.i(TAG, "STEP 1: Retrieved ${recentLocations.size} recent locations for processing (limited to $maxLocationsToProcess)")
         
         if (recentLocations.isEmpty()) {
-            Log.d(TAG, "No recent locations found")
+            Log.e(TAG, "CRITICAL: No recent locations found in database - cannot detect places!")
             return emptyList()
+        }
+        
+        // Debug: Show sample of locations
+        val sampleSize = minOf(3, recentLocations.size)
+        recentLocations.take(sampleSize).forEachIndexed { index, location ->
+            Log.d(TAG, "Sample location ${index + 1}: lat=${location.latitude}, lng=${location.longitude}, " +
+                "accuracy=${location.accuracy}m, speed=${location.speed}km/h, time=${location.timestamp}")
         }
         
         // Process in batches to manage memory usage
         val batchSize = preferences.dataProcessingBatchSize.coerceIn(100, 1000)
         val allFilteredLocations = mutableListOf<Location>()
         
-        recentLocations.chunked(batchSize).forEach { batch ->
+        Log.i(TAG, "STEP 2: Quality filtering ${recentLocations.size} locations in batches of $batchSize")
+        recentLocations.chunked(batchSize).forEachIndexed { batchIndex, batch ->
             val filteredBatch = filterLocationsByQuality(batch, preferences)
             allFilteredLocations.addAll(filteredBatch)
+            Log.d(TAG, "Batch ${batchIndex + 1}: ${batch.size} → ${filteredBatch.size} locations passed filtering")
         }
         
-        Log.d(TAG, "Filtered to ${allFilteredLocations.size} quality locations (${recentLocations.size - allFilteredLocations.size} removed)")
+        val removedCount = recentLocations.size - allFilteredLocations.size
+        Log.i(TAG, "STEP 2 RESULT: ${allFilteredLocations.size} quality locations (${removedCount} removed by filtering)")
         
         if (allFilteredLocations.isEmpty()) {
-            Log.d(TAG, "No locations passed quality filtering")
+            Log.e(TAG, "CRITICAL: No locations passed quality filtering! Check filtering criteria:")
+            Log.e(TAG, "  - maxAccuracy: ${preferences.maxGpsAccuracyMeters}m")
+            Log.e(TAG, "  - maxSpeed: ${preferences.maxSpeedKmh}km/h") 
+            Log.e(TAG, "  - Consider relaxing quality filters or check location data quality")
             return emptyList()
         }
         
@@ -72,12 +161,31 @@ class PlaceDetectionUseCases @Inject constructor(
         }
         
         val locationPairs = locationsToCluster.map { it.latitude to it.longitude }
+        Log.i(TAG, "STEP 3: Starting DBSCAN clustering on ${locationPairs.size} location points")
+        Log.i(TAG, "CLUSTERING PARAMETERS: distance=${preferences.clusteringDistanceMeters}m, minPoints=${preferences.minPointsForCluster}")
+        
         val clusters = LocationUtils.clusterLocationsWithPreferences(locationPairs, preferences)
-        Log.d(TAG, "Found ${clusters.size} location clusters using DBSCAN with " +
-            "distance=${preferences.clusteringDistanceMeters}m, " +
-            "minPoints=${preferences.minPointsForCluster}")
+        Log.i(TAG, "STEP 3 RESULT: Found ${clusters.size} location clusters using DBSCAN")
+        
+        if (clusters.isEmpty()) {
+            Log.e(TAG, "CRITICAL: No clusters found! Possible causes:")
+            Log.e(TAG, "  - Clustering distance too small (${preferences.clusteringDistanceMeters}m)")
+            Log.e(TAG, "  - MinPoints too high (${preferences.minPointsForCluster})")
+            Log.e(TAG, "  - Locations too spread out")
+            Log.e(TAG, "  - Consider reducing clusteringDistanceMeters or minPointsForCluster")
+            return emptyList()
+        }
+        
+        // Log cluster details for debugging
+        clusters.forEachIndexed { index, cluster ->
+            val centerLat = cluster.map { it.first }.average()
+            val centerLng = cluster.map { it.second }.average()
+            Log.d(TAG, "Cluster ${index + 1}: ${cluster.size} points at (${String.format("%.6f", centerLat)}, ${String.format("%.6f", centerLng)})")
+        }
         
         val newPlaces = mutableListOf<Place>()
+        
+        Log.i(TAG, "STEP 4: Processing ${clusters.size} clusters for place creation...")
         
         // Process clusters in batches to manage memory and database operations
         clusters.chunked(10).forEach { clusterBatch ->
@@ -90,7 +198,27 @@ class PlaceDetectionUseCases @Inject constructor(
                         centerLat, centerLng, preferences.placeDetectionRadius / 1000.0 // Convert to km
                     )
                     
-                    if (nearbyPlaces.isEmpty()) {
+                    // CRITICAL FIX: Check distance to existing places and only skip if too close
+                    val minDistanceToExisting = nearbyPlaces.minOfOrNull { existingPlace ->
+                        LocationUtils.calculateDistance(
+                            existingPlace.latitude, existingPlace.longitude,
+                            centerLat, centerLng
+                        )
+                    } ?: Double.MAX_VALUE
+                    
+                    // Only create new place if far enough from existing places (minimum 25 meters)
+                    val minimumDistanceBetweenPlaces = 25.0 // meters
+                    val shouldCreatePlace = minDistanceToExisting >= minimumDistanceBetweenPlaces
+                    
+                    if (shouldCreatePlace) {
+                        Log.d(TAG, "CLUSTER ANALYSIS: Creating place at ($centerLat, $centerLng). " +
+                            "Distance to nearest existing place: ${String.format("%.1f", minDistanceToExisting)}m")
+                    } else {
+                        Log.d(TAG, "CLUSTER SKIPPED: Too close to existing place " +
+                            "(${String.format("%.1f", minDistanceToExisting)}m < ${minimumDistanceBetweenPlaces}m)")
+                    }
+                    
+                    if (shouldCreatePlace) {
                         val locationsInCluster = allFilteredLocations.filter { location ->
                             cluster.any { clusterPoint ->
                                 LocationUtils.calculateDistance(
@@ -115,13 +243,39 @@ class PlaceDetectionUseCases @Inject constructor(
                                 confidence = calculateConfidence(locationsInCluster, category, preferences)
                             )
                             
-                            val placeId = placeRepository.insertPlace(place)
-                            newPlaces.add(place.copy(id = placeId))
-                            Log.d(TAG, "Created new place: $placeName at ($centerLat, $centerLng) " +
-                                "with confidence ${String.format("%.2f", place.confidence)} and ${locationsInCluster.size} locations")
-                            
-                            // Create initial visit records for this place
-                            createInitialVisits(placeId, locationsInCluster, preferences)
+                            // CRITICAL FIX: Robust place creation with error recovery
+                            try {
+                                val placeId = placeRepository.insertPlace(place)
+                                newPlaces.add(place.copy(id = placeId))
+                                Log.d(TAG, "Created new place: $placeName at ($centerLat, $centerLng) " +
+                                    "with confidence ${String.format("%.2f", place.confidence)} and ${locationsInCluster.size} locations")
+                                
+                                // Create initial visit records for this place with error recovery
+                                try {
+                                    createInitialVisits(placeId, locationsInCluster, preferences)
+                                    Log.d(TAG, "Successfully created initial visits for place $placeName")
+                                } catch (visitException: Exception) {
+                                    Log.w(TAG, "Failed to create initial visits for place $placeName - place created but no visits", visitException)
+                                    // Place creation succeeded, visit creation failed - this is acceptable
+                                }
+                            } catch (placeException: Exception) {
+                                Log.e(TAG, "CRITICAL ERROR: Failed to create place $placeName at ($centerLat, $centerLng)", placeException)
+                                
+                                // Try alternative place creation strategy
+                                try {
+                                    val simplifiedPlace = place.copy(
+                                        name = "Place ${System.currentTimeMillis() % 10000}",
+                                        category = PlaceCategory.UNKNOWN,
+                                        confidence = 0.5f
+                                    )
+                                    val fallbackPlaceId = placeRepository.insertPlace(simplifiedPlace)
+                                    newPlaces.add(simplifiedPlace.copy(id = fallbackPlaceId))
+                                    Log.w(TAG, "Created simplified fallback place with ID $fallbackPlaceId")
+                                } catch (fallbackException: Exception) {
+                                    Log.e(TAG, "CRITICAL: Even fallback place creation failed", fallbackException)
+                                    // Continue processing other clusters instead of failing completely
+                                }
+                            }
                         }
                     }
                 } catch (e: Exception) {

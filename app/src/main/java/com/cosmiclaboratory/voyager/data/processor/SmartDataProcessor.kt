@@ -10,6 +10,14 @@ import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
 import com.cosmiclaboratory.voyager.domain.repository.VisitRepository
 import com.cosmiclaboratory.voyager.domain.usecase.PlaceDetectionUseCases
 import com.cosmiclaboratory.voyager.utils.LocationUtils
+import com.cosmiclaboratory.voyager.utils.ProductionLogger
+import com.cosmiclaboratory.voyager.utils.logDailyStats
+import com.cosmiclaboratory.voyager.utils.ErrorHandler
+import com.cosmiclaboratory.voyager.utils.ErrorContext
+import com.cosmiclaboratory.voyager.domain.exception.*
+import com.cosmiclaboratory.voyager.domain.validation.ValidationService
+import com.cosmiclaboratory.voyager.data.state.AppStateManager
+import com.cosmiclaboratory.voyager.data.state.StateUpdateSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,7 +34,11 @@ class SmartDataProcessor @Inject constructor(
     private val placeRepository: PlaceRepository,
     private val visitRepository: VisitRepository,
     private val currentStateRepository: CurrentStateRepository,
-    private val placeDetectionUseCases: PlaceDetectionUseCases
+    private val placeDetectionUseCases: PlaceDetectionUseCases,
+    private val logger: ProductionLogger,
+    private val appStateManager: AppStateManager,
+    private val errorHandler: ErrorHandler,
+    private val validationService: ValidationService
 ) {
     
     companion object {
@@ -42,129 +54,157 @@ class SmartDataProcessor @Inject constructor(
      * This is called by LocationTrackingService for each new location
      */
     suspend fun processNewLocation(location: Location) {
-        try {
-            Log.d(TAG, "Processing new location: ${location.latitude}, ${location.longitude}")
-            
-            // 0. Ensure current state is initialized
-            if (!ensureCurrentStateInitialized()) {
-                Log.e(TAG, "Failed to initialize current state, aborting location processing")
-                return
-            }
-            
-            // 1. Validate and store location
-            val isValid = validateLocation(location)
-            if (!isValid) {
-                Log.d(TAG, "Location validation failed, skipping processing")
-                return
-            }
-            
-            // 2. Store location first
-            locationRepository.insertLocation(location)
-            Log.d(TAG, "Location stored successfully")
-            
-            // 3. Update current state with latest location time
-            try {
-                currentStateRepository.updateLastLocationTime(location.timestamp)
-                Log.d(TAG, "Current state updated with location time")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to update current state location time", e)
-                // Continue processing even if this fails
-            }
-            
-            // 4. Check for place proximity and visit management
-            checkPlaceProximityAndManageVisits(location)
-            
-            // 5. Update daily statistics
-            updateDailyStatistics()
-            
-            // 6. Check for automatic triggers (place detection, etc.)
-            checkAutomaticTriggers(location)
-            
-            Log.d(TAG, "Location processing completed successfully")
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Error processing location", e)
-            // Don't re-throw to prevent crashing the location service
+        errorHandler.executeWithErrorHandling(
+            operation = {
+                Log.d(TAG, "Processing new location: ${location.latitude}, ${location.longitude}")
+                
+                // 0. Ensure current state is initialized
+                ensureCurrentStateInitializedSafely()
+                
+                // 1. Validate and store location
+                validateLocationSafely(location)
+                
+                // 2. Store location first
+                storeLocationSafely(location)
+                
+                // 3. Update current state with latest location time
+                updateLocationTimeSafely(location)
+                
+                // 4. Check for place proximity and visit management
+                checkPlaceProximityAndManageVisits(location)
+                
+                // 5. Update daily statistics
+                updateDailyStatistics()
+                
+                // 6. Check for automatic triggers (place detection, etc.)
+                checkAutomaticTriggers(location)
+                
+                Log.d(TAG, "Location processing completed successfully")
+                Unit
+            },
+            context = ErrorContext(
+                operation = "processNewLocation",
+                component = "SmartDataProcessor",
+                userId = null,
+                metadata = mapOf(
+                    "latitude" to location.latitude.toString(),
+                    "longitude" to location.longitude.toString(),
+                    "accuracy" to location.accuracy.toString()
+                )
+            )
+        ).getOrElse {
+            // Error already handled by ErrorHandler, just log and continue
+            Log.d(TAG, "Location processing failed but was handled gracefully")
         }
     }
     
     /**
      * Ensure current state is initialized before processing
-     * CRITICAL FIX: Robust auto-recovery and validation
+     * CRITICAL FIX: Robust auto-recovery and validation with standardized error handling
      */
-    private suspend fun ensureCurrentStateInitialized(): Boolean {
-        return try {
-            var currentState = currentStateRepository.getCurrentStateSync()
-            if (currentState == null) {
-                Log.w(TAG, "CRITICAL DEBUG: Current state not found, initializing...")
-                currentStateRepository.initializeState()
-                
-                // Verify initialization worked with retries
-                var retryCount = 0
-                while (retryCount < 3) {
-                    currentState = currentStateRepository.getCurrentStateSync()
-                    if (currentState != null) {
-                        Log.d(TAG, "CRITICAL DEBUG: Current state initialized successfully after ${retryCount + 1} attempts")
-                        break
-                    }
-                    retryCount++
-                    Log.w(TAG, "CRITICAL DEBUG: State initialization attempt $retryCount failed, retrying...")
-                    kotlinx.coroutines.delay(100) // Short delay before retry
-                }
-                
+    private suspend fun ensureCurrentStateInitializedSafely() {
+        errorHandler.executeWithErrorHandling(
+            operation = {
+                var currentState = currentStateRepository.getCurrentStateSync()
                 if (currentState == null) {
-                    Log.e(TAG, "CRITICAL ERROR: Current state initialization failed after 3 attempts!")
-                    return false
+                    logger.w(TAG, "Current state not found, initializing...")
+                    currentStateRepository.initializeState()
+                    
+                    // Verify initialization worked with retries
+                    var retryCount = 0
+                    while (retryCount < 3) {
+                        currentState = currentStateRepository.getCurrentStateSync()
+                        if (currentState != null) {
+                            logger.i(TAG, "Current state initialized successfully after ${retryCount + 1} attempts")
+                            break
+                        }
+                        retryCount++
+                        logger.w(TAG, "State initialization attempt $retryCount failed, retrying...")
+                        kotlinx.coroutines.delay(100)
+                    }
+                    
+                    if (currentState == null) {
+                        throw DatabaseException.StateInitializationException(
+                            "Current state initialization failed after 3 attempts",
+                            recoveryAction = RecoveryAction.REINITIALIZE_STATE
+                        )
+                    }
                 }
-            }
-            
-            // Validate state integrity
-            if (currentState.id != 1) {
-                Log.w(TAG, "CRITICAL DEBUG: Invalid state ID detected, recovering...")
-                currentStateRepository.initializeState()
-            }
-            
-            Log.d(TAG, "CRITICAL DEBUG: Current state validation passed - tracking=${currentState.isLocationTrackingActive}")
-            true
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "CRITICAL ERROR: Failed to ensure current state initialization", e)
-            // Final attempt at recovery
-            try {
-                currentStateRepository.initializeState()
-                true
-            } catch (e2: Exception) {
-                Log.e(TAG, "CRITICAL ERROR: Final state recovery attempt failed", e2)
-                false
-            }
-        }
+                
+                // Validate state integrity
+                if (currentState.id != 1) {
+                    logger.w(TAG, "Invalid state ID detected, recovering...")
+                    currentStateRepository.initializeState()
+                }
+                
+                logger.d(TAG, "Current state validation passed - tracking=${currentState.isLocationTrackingActive}")
+                Unit
+            },
+            context = ErrorContext(
+                operation = "ensureCurrentStateInitialized",
+                component = "SmartDataProcessor"
+            )
+        ).getOrThrow()
     }
     
     /**
-     * Validate location quality and accuracy
+     * Validate location quality and accuracy using ValidationService
      */
-    private fun validateLocation(location: Location): Boolean {
-        // Check accuracy
-        if (location.accuracy > 200f) {
-            Log.d(TAG, "Location accuracy too poor: ${location.accuracy}m")
-            return false
+    private suspend fun validateLocationSafely(location: Location) {
+        validationService.validateLocation(
+            location = location,
+            context = ErrorContext(
+                operation = "validateLocation",
+                component = "SmartDataProcessor",
+                metadata = mapOf(
+                    "latitude" to location.latitude.toString(),
+                    "longitude" to location.longitude.toString(),
+                    "accuracy" to location.accuracy.toString(),
+                    "timestamp" to location.timestamp.toString()
+                )
+            )
+        ).getOrThrow()
+    }
+    
+    /**
+     * Store location with standardized error handling
+     */
+    private suspend fun storeLocationSafely(location: Location) {
+        errorHandler.executeWithErrorHandling(
+            operation = {
+                locationRepository.insertLocation(location)
+                Log.d(TAG, "Location stored successfully")
+                Unit
+            },
+            context = ErrorContext(
+                operation = "storeLocation",
+                component = "SmartDataProcessor",
+                metadata = mapOf(
+                    "latitude" to location.latitude.toString(),
+                    "longitude" to location.longitude.toString()
+                )
+            )
+        ).getOrThrow()
+    }
+    
+    /**
+     * Update location time with standardized error handling
+     */
+    private suspend fun updateLocationTimeSafely(location: Location) {
+        errorHandler.executeWithErrorHandling(
+            operation = {
+                currentStateRepository.updateLastLocationTime(location.timestamp)
+                Log.d(TAG, "Current state updated with location time")
+                Unit
+            },
+            context = ErrorContext(
+                operation = "updateLocationTime",
+                component = "SmartDataProcessor"
+            )
+        ).onFailure {
+            // Continue processing even if this fails
+            Log.d(TAG, "Failed to update location time but continuing processing")
         }
-        
-        // Check for reasonable coordinates
-        if (location.latitude == 0.0 && location.longitude == 0.0) {
-            Log.d(TAG, "Invalid coordinates: 0,0")
-            return false
-        }
-        
-        // Check timestamp is reasonable
-        val now = LocalDateTime.now()
-        val timeDiff = java.time.Duration.between(location.timestamp, now).abs().toMinutes()
-        if (timeDiff > 60) { // More than 1 hour difference
-            Log.d(TAG, "Location timestamp too old or future: ${location.timestamp}")
-            return false
-        }
-        
-        return true
     }
     
     /**
@@ -259,13 +299,25 @@ class SmartDataProcessor @Inject constructor(
             val visitId = visitRepository.startVisit(place.id, timestamp)
             Log.d(TAG, "Created visit with ID: $visitId")
             
-            // Update current state with place and visit info
-            currentStateRepository.updateCurrentPlace(
+            // CRITICAL: Update app state manager first for place transition
+            val stateResult = appStateManager.updateCurrentPlace(
                 placeId = place.id,
                 visitId = visitId,
-                entryTime = timestamp
+                entryTime = timestamp,
+                source = StateUpdateSource.SMART_PROCESSOR
             )
-            Log.d(TAG, "Updated current state with place and visit")
+            
+            if (stateResult is com.cosmiclaboratory.voyager.data.state.StateUpdateResult.Success) {
+                // Update repository after state manager confirms
+                currentStateRepository.updateCurrentPlace(
+                    placeId = place.id,
+                    visitId = visitId,
+                    entryTime = timestamp
+                )
+                logger.i(TAG, "Updated current place via state manager: ${place.name}")
+            } else {
+                logger.e(TAG, "State manager rejected place update for: ${place.name}")
+            }
             
             // Verify state was updated
             val updatedState = currentStateRepository.getCurrentStateSync()
@@ -297,9 +349,21 @@ class SmartDataProcessor @Inject constructor(
                 Log.d(TAG, "No current visit found to end")
             }
             
-            // Clear current place state
-            currentStateRepository.clearCurrentPlace()
-            Log.d(TAG, "Cleared current place state")
+            // CRITICAL: Clear current place via state manager first
+            val stateResult = appStateManager.updateCurrentPlace(
+                placeId = null,
+                visitId = null,
+                entryTime = null,
+                source = StateUpdateSource.SMART_PROCESSOR
+            )
+            
+            if (stateResult is com.cosmiclaboratory.voyager.data.state.StateUpdateResult.Success) {
+                // Clear repository after state manager confirms
+                currentStateRepository.clearCurrentPlace()
+                logger.i(TAG, "Cleared current place via state manager")
+            } else {
+                logger.e(TAG, "State manager rejected place clearing")
+            }
             
             // Verify state was cleared
             val updatedState = currentStateRepository.getCurrentStateSync()
@@ -340,19 +404,30 @@ class SmartDataProcessor @Inject constructor(
                 }
             }
             
-            Log.d(TAG, "CRITICAL DEBUG: Daily stats - locations=$locationsToday, places=$placesVisitedToday, time=${totalTimeToday}ms")
+            logger.logDailyStats(TAG, locationsToday, placesVisitedToday, totalTimeToday)
             
-            // Update current state
-            currentStateRepository.updateDailyStats(
+            // CRITICAL: Update app state manager first for consistency
+            val stateResult = appStateManager.updateDailyStats(
                 locationCount = locationsToday,
                 placeCount = placesVisitedToday,
-                timeTracked = totalTimeToday
+                timeTracked = totalTimeToday,
+                source = StateUpdateSource.SMART_PROCESSOR
             )
             
-            Log.d(TAG, "CRITICAL DEBUG: Daily stats updated successfully")
+            if (stateResult is com.cosmiclaboratory.voyager.data.state.StateUpdateResult.Success) {
+                // Update repository after state manager confirms
+                currentStateRepository.updateDailyStats(
+                    locationCount = locationsToday,
+                    placeCount = placesVisitedToday,
+                    timeTracked = totalTimeToday
+                )
+                logger.i(TAG, "Daily stats updated successfully via state manager")
+            } else {
+                logger.e(TAG, "State manager rejected daily stats update")
+            }
             
         } catch (e: Exception) {
-            Log.e(TAG, "CRITICAL ERROR: Failed to update daily statistics - this causes zero data!", e)
+            logger.e(TAG, "Failed to update daily statistics", e)
         }
     }
     

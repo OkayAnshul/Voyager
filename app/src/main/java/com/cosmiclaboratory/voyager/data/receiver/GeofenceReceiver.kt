@@ -22,6 +22,9 @@ class GeofenceReceiver : BroadcastReceiver() {
     @Inject
     lateinit var visitRepository: VisitRepository
     
+    @Inject
+    lateinit var appStateManager: com.cosmiclaboratory.voyager.data.state.AppStateManager
+    
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
     companion object {
@@ -46,14 +49,14 @@ class GeofenceReceiver : BroadcastReceiver() {
             // Get the geofences that were triggered
             val triggeringGeofences = geofencingEvent.triggeringGeofences ?: return
             
-            // Extract place IDs and handle visit management
+            // CRITICAL FIX: Extract place IDs from request format "place_X"
             val placeIds = triggeringGeofences.mapNotNull { geofence ->
-                geofence.requestId.toLongOrNull()
+                geofence.requestId.removePrefix("place_").toLongOrNull()
             }
             
             val currentTime = LocalDateTime.now()
             
-            // Handle visit management directly
+            // CRITICAL FIX: Handle visit management with proper state synchronization
             scope.launch {
                 try {
                     when (geofenceTransition) {
@@ -63,7 +66,16 @@ class GeofenceReceiver : BroadcastReceiver() {
                                 
                                 // Start new visit at this place
                                 val visitId = visitRepository.startVisit(placeId, currentTime)
-                                Log.d(TAG, "Started visit $visitId for place $placeId")
+                                
+                                // Update app state to reflect current place
+                                appStateManager.updateCurrentPlace(
+                                    placeId = placeId,
+                                    visitId = visitId,
+                                    entryTime = currentTime,
+                                    source = com.cosmiclaboratory.voyager.data.state.StateUpdateSource.SMART_PROCESSOR
+                                )
+                                
+                                Log.d(TAG, "Started visit $visitId for place $placeId and updated app state")
                             }
                         }
                         
@@ -76,7 +88,16 @@ class GeofenceReceiver : BroadcastReceiver() {
                                 if (currentVisit?.placeId == placeId) {
                                     val completedVisit = currentVisit.complete(currentTime)
                                     visitRepository.updateVisit(completedVisit)
-                                    Log.d(TAG, "Completed visit for place $placeId, duration: ${completedVisit.duration}ms")
+                                    
+                                    // Update app state to clear current place
+                                    appStateManager.updateCurrentPlace(
+                                        placeId = null,
+                                        visitId = null,
+                                        entryTime = null,
+                                        source = com.cosmiclaboratory.voyager.data.state.StateUpdateSource.SMART_PROCESSOR
+                                    )
+                                    
+                                    Log.d(TAG, "Completed visit for place $placeId, duration: ${completedVisit.duration}ms and updated app state")
                                 } else {
                                     Log.w(TAG, "No active visit found for place $placeId on exit")
                                 }

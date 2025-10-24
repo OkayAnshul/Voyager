@@ -74,38 +74,46 @@ class GeofenceTransitionWorker @AssistedInject constructor(
 
         val place = places.find { it.id == placeId } ?: return
 
+        // CRITICAL FIX: Worker should only handle notifications and analytics, not visit management
+        // Visit management is already handled by GeofenceReceiver to avoid duplicates
         when (transitionType) {
             Geofence.GEOFENCE_TRANSITION_ENTER -> {
-                // Create new visit entry
-                val visit = Visit(
-                    placeId = placeId,
-                    entryTime = now,
-                    exitTime = null
-                )
-                visitRepository.insertVisit(visit)
-
                 // Send notification if enabled
                 if (preferences.enableArrivalNotifications) {
                     sendNotification("Arrived at ${place.name}", "Welcome back!")
                 }
+                
+                // Additional processing like updating analytics, etc.
+                updateLocationAnalytics(placeId, transitionType)
             }
 
             Geofence.GEOFENCE_TRANSITION_EXIT -> {
-                // Find active visit and close it
-                val activeVisits = visitRepository.getActiveVisits()
-                val activeVisit = activeVisits.find { it.placeId == placeId }
-
-                if (activeVisit != null) {
-                    visitRepository.endVisit(activeVisit.id, now)
-
-                    // Send notification if enabled
-                    if (preferences.enableDepartureNotifications) {
-                        // Calculate duration for notification
-                        val durationText = ApiCompatibilityUtils.calculateDurationText(activeVisit.entryTime, now)
-                        sendNotification("Left ${place.name}", "Visit duration: $durationText")
+                // Get the most recent visit for duration calculation
+                val recentVisit = visitRepository.getLastVisitForPlace(placeId)
+                
+                // Send notification if enabled
+                if (preferences.enableDepartureNotifications && recentVisit != null) {
+                    val durationText = if (recentVisit.duration > 0) {
+                        formatDurationMs(recentVisit.duration)
+                    } else {
+                        "Short visit"
                     }
+                    sendNotification("Left ${place.name}", "Visit duration: $durationText")
                 }
+                
+                // Additional processing like updating analytics, etc.
+                updateLocationAnalytics(placeId, transitionType)
             }
+        }
+    }
+    
+    private suspend fun updateLocationAnalytics(placeId: Long, transitionType: Int) {
+        try {
+            // This is where we could add analytics updates, pattern detection, etc.
+            // For now, just log the event
+            android.util.Log.d("GeofenceWorker", "Analytics update for place $placeId, transition $transitionType")
+        } catch (e: Exception) {
+            android.util.Log.e("GeofenceWorker", "Failed to update analytics", e)
         }
     }
 
@@ -133,7 +141,18 @@ class GeofenceTransitionWorker @AssistedInject constructor(
 
         notificationManager.notify(System.currentTimeMillis().toInt(), notification)
     }
-
+    
+    private fun formatDurationMs(durationMs: Long): String {
+        val minutes = durationMs / (1000 * 60)
+        val hours = minutes / 60
+        val remainingMinutes = minutes % 60
+        
+        return when {
+            hours > 0 -> "${hours}h ${remainingMinutes}m"
+            minutes > 0 -> "${minutes}m"
+            else -> "< 1m"
+        }
+    }
 
     companion object {
         private const val KEY_TRANSITION_TYPE = "transition_type"

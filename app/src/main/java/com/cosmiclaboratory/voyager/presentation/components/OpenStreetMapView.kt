@@ -29,7 +29,10 @@ fun OpenStreetMapView(
     locations: List<Location> = emptyList(),
     places: List<Place> = emptyList(),
     userLocation: Location? = null,
+    currentPlace: Place? = null,
+    isTracking: Boolean = false,
     onPlaceClick: (Place) -> Unit = {},
+    onMapClick: (Double, Double) -> Unit = { _, _ -> },
     onMapReady: (MapView) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -101,11 +104,23 @@ fun OpenStreetMapView(
                     }
                     mapController.setZoom(zoomLevel.toDouble())
                     
-                    // Add my location overlay for user position
-                    val myLocationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this)
-                    myLocationOverlay.enableMyLocation()
-                    myLocationOverlay.enableFollowLocation()
-                    overlays.add(myLocationOverlay)
+                    // Add my location overlay only if tracking is enabled
+                    if (isTracking) {
+                        val myLocationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this)
+                        myLocationOverlay.enableMyLocation()
+                        myLocationOverlay.enableFollowLocation()
+                        overlays.add(myLocationOverlay)
+                    }
+                    
+                    // Add map click listener
+                    setOnTouchListener { _, event ->
+                        if (event.action == android.view.MotionEvent.ACTION_UP) {
+                            val projection = projection
+                            val geoPoint = projection.fromPixels(event.x.toInt(), event.y.toInt())
+                            onMapClick(geoPoint.latitude, geoPoint.longitude)
+                        }
+                        false
+                    }
                     
                     onMapReady(this)
                     
@@ -116,8 +131,14 @@ fun OpenStreetMapView(
             }
         },
         update = { mapView ->
-            // Clear existing overlays
+            // Clear existing overlays (except my location overlay)
+            val myLocationOverlay = mapView.overlays.find { it is MyLocationNewOverlay }
             mapView.overlays.clear()
+            
+            // Re-add my location overlay if tracking is enabled
+            if (isTracking && myLocationOverlay != null) {
+                mapView.overlays.add(myLocationOverlay)
+            }
             
             // Add location path
             if (locations.isNotEmpty()) {
@@ -126,17 +147,17 @@ fun OpenStreetMapView(
             
             // Add place markers
             places.forEach { place ->
-                addPlaceMarker(mapView, place, onPlaceClick)
+                addPlaceMarker(mapView, place, onPlaceClick, place == currentPlace)
             }
             
-            // Add user location marker
+            // Add user location marker (blue dot)
             userLocation?.let { location ->
-                addUserLocationMarker(mapView, location)
+                addUserLocationMarker(mapView, location, isTracking)
             }
             
             // Update center if provided
             center?.let { (lat, lng) ->
-                mapView.controller.setCenter(GeoPoint(lat, lng))
+                mapView.controller.animateTo(GeoPoint(lat, lng))
             }
             
             // Update zoom level
@@ -177,7 +198,7 @@ private fun addLocationPath(mapView: MapView, locations: List<Location>) {
     }
 }
 
-private fun addPlaceMarker(mapView: MapView, place: Place, onPlaceClick: (Place) -> Unit) {
+private fun addPlaceMarker(mapView: MapView, place: Place, onPlaceClick: (Place) -> Unit, isCurrent: Boolean = false) {
     val marker = Marker(mapView).apply {
         position = GeoPoint(place.latitude, place.longitude)
         title = place.name
@@ -188,46 +209,110 @@ private fun addPlaceMarker(mapView: MapView, place: Place, onPlaceClick: (Place)
             true
         }
         
-        // Set different icons based on place category
-        when (place.category) {
-            com.cosmiclaboratory.voyager.domain.model.PlaceCategory.HOME -> {
-                // Use default home icon
+        // Set marker anchor for proper positioning
+        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+        
+        // Set different icons based on place category and current status
+        try {
+            val iconRes = when {
+                isCurrent -> android.R.drawable.star_big_on // Current place highlighted
+                place.category == com.cosmiclaboratory.voyager.domain.model.PlaceCategory.HOME -> 
+                    android.R.drawable.ic_menu_mylocation
+                place.category == com.cosmiclaboratory.voyager.domain.model.PlaceCategory.WORK -> 
+                    android.R.drawable.ic_menu_agenda
+                else -> android.R.drawable.ic_menu_mapmode
             }
-            com.cosmiclaboratory.voyager.domain.model.PlaceCategory.WORK -> {
-                // Use work icon
-            }
-            else -> {
-                // Use generic place icon
-            }
+            
+            icon = mapView.context.getDrawable(iconRes)
+            
+            // Scale icon appropriately
+            val density = mapView.context.resources.displayMetrics.density
+            val size = (32 * density).toInt()
+            icon?.setBounds(0, 0, size, size)
+            
+        } catch (e: Exception) {
+            android.util.Log.w("OpenStreetMapView", "Failed to set place marker icon", e)
         }
     }
     
     mapView.overlays.add(marker)
 }
 
-private fun addUserLocationMarker(mapView: MapView, location: Location) {
+private fun addUserLocationMarker(mapView: MapView, location: Location, isTracking: Boolean) {
     try {
         val userMarker = Marker(mapView).apply {
             position = GeoPoint(location.latitude, location.longitude)
             title = "Your Current Location"
-            snippet = "Accuracy: ${location.accuracy}m\nTime: ${location.timestamp}"
+            snippet = "Accuracy: ${location.accuracy}m${if (location.speed?.let { it > 0 } == true) "\nSpeed: ${String.format("%.1f", (location.speed ?: 0f) * 3.6)} km/h" else ""}"
             
             // Set marker anchor for proper positioning
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             
-            // Use default user location icon
-            icon = mapView.context.getDrawable(android.R.drawable.ic_menu_mylocation)
+            // Use blue dot style for current location
+            try {
+                val drawable = mapView.context.getDrawable(android.R.drawable.presence_online)
+                icon = drawable
+                
+                // Scale for better visibility
+                val density = mapView.context.resources.displayMetrics.density
+                val size = if (isTracking) (24 * density).toInt() else (20 * density).toInt()
+                icon?.setBounds(0, 0, size, size)
+                
+                // Set blue tint programmatically
+                icon?.setTint(Color.rgb(33, 150, 243)) // Material Blue
+                
+            } catch (e: Exception) {
+                // Fallback to default icon
+                icon = mapView.context.getDrawable(android.R.drawable.ic_menu_mylocation)
+                android.util.Log.w("OpenStreetMapView", "Failed to set user location icon, using fallback", e)
+            }
             
-            // Make marker draggable for manual correction if needed
+            // Make marker non-draggable
             isDraggable = false
         }
         
         mapView.overlays.add(userMarker)
         
-        // Center map on user location
-        mapView.controller.animateTo(GeoPoint(location.latitude, location.longitude))
+        // Add accuracy circle if tracking is active
+        if (isTracking && location.accuracy > 0) {
+            addAccuracyCircle(mapView, location)
+        }
         
     } catch (e: Exception) {
         android.util.Log.e("OpenStreetMapView", "Failed to add user location marker", e)
+    }
+}
+
+private fun addAccuracyCircle(mapView: MapView, location: Location) {
+    try {
+        val circle = org.osmdroid.views.overlay.Polygon(mapView).apply {
+            // Create circle points
+            val center = GeoPoint(location.latitude, location.longitude)
+            val points = mutableListOf<GeoPoint>()
+            
+            // Create a circle with 32 points
+            for (i in 0..32) {
+                val angle = (i * 360.0 / 32.0) * Math.PI / 180.0
+                val radius = location.accuracy / 111000.0 // Convert meters to degrees approximately
+                val lat = location.latitude + radius * Math.cos(angle)
+                val lng = location.longitude + radius * Math.sin(angle) / Math.cos(location.latitude * Math.PI / 180.0)
+                points.add(GeoPoint(lat, lng))
+            }
+            
+            setPoints(points)
+            
+            // Style the accuracy circle
+            fillPaint.color = Color.argb(50, 33, 150, 243) // Semi-transparent blue
+            outlinePaint.color = Color.argb(100, 33, 150, 243) // Blue border
+            outlinePaint.strokeWidth = 2f
+            
+            title = "Location Accuracy"
+            snippet = "±${location.accuracy.toInt()}m"
+        }
+        
+        mapView.overlays.add(circle)
+        
+    } catch (e: Exception) {
+        android.util.Log.w("OpenStreetMapView", "Failed to add accuracy circle", e)
     }
 }

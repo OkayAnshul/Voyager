@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,68 +25,257 @@ fun DashboardScreen(
     val uiState by viewModel.uiState.collectAsState()
     
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
+        modifier = Modifier.fillMaxSize()
     ) {
-        Text(
-            text = "Your Journey Dashboard",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
-        
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
         ) {
-            item {
-                StatsCard(
-                    title = "Total Locations",
-                    value = uiState.totalLocations.toString(),
-                    subtitle = "GPS points tracked"
+            // Header with status indicator
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Your Journey Dashboard",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
                 )
+                
+                // Live status indicator
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (uiState.isLocationTrackingActive) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(
+                                    color = Color.Green,
+                                    shape = androidx.compose.foundation.shape.CircleShape
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Live",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.Green,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Tracking paused",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            if (uiState.isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+            // Stats Cards - Basic version for now
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Total Locations", style = MaterialTheme.typography.titleMedium)
+                        Text(uiState.totalLocations.toString(), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                        Text("GPS points tracked", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
             
             item {
-                StatsCard(
-                    title = "Places Visited",
-                    value = uiState.totalPlaces.toString(),
-                    subtitle = "Unique locations"
-                )
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Places Visited", style = MaterialTheme.typography.titleMedium)
+                        Text(uiState.totalPlaces.toString(), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                        Text("Unique locations", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
             
             item {
-                StatsCard(
-                    title = "Total Time",
-                    value = formatDuration(uiState.totalTimeTracked),
-                    subtitle = "Time spent tracking"
-                )
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Total Time", style = MaterialTheme.typography.titleMedium)
+                        Text("${uiState.totalTimeTracked / (1000 * 60)}m", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                        Text("Time spent tracking", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
             
             // Real-time current visit status
             if (uiState.isAtPlace && uiState.currentPlace != null) {
                 item {
-                    CurrentVisitCard(
-                        currentPlace = uiState.currentPlace!!,
-                        visitDuration = uiState.currentVisitDuration,
-                        isActive = true
-                    )
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.LocationOn, contentDescription = "Current location", tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text("Currently at", style = MaterialTheme.typography.labelMedium)
+                                    Text(uiState.currentPlace!!.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Duration: ${uiState.currentVisitDuration / (1000 * 60)}m", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
                 }
             }
             
             item {
-                LocationTrackingCard(
-                    isTracking = uiState.isTracking,
-                    onToggleTracking = viewModel::toggleLocationTracking,
-                    permissionStatus = permissionStatus
-                )
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Location Tracking", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    if (uiState.isTracking) "Currently tracking" else "Tracking stopped",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (uiState.isTracking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = uiState.isTracking,
+                                onCheckedChange = { viewModel.toggleLocationTracking() }
+                            )
+                        }
+                    }
+                }
             }
             
             item {
-                PlaceDetectionCard(
-                    onDetectNow = viewModel::triggerPlaceDetection,
-                    isDetecting = uiState.isDetectingPlaces
-                )
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Place Detection", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    if (uiState.isDetectingPlaces) "Analyzing locations..." else "Process location data to find places",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            Button(
+                                onClick = { viewModel.triggerPlaceDetection() },
+                                enabled = !uiState.isDetectingPlaces
+                            ) {
+                                Text(if (uiState.isDetectingPlaces) "Processing..." else "Detect Now")
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Debug section for troubleshooting
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            "🔧 Debug Tools", 
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            "Troubleshoot place detection issues",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.debugGetDiagnosticInfo() },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("📊 Diagnostics")
+                            }
+                            
+                            OutlinedButton(
+                                onClick = { viewModel.debugManualPlaceDetection() },
+                                enabled = !uiState.isDetectingPlaces,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("🚀 Force Detection")
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.debugWorkManagerHealth() },
+                                enabled = !uiState.isDetectingPlaces,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("🔧 Health")
+                            }
+                            
+                            OutlinedButton(
+                                onClick = { viewModel.debugResetPreferences() },
+                                enabled = !uiState.isDetectingPlaces,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("🔄 Reset")
+                            }
+                        }
+                        
+                        // Show diagnostic/error info if available
+                        uiState.errorMessage?.let { message ->
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            ) {
+                                Text(
+                                    text = message,
+                                    modifier = Modifier.padding(12.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -94,7 +283,7 @@ fun DashboardScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun StatsCard(
+ fun StatsCard(
     title: String,
     value: String,
     subtitle: String
@@ -129,7 +318,7 @@ private fun StatsCard(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LocationTrackingCard(
+ fun LocationTrackingCard(
     isTracking: Boolean,
     onToggleTracking: () -> Unit,
     permissionStatus: PermissionStatus
@@ -183,7 +372,7 @@ private fun LocationTrackingCard(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PlaceDetectionCard(
+ fun PlaceDetectionCard(
     onDetectNow: () -> Unit,
     isDetecting: Boolean
 ) {
@@ -231,7 +420,7 @@ private fun PlaceDetectionCard(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CurrentVisitCard(
+ fun CurrentVisitCard(
     currentPlace: Place,
     visitDuration: Long,
     isActive: Boolean
@@ -288,7 +477,7 @@ private fun CurrentVisitCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = formatDuration(visitDuration),
+                        text = "${visitDuration / (1000 * 60)}m",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
@@ -321,7 +510,7 @@ private fun CurrentVisitCard(
     }
 }
 
-private fun formatDuration(milliseconds: Long): String {
+ fun formatDuration(milliseconds: Long): String {
     val hours = milliseconds / (1000 * 60 * 60)
     val minutes = (milliseconds % (1000 * 60 * 60)) / (1000 * 60)
     
@@ -330,4 +519,6 @@ private fun formatDuration(milliseconds: Long): String {
         minutes > 0 -> "${minutes}m"
         else -> "0m"
     }
+}
+}
 }

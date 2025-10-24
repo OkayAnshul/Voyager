@@ -6,6 +6,8 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.WorkManager
 import com.cosmiclaboratory.voyager.data.worker.PlaceDetectionWorker
 import com.cosmiclaboratory.voyager.domain.repository.PreferencesRepository
+import com.cosmiclaboratory.voyager.utils.WorkManagerHelper
+import com.cosmiclaboratory.voyager.utils.EnqueueResult
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
@@ -14,7 +16,8 @@ import javax.inject.Singleton
 @Singleton
 class WorkerManagementUseCases @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val workManagerHelper: WorkManagerHelper
 ) {
     
     companion object {
@@ -23,12 +26,8 @@ class WorkerManagementUseCases @Inject constructor(
     
     suspend fun initializeBackgroundWorkers() {
         try {
-            Log.d(TAG, "Initializing background workers")
+            Log.d(TAG, "Initializing background workers using WorkManagerHelper")
             
-            // Wait a bit to ensure WorkManager is fully initialized
-            kotlinx.coroutines.delay(500)
-            
-            val workManager = WorkManager.getInstance(context)
             val preferences = preferencesRepository.getUserPreferences().first()
             
             Log.d(TAG, "Initializing workers with preferences: " +
@@ -37,24 +36,36 @@ class WorkerManagementUseCases @Inject constructor(
                 "placeDetectionEnabled=${preferences.enablePlaceDetection}")
             
             if (preferences.enablePlaceDetection) {
-                // Schedule periodic place detection with user preferences
-                val placeDetectionWork = PlaceDetectionWorker.createPeriodicWorkRequest(preferences)
-                
-                workManager.enqueueUniquePeriodicWork(
-                    PlaceDetectionWorker.WORK_NAME,
-                    ExistingPeriodicWorkPolicy.REPLACE, // Replace to apply new user preferences
-                    placeDetectionWork
-                )
+                // Schedule periodic place detection with robust error handling
+                val periodicResult = workManagerHelper.enqueuePlaceDetectionWork(preferences, isOneTime = false)
+                when (periodicResult) {
+                    is EnqueueResult.Success -> {
+                        Log.d(TAG, "Periodic place detection worker scheduled successfully: ${periodicResult.workId}")
+                    }
+                    is EnqueueResult.Failed -> {
+                        Log.e(TAG, "Failed to schedule periodic place detection worker", periodicResult.exception)
+                    }
+                }
                 
                 // Also run an immediate one-time detection for existing data
-                val immediateWork = PlaceDetectionWorker.createOneTimeWorkRequest(preferences)
-                workManager.enqueue(immediateWork)
+                val immediateResult = workManagerHelper.enqueuePlaceDetectionWork(preferences, isOneTime = true)
+                when (immediateResult) {
+                    is EnqueueResult.Success -> {
+                        Log.d(TAG, "Immediate place detection worker scheduled successfully: ${immediateResult.workId}")
+                    }
+                    is EnqueueResult.Failed -> {
+                        Log.e(TAG, "Failed to schedule immediate place detection worker", immediateResult.exception)
+                    }
+                }
                 
-                Log.d(TAG, "Place detection workers scheduled successfully")
             } else {
                 // Cancel place detection if disabled
-                workManager.cancelUniqueWork(PlaceDetectionWorker.WORK_NAME)
-                Log.d(TAG, "Place detection disabled, workers cancelled")
+                val cancelled = workManagerHelper.cancelAllWorkers()
+                if (cancelled) {
+                    Log.d(TAG, "Place detection disabled, workers cancelled successfully")
+                } else {
+                    Log.w(TAG, "Place detection disabled, but worker cancellation failed")
+                }
             }
             
         } catch (e: Exception) {
@@ -72,13 +83,27 @@ class WorkerManagementUseCases @Inject constructor(
         }
     }
     
-    fun cancelAllWorkers() {
+    suspend fun cancelAllWorkers() {
         try {
-            val workManager = WorkManager.getInstance(context)
-            workManager.cancelUniqueWork(PlaceDetectionWorker.WORK_NAME)
-            Log.d(TAG, "All background workers cancelled")
+            val cancelled = workManagerHelper.cancelAllWorkers()
+            if (cancelled) {
+                Log.d(TAG, "All background workers cancelled successfully")
+            } else {
+                Log.e(TAG, "Failed to cancel workers - WorkManager not available")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to cancel workers", e)
         }
     }
+    
+    /**
+     * Get current worker status for monitoring
+     */
+    suspend fun getWorkerStatus() = workManagerHelper.getWorkStatus()
+    
+    /**
+     * Perform comprehensive health check on WorkManager
+     */
+    suspend fun performHealthCheck() = workManagerHelper.performHealthCheck()
+    
 }

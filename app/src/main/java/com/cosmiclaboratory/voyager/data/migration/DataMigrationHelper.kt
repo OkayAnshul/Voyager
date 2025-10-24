@@ -140,9 +140,8 @@ class DataMigrationHelper @Inject constructor(
     private suspend fun getCurrentMigrationVersion(): Int {
         return try {
             val preferences = preferencesRepository.getCurrentPreferences()
-            // For now, assume version 0 if no migration has been run
-            // In a real implementation, this would be stored in preferences
-            0
+            // Get migration version from preferences - defaults to 0 if not set
+            preferences.dataMigrationVersion
         } catch (e: Exception) {
             Log.w(TAG, "Could not get migration version, assuming 0", e)
             0
@@ -154,10 +153,11 @@ class DataMigrationHelper @Inject constructor(
      */
     private suspend fun setMigrationVersion(version: Int) {
         try {
-            // In a real implementation, this would update preferences
+            preferencesRepository.updateDataMigrationVersion(version)
             Log.d(TAG, "Migration version set to: $version")
         } catch (e: Exception) {
             Log.w(TAG, "Could not set migration version", e)
+            throw e
         }
     }
     

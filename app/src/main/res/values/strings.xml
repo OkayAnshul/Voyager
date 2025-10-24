@@ -29,4 +29,63 @@
     <!-- Maps -->
     <string name="map_attribution">© OpenStreetMap contributors</string>
     <string name="map_loading">Loading map...</string>
+    
+    <!-- Error Messages -->
+    <string name="error_location_tracking">Location Tracking Error</string>
+    <string name="error_place_detection">Place Detection Error</string>
+    <string name="error_data_validation">Data Validation Error</string>
+    <string name="error_database">Database Error</string>
+    <string name="error_network">Network Error</string>
+    <string name="error_system">System Error</string>
+    <string name="error_user_input">Input Error</string>
+    
+    <!-- Generic Error Messages -->
+    <string name="error_generic_title">Something went wrong</string>
+    <string name="error_generic_message">An unexpected error occurred. Please try again.</string>
+    <string name="error_retry">Try Again</string>
+    <string name="error_cancel">Cancel</string>
+    <string name="error_report">Report Issue</string>
+    
+    <!-- Location Error Messages -->
+    <string name="error_location_permission_denied">Location access is required for tracking. Please grant location permissions in settings.</string>
+    <string name="error_location_service_unavailable">Location services are currently unavailable. Please check your device settings.</string>
+    <string name="error_location_accuracy_low">GPS signal is weak. Moving to an open area may improve accuracy.</string>
+    <string name="error_location_tracking_failed">Location tracking stopped unexpectedly. Attempting to restart...</string>
+    
+    <!-- Place Detection Error Messages -->
+    <string name="error_place_insufficient_data">More location data is needed for accurate place detection. Continue using the app for better results.</string>
+    <string name="error_place_duplicate">A similar place already exists. Would you like to merge them or create a new place?</string>
+    <string name="error_place_geofence_failed">Could not set up automatic detection for this place. Manual tracking will still work.</string>
+    
+    <!-- Data Validation Error Messages -->
+    <string name="error_data_invalid_location">Location data appears corrupted. Skipping invalid data points.</string>
+    <string name="error_data_database_corrupted">Database corruption detected. A repair may be needed to restore your data.</string>
+    <string name="error_data_validation_failed">Data validation failed. Please check your input and try again.</string>
+    
+    <!-- Database Error Messages -->
+    <string name="error_database_connection">Database connection error. Retrying connection...</string>
+    <string name="error_database_timeout">Database operation is taking longer than expected. Please wait...</string>
+    <string name="error_database_transaction">Failed to save changes. Your data may not be up to date.</string>
+    <string name="error_database_state_init">App initialization failed. Attempting to recover...</string>
+    
+    <!-- Network Error Messages -->
+    <string name="error_network_no_connection">No internet connection. Some features may not work until connection is restored.</string>
+    <string name="error_network_sync_failed">Could not sync your data. Changes are saved locally and will sync when possible.</string>
+    
+    <!-- System Error Messages -->
+    <string name="error_system_config">App configuration issue detected. Resetting to default settings.</string>
+    <string name="error_system_memory">Low memory detected. Clearing cache to free up space.</string>
+    
+    <!-- Recovery Action Labels -->
+    <string name="action_grant_permissions">Grant Permissions</string>
+    <string name="action_open_settings">Open Settings</string>
+    <string name="action_enable_location">Enable Location</string>
+    <string name="action_improve_signal">Move to Open Area</string>
+    <string name="action_restart_app">Restart App</string>
+    <string name="action_clear_cache">Clear Cache</string>
+    <string name="action_contact_support">Contact Support</string>
+    <string name="action_retry_operation">Try Again</string>
+    <string name="action_ignore_error">Ignore</string>
+    <string name="action_manual_tracking">Use Manual Tracking</string>
+    <string name="action_continue_tracking">Continue Tracking</string>
 </resources>
