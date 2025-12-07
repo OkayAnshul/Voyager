@@ -7,6 +7,9 @@ import com.cosmiclaboratory.voyager.domain.repository.LocationRepository
 import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
 import com.cosmiclaboratory.voyager.domain.repository.PreferencesRepository
 import com.cosmiclaboratory.voyager.domain.repository.VisitRepository
+import com.cosmiclaboratory.voyager.domain.usecase.ExportDataUseCase
+import com.cosmiclaboratory.voyager.domain.usecase.ExportFormat
+import com.cosmiclaboratory.voyager.domain.usecase.ExportResult
 import com.cosmiclaboratory.voyager.domain.usecase.LocationUseCases
 import com.cosmiclaboratory.voyager.domain.model.BatteryRequirement
 import com.cosmiclaboratory.voyager.domain.model.TrackingAccuracyMode
@@ -38,7 +41,11 @@ class SettingsViewModel @Inject constructor(
     private val placeRepository: PlaceRepository,
     private val visitRepository: VisitRepository,
     private val preferencesRepository: PreferencesRepository,
-    private val locationServiceManager: com.cosmiclaboratory.voyager.utils.LocationServiceManager
+    private val exportDataUseCase: ExportDataUseCase,
+    private val locationServiceManager: com.cosmiclaboratory.voyager.utils.LocationServiceManager,
+    private val sleepScheduleManager: com.cosmiclaboratory.voyager.utils.SleepScheduleManager,
+    private val motionDetectionManager: com.cosmiclaboratory.voyager.utils.MotionDetectionManager,
+    private val workManagerHelper: com.cosmiclaboratory.voyager.utils.WorkManagerHelper
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -49,6 +56,22 @@ class SettingsViewModel @Inject constructor(
         observeLocationTracking()
         observePreferences()
         observeServiceErrors()
+        initializeDailySummaryIfEnabled()
+    }
+
+    /**
+     * Initialize DailySummaryWorker on app start
+     * Session #6 Bug Fix - DailySummaryWorker exists but was never scheduled
+     */
+    private fun initializeDailySummaryIfEnabled() {
+        viewModelScope.launch {
+            try {
+                // Schedule daily summary notifications (runs at 9 PM daily)
+                initializeDailySummaryWorker()
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Failed to initialize daily summary", e)
+            }
+        }
     }
     
     private fun loadSettings() {
@@ -88,6 +111,25 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             preferencesRepository.getUserPreferences().collect { preferences ->
                 _uiState.value = _uiState.value.copy(preferences = preferences)
+            }
+        }
+    }
+
+    /**
+     * Initialize DailySummaryWorker for daily summary notifications
+     * Session #6 Bug Fix - This worker was implemented but never scheduled
+     */
+    private fun initializeDailySummaryWorker() {
+        viewModelScope.launch {
+            try {
+                val success = workManagerHelper.scheduleDailySummary(hour = 21) // 9 PM
+                if (success) {
+                    android.util.Log.d("SettingsViewModel", "DailySummaryWorker scheduled successfully for 9 PM daily")
+                } else {
+                    android.util.Log.w("SettingsViewModel", "DailySummaryWorker scheduling returned false")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Failed to schedule DailySummaryWorker", e)
             }
         }
     }
@@ -188,29 +230,47 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
+    /**
+     * Export data to JSON format (default)
+     */
     fun exportData() {
+        exportData(ExportFormat.JSON)
+    }
+
+    /**
+     * Export data in specified format
+     */
+    fun exportData(format: ExportFormat) {
         viewModelScope.launch {
             try {
-                _uiState.value = _uiState.value.copy(isDataExporting = true, exportMessage = null)
-                
-                // In a real implementation, this would export to JSON/CSV
-                val locations = locationRepository.getRecentLocations(10000).first()
-                val places = placeRepository.getAllPlaces().first()
-                val visits = visitRepository.getAllVisits().first()
-                
-                // Simulate export process
-                kotlinx.coroutines.delay(1000)
-                
-                _uiState.value = _uiState.value.copy(
-                    isDataExporting = false,
-                    exportMessage = "Exported ${locations.size} locations, ${places.size} places, ${visits.size} visits"
-                )
-                
+                _uiState.value = _uiState.value.copy(isDataExporting = true, exportMessage = null, errorMessage = null)
+
+                val result = exportDataUseCase(format, limit = 10000)
+
+                when (result) {
+                    is ExportResult.Success -> {
+                        val sizeInKb = result.fileSize / 1024
+                        _uiState.value = _uiState.value.copy(
+                            isDataExporting = false,
+                            exportMessage = "Export successful!\nSaved to: ${result.filePath}\nSize: ${sizeInKb}KB"
+                        )
+                        Log.d("SettingsViewModel", "Export successful: ${result.filePath}")
+                    }
+                    is ExportResult.Error -> {
+                        _uiState.value = _uiState.value.copy(
+                            isDataExporting = false,
+                            errorMessage = "Export failed: ${result.message}"
+                        )
+                        Log.e("SettingsViewModel", "Export failed: ${result.message}")
+                    }
+                }
+
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isDataExporting = false,
                     errorMessage = "Export failed: ${e.message}"
                 )
+                Log.e("SettingsViewModel", "Export exception", e)
             }
         }
     }
@@ -370,6 +430,225 @@ class SettingsViewModel @Inject constructor(
     fun updateDataProcessingBatchSize(size: Int) {
         viewModelScope.launch {
             preferencesRepository.updateDataProcessingBatchSize(size)
+        }
+    }
+
+    // Sleep Schedule settings (Phase 8.1)
+    fun updateSleepModeEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.updateSleepModeEnabled(enabled)
+        }
+    }
+
+    fun updateSleepStartHour(hour: Int) {
+        viewModelScope.launch {
+            preferencesRepository.updateSleepStartHour(hour)
+        }
+    }
+
+    fun updateSleepEndHour(hour: Int) {
+        viewModelScope.launch {
+            preferencesRepository.updateSleepEndHour(hour)
+        }
+    }
+
+    fun getSleepScheduleDisplay(preferences: UserPreferences): String {
+        return sleepScheduleManager.formatSleepSchedule(preferences)
+    }
+
+    fun getEstimatedBatterySavings(preferences: UserPreferences): Int {
+        return sleepScheduleManager.estimateBatterySavings(preferences)
+    }
+
+    // Motion Detection settings (Phase 8.4)
+    fun updateMotionDetectionEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.updateMotionDetectionEnabled(enabled)
+        }
+    }
+
+    fun updateMotionSensitivity(threshold: Float) {
+        viewModelScope.launch {
+            preferencesRepository.updateMotionSensitivityThreshold(threshold)
+        }
+    }
+
+    fun isMotionDetectionAvailable(): Boolean {
+        // Delegate to MotionDetectionManager to check availability
+        return motionDetectionManager.isMotionDetectionAvailable()
+    }
+
+    // Phase 2: Activity Recognition
+    fun updateActivityRecognition(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.updateActivityRecognition(enabled)
+        }
+    }
+
+    // Profile Management
+    fun applySettingsProfile(profileName: String) {
+        viewModelScope.launch {
+            preferencesRepository.applySettingsProfile(profileName)
+        }
+    }
+
+    fun getCurrentProfile(): com.cosmiclaboratory.voyager.domain.model.SettingsPresetProfile {
+        val profileName = _uiState.value.preferences.currentProfile
+        return try {
+            com.cosmiclaboratory.voyager.domain.model.SettingsPresetProfile.valueOf(profileName)
+        } catch (e: IllegalArgumentException) {
+            com.cosmiclaboratory.voyager.domain.model.SettingsPresetProfile.CUSTOM
+        }
+    }
+
+    // Advanced Place Detection Parameters
+    fun updateMinimumDistanceBetweenPlaces(meters: Float) {
+        viewModelScope.launch {
+            preferencesRepository.updateMinimumDistanceBetweenPlaces(meters)
+            markProfileAsCustom()
+        }
+    }
+
+    fun updateStationaryThreshold(minutes: Int) {
+        viewModelScope.launch {
+            preferencesRepository.updateStationaryThreshold(minutes)
+            markProfileAsCustom()
+        }
+    }
+
+    fun updateStationaryMovementThreshold(meters: Float) {
+        viewModelScope.launch {
+            preferencesRepository.updateStationaryMovementThreshold(meters)
+            markProfileAsCustom()
+        }
+    }
+
+    // Geocoding Parameters
+    fun updateGeocodingCacheDuration(days: Int) {
+        viewModelScope.launch {
+            preferencesRepository.updateGeocodingCacheDuration(days)
+            markProfileAsCustom()
+        }
+    }
+
+    // UI Refresh Intervals
+    fun updateDashboardRefreshIntervals(atPlaceSeconds: Int, trackingSeconds: Int, idleSeconds: Int) {
+        viewModelScope.launch {
+            preferencesRepository.updateDashboardRefreshIntervals(atPlaceSeconds, trackingSeconds, idleSeconds)
+            markProfileAsCustom()
+        }
+    }
+
+    // Pattern Analysis Parameters
+    fun updatePatternAnalysisSettings(minVisits: Int, minConfidence: Float, timeWindowMinutes: Int, analysisDays: Int) {
+        viewModelScope.launch {
+            preferencesRepository.updatePatternAnalysisSettings(minVisits, minConfidence, timeWindowMinutes, analysisDays)
+            markProfileAsCustom()
+        }
+    }
+
+    // Anomaly Detection Parameters
+    fun updateAnomalyDetectionSettings(recentDays: Int, lookbackDays: Int, durationThreshold: Float, timeThresholdHours: Int) {
+        viewModelScope.launch {
+            preferencesRepository.updateAnomalyDetectionSettings(recentDays, lookbackDays, durationThreshold, timeThresholdHours)
+            markProfileAsCustom()
+        }
+    }
+
+    // Battery & Performance
+    fun updateStationaryMultipliers(intervalMultiplier: Float, distanceMultiplier: Float) {
+        viewModelScope.launch {
+            preferencesRepository.updateStationaryMultipliers(intervalMultiplier, distanceMultiplier)
+            markProfileAsCustom()
+        }
+    }
+
+    fun updateStationaryIntervalMultiplier(multiplier: Float) {
+        viewModelScope.launch {
+            val currentDistance = _uiState.value.preferences.stationaryDistanceMultiplier
+            preferencesRepository.updateStationaryMultipliers(multiplier, currentDistance)
+            markProfileAsCustom()
+        }
+    }
+
+    fun updateAutoDetectBatteryThreshold(threshold: Int) {
+        viewModelScope.launch {
+            val updatedPreferences = _uiState.value.preferences.copy(
+                autoDetectBatteryThreshold = threshold
+            )
+            preferencesRepository.updateUserPreferences(updatedPreferences)
+            markProfileAsCustom()
+        }
+    }
+
+    fun updateUseActivityRecognition(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.updateActivityRecognition(enabled)
+            markProfileAsCustom()
+        }
+    }
+
+    fun updateMotionSensitivityThreshold(threshold: Float) {
+        viewModelScope.launch {
+            preferencesRepository.updateMotionSensitivityThreshold(threshold)
+            markProfileAsCustom()
+        }
+    }
+
+    // Update full preferences (for category detection settings)
+    fun updatePreferences(preferences: UserPreferences) {
+        viewModelScope.launch {
+            preferencesRepository.updateUserPreferences(preferences)
+            markProfileAsCustom()
+        }
+    }
+
+    // Place Review Settings (Week 5)
+    fun updateAutoApproveEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.updateAutoApproveEnabled(enabled)
+            markProfileAsCustom()
+        }
+    }
+
+    fun updateAutoApproveThreshold(threshold: Float) {
+        viewModelScope.launch {
+            preferencesRepository.updateAutoApproveThreshold(threshold)
+            markProfileAsCustom()
+        }
+    }
+
+    fun updateReviewNotificationsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.updateReviewNotificationsEnabled(enabled)
+            markProfileAsCustom()
+        }
+    }
+
+    // Timeline Settings (Phase 3)
+    fun updateTimelineTimeWindow(windowMinutes: Int) {
+        viewModelScope.launch {
+            preferencesRepository.updateTimelineTimeWindow(windowMinutes.toLong())
+            markProfileAsCustom()
+        }
+    }
+
+    fun updateTimelineDistanceThreshold(distanceMeters: Double) {
+        viewModelScope.launch {
+            preferencesRepository.updateTimelineDistanceThreshold(distanceMeters)
+            markProfileAsCustom()
+        }
+    }
+
+    // ISSUE #5: All update methods already exist above
+
+    /**
+     * Mark the current profile as CUSTOM when user modifies individual parameters
+     */
+    private suspend fun markProfileAsCustom() {
+        val currentProfile = preferencesRepository.getCurrentProfileName()
+        if (currentProfile != "CUSTOM") {
+            preferencesRepository.updateCurrentProfile("CUSTOM")
         }
     }
 }

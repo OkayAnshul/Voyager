@@ -24,6 +24,7 @@ data class MapUiState(
     val isTracking: Boolean = false,
     val userLocation: Location? = null,
     val selectedPlace: Place? = null,
+    val selectedPlaceVisits: List<com.cosmiclaboratory.voyager.domain.model.Visit> = emptyList(),  // ISSUE #4
     val currentPlace: Place? = null,
     val isAtPlace: Boolean = false,
     val isLoading: Boolean = true,
@@ -37,6 +38,7 @@ class MapViewModel @Inject constructor(
     private val locationUseCases: LocationUseCases,
     private val placeUseCases: PlaceUseCases,
     private val placeRepository: PlaceRepository,
+    private val visitRepository: com.cosmiclaboratory.voyager.domain.repository.VisitRepository,  // ISSUE #4
     private val appStateManager: AppStateManager,
     private val logger: ProductionLogger,
     private val eventDispatcher: StateEventDispatcher
@@ -134,8 +136,23 @@ class MapViewModel @Inject constructor(
     fun selectPlace(place: Place?) {
         _uiState.value = _uiState.value.copy(
             selectedPlace = place,
+            selectedPlaceVisits = emptyList(),  // Clear previous visits
             mapCenter = place?.let { it.latitude to it.longitude }
         )
+
+        // ISSUE #4: Fetch visits for the selected place
+        place?.let {
+            viewModelScope.launch {
+                try {
+                    val visits = visitRepository.getVisitsForPlace(it.id).first()
+                    _uiState.value = _uiState.value.copy(
+                        selectedPlaceVisits = visits
+                    )
+                } catch (e: Exception) {
+                    logger.e("MapViewModel", "Failed to load visits for place ${it.id}", e)
+                }
+            }
+        }
     }
     
     fun centerOnUser() {

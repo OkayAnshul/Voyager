@@ -9,7 +9,10 @@
     
     <!-- Notification permissions (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    
+
+    <!-- Activity Recognition permission (Android 10+) for Phase 2 -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+
     <!-- Foreground service permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
@@ -92,7 +95,13 @@
             android:name=".data.receiver.GeofenceReceiver"
             android:enabled="true"
             android:exported="false" />
-            
+
+        <!-- Activity Recognition Receiver (Phase 2) -->
+        <receiver
+            android:name=".utils.ActivityRecognitionReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
         <!-- WorkManager initialization - disabled for custom HiltWorkerFactory configuration -->
         <provider
             android:name="androidx.startup.InitializationProvider"

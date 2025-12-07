@@ -560,8 +560,16 @@ class AppStateManager @Inject constructor(
                 criticalIssues.add("CRITICAL: Negative values in daily stats")
             }
             
+            // Grace period: Allow 5 minutes after tracking starts for time to be recorded
             if (stats.locationCount > 0 && stats.timeTracked == 0L) {
-                validationIssues.add("Locations recorded but no time tracked")
+                val timeSinceTrackingStart = if (tracking.startTime != null) {
+                    java.time.Duration.between(tracking.startTime, LocalDateTime.now()).toSeconds()
+                } else 0L
+
+                // Only report issue if tracking has been active for more than 5 minutes
+                if (timeSinceTrackingStart > 300) {
+                    validationIssues.add("Locations recorded but no time tracked")
+                }
             }
             
             if (stats.placeCount > stats.locationCount && stats.locationCount > 0) {
@@ -586,8 +594,19 @@ class AppStateManager @Inject constructor(
             }
             
             // CRITICAL FIX: Cross-state consistency checks
+            // Grace period: Allow 2 minutes after tracking starts for place to be determined
             if (tracking.isActive && currentState.currentPlace == null) {
-                warnings.add("WARNING: Tracking active but no current place")
+                val timeSinceTrackingStart = if (tracking.startTime != null) {
+                    java.time.Duration.between(tracking.startTime, LocalDateTime.now()).toSeconds()
+                } else 0L
+
+                // Only warn if tracking has been active for more than 2 minutes
+                if (timeSinceTrackingStart > 120) {
+                    warnings.add("WARNING: Tracking active but no current place (${timeSinceTrackingStart}s)")
+                } else {
+                    // Log as info during grace period
+                    Log.i(TAG, "INFO: Tracking active, place determination in progress (${timeSinceTrackingStart}s)")
+                }
             }
             
             if (!tracking.isActive && stats.timeTracked > 0 && stats.date == java.time.LocalDate.now()) {

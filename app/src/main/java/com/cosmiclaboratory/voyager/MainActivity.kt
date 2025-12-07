@@ -104,10 +104,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
+
         // Initialize permission status
         updatePermissionStatus()
-        
+
         // Initialize background workers now that Hilt is ready
         lifecycleScope.launch {
             try {
@@ -117,16 +117,20 @@ class MainActivity : ComponentActivity() {
                 // App continues to work without background workers
             }
         }
-        
+
+        // Phase 1 UX: Check for deep link navigation from notifications
+        val navigateTo = intent?.getStringExtra("navigate_to")
+
         setContent {
             VoyagerTheme {
                 val currentPermissionStatus = permissionStatus.collectAsState().value
-                
+
                 VoyagerApp(
                     permissionStatus = currentPermissionStatus,
                     onPermissionRequest = { handlePermissionRequest() },
                     onOpenSettings = { openAppSettings() },
-                    onRequestNotificationPermission = { requestNotificationPermissions() }
+                    onRequestNotificationPermission = { requestNotificationPermissions() },
+                    initialDestination = navigateTo
                 )
                 
                 // Show background location education dialog
@@ -279,21 +283,42 @@ fun VoyagerApp(
     permissionStatus: PermissionStatus = PermissionStatus.LOCATION_DENIED,
     onPermissionRequest: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
-    onRequestNotificationPermission: () -> Unit = {}
+    onRequestNotificationPermission: () -> Unit = {},
+    initialDestination: String? = null
 ) {
     val navController = rememberNavController()
     var selectedDestination by remember { mutableStateOf(VoyagerDestination.Dashboard.route) }
-    
+
+    // Phase 1 UX: Handle deep link navigation from notifications
+    LaunchedEffect(initialDestination) {
+        initialDestination?.let { destination ->
+            when (destination) {
+                "place_review" -> {
+                    navController.navigate(VoyagerDestination.PlaceReview.route)
+                    selectedDestination = VoyagerDestination.PlaceReview.route
+                }
+            }
+        }
+    }
+
     // Show permission gateway if essential permissions are not granted
     // For Voyager to function properly, background location is REQUIRED
     when (permissionStatus) {
         PermissionStatus.LOCATION_DENIED -> {
-            com.cosmiclaboratory.voyager.presentation.screen.permission.PermissionGatewayScreen(
-                permissionStatus = permissionStatus,
-                onRequestPermissions = onPermissionRequest,
-                onOpenSettings = onOpenSettings,
-                onContinueToApp = { /* This will be handled by permission status change */ }
-            )
+            // Full-screen permission request
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                com.cosmiclaboratory.voyager.presentation.components.PermissionRequestCard(
+                    permissionStatus = permissionStatus,
+                    onRequestPermissions = onPermissionRequest,
+                    onOpenSettings = onOpenSettings,
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                )
+            }
         }
         else -> {
         // Show main app when permissions are granted

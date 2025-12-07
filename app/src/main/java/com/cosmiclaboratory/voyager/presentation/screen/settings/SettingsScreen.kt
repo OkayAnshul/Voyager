@@ -1,5 +1,6 @@
 package com.cosmiclaboratory.voyager.presentation.screen.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -8,325 +9,318 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.cosmiclaboratory.voyager.presentation.theme.GlassCard
+import com.cosmiclaboratory.voyager.presentation.theme.GlassGradientContainer
+import com.cosmiclaboratory.voyager.utils.DeveloperModeManager
 import com.cosmiclaboratory.voyager.utils.PermissionStatus
-import com.cosmiclaboratory.voyager.presentation.screen.settings.components.AnalyticsConfigSection
-import com.cosmiclaboratory.voyager.presentation.screen.settings.components.LocationQualitySection
-import com.cosmiclaboratory.voyager.presentation.screen.settings.components.NotificationSettingsSection
-import com.cosmiclaboratory.voyager.presentation.screen.settings.components.PlaceDetectionAutomationSection
-import com.cosmiclaboratory.voyager.presentation.screen.settings.components.PlaceDetectionSection
-import com.cosmiclaboratory.voyager.presentation.screen.settings.components.TrackingSettingsSection
-import java.time.LocalDateTime
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
 
+/**
+ * EntryPoint for accessing DeveloperModeManager from Composables
+ */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface DeveloperModeManagerEntryPoint {
+    fun developerModeManager(): DeveloperModeManager
+}
+
+/**
+ * Simplified Settings Screen with Glassmorphism Design
+ *
+ * 2-Tier Structure:
+ * - Basic Settings (this screen)
+ * - Advanced Settings (separate screen)
+ *
+ * Features:
+ * - Data statistics
+ * - Location tracking toggle
+ * - Quick actions (export, clear data)
+ * - Navigation to Advanced Settings
+ * - Developer mode (tap version 7x)
+ * - Glassmorphism design throughout
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     permissionStatus: PermissionStatus = PermissionStatus.ALL_GRANTED,
     onRequestNotificationPermission: () -> Unit = {},
+    onNavigateToDebugDataInsertion: () -> Unit = {},
+    onNavigateToAdvancedSettings: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
+    val developerModeManager = remember {
+        EntryPointAccessors.fromApplication<DeveloperModeManagerEntryPoint>(
+            context.applicationContext
+        ).developerModeManager()
+    }
+
     val uiState by viewModel.uiState.collectAsState()
+    val isDeveloperMode by developerModeManager.isDeveloperModeEnabled.collectAsState()
     var showClearDataDialog by remember { mutableStateOf(false) }
-    var showDeleteOldDataDialog by remember { mutableStateOf(false) }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Settings",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
+    var showExportDialog by remember { mutableStateOf(false) }
+    var versionTapMessage by remember { mutableStateOf<String?>(null) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        "Settings",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.refreshSettings() }) {
+                        Icon(Icons.Default.Refresh, "Refresh")
+                    }
+                }
             )
-            
-            IconButton(onClick = { viewModel.refreshSettings() }) {
-                Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-            }
         }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        when {
-            uiState.isLoading -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item { Spacer(modifier = Modifier.height(8.dp)) }
+
+            // Data Statistics Card
+            item {
+                GlassGradientContainer {
+                    Column {
+                        Text(
+                            text = "Your Data",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceAround
+                        ) {
+                            DataStatItem("Locations", uiState.totalLocations.toString())
+                            DataStatItem("Places", uiState.totalPlaces.toString())
+                            DataStatItem("Visits", uiState.totalVisits.toString())
+                        }
+                    }
                 }
             }
-            
-            else -> {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Data Statistics Section
-                    item {
-                        SettingsSection("Data Statistics")
-                    }
-                    
-                    item {
-                        DataStatsCard(
-                            totalLocations = uiState.totalLocations,
-                            totalPlaces = uiState.totalPlaces,
-                            totalVisits = uiState.totalVisits
-                        )
-                    }
-                    
-                    item {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        SettingsSection("Location Tracking")
-                    }
-                    
-                    item {
-                        val hasLocationAccess = permissionStatus in setOf(
-                            PermissionStatus.LOCATION_FULL_ACCESS, 
-                            PermissionStatus.ALL_GRANTED
-                        )
-                        
-                        val trackingStatus = when {
-                            !hasLocationAccess -> "Background location required"
-                            uiState.errorMessage?.contains("Location tracking stopped") == true -> "Stopped - Check permissions"
-                            uiState.isLocationTrackingEnabled -> "Currently tracking"
-                            else -> "Tracking paused"
+
+            // Location Tracking Card
+            item {
+                GlassCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Location Tracking",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = if (uiState.isLocationTrackingEnabled) "Active" else "Paused",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
                         }
-                        
-                        SettingsItem(
-                            title = "Location Tracking",
-                            subtitle = trackingStatus,
-                            icon = Icons.Filled.LocationOn,
-                            trailing = {
-                                Switch(
-                                    checked = uiState.isLocationTrackingEnabled && hasLocationAccess,
-                                    onCheckedChange = { 
-                                        if (hasLocationAccess) {
-                                            viewModel.toggleLocationTracking()
-                                        }
-                                    },
-                                    enabled = hasLocationAccess
+                        Switch(
+                            checked = uiState.isLocationTrackingEnabled,
+                            onCheckedChange = { viewModel.toggleLocationTracking() }
+                        )
+                    }
+                }
+            }
+
+            // Quick Actions Card
+            item {
+                GlassCard {
+                    Text(
+                        text = "Quick Actions",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Export Data
+                    QuickActionItem(
+                        icon = Icons.Default.Share,
+                        title = "Export Data",
+                        subtitle = "Save your location history",
+                        onClick = { showExportDialog = true }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Clear Data
+                    QuickActionItem(
+                        icon = Icons.Default.Delete,
+                        title = "Clear All Data",
+                        subtitle = "Remove all locations and places",
+                        onClick = { showClearDataDialog = true },
+                        destructive = true
+                    )
+                }
+            }
+
+            // Advanced Settings Navigation
+            item {
+                GlassCard(
+                    onClick = onNavigateToAdvancedSettings
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Advanced Settings",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Tracking, detection, timeline",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                                 )
                             }
+                        }
+                        Icon(
+                            Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Go"
                         )
                     }
-                    
-                    item {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        SettingsSection("Data Management")
-                    }
-                    
-                    item {
-                        SettingsItem(
-                            title = "Export Data",
-                            subtitle = "Export your location data to file",
-                            icon = Icons.Filled.Info,
-                            onClick = { viewModel.exportData() },
-                            trailing = if (uiState.isDataExporting) {
-                                { CircularProgressIndicator(modifier = Modifier.size(20.dp)) }
-                            } else null
-                        )
-                    }
-                    
-                    item {
-                        SettingsItem(
-                            title = "Delete Old Data",
-                            subtitle = "Remove data older than 30 days",
-                            icon = Icons.Filled.Delete,
-                            onClick = { showDeleteOldDataDialog = true }
-                        )
-                    }
-                    
-                    item {
-                        SettingsItem(
-                            title = "Clear All Data",
-                            subtitle = "Delete all tracked locations and places",
-                            icon = Icons.Filled.Delete,
-                            onClick = { showClearDataDialog = true }
-                        )
-                    }
-                    
-                    // Configuration Sections
-                    item {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        TrackingSettingsSection(
-                            preferences = uiState.preferences,
-                            onUpdateLocationInterval = viewModel::updateLocationUpdateInterval,
-                            onUpdateMinDistance = viewModel::updateMinDistanceChange,
-                            onUpdateAccuracyMode = viewModel::updateTrackingAccuracyMode
-                        )
-                    }
-                    
-                    // New Advanced Settings Sections
-                    item {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        LocationQualitySection(
-                            preferences = uiState.preferences,
-                            onUpdateMaxAccuracy = viewModel::updateMaxGpsAccuracy,
-                            onUpdateMaxSpeed = viewModel::updateMaxSpeedKmh,
-                            onUpdateMinTimeBetween = viewModel::updateMinTimeBetweenUpdates
-                        )
-                    }
-                    
-                    item {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        PlaceDetectionSection(
-                            preferences = uiState.preferences,
-                            onUpdateClusteringDistance = viewModel::updateClusteringDistance,
-                            onUpdateMinPoints = viewModel::updateMinPointsForCluster,
-                            onUpdateSessionBreakTime = viewModel::updateSessionBreakTime,
-                            onUpdateConfidenceThreshold = viewModel::updateAutoConfidenceThreshold
-                        )
-                    }
-                    
-                    item {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        PlaceDetectionAutomationSection(
-                            preferences = uiState.preferences,
-                            onUpdateFrequency = viewModel::updatePlaceDetectionFrequency,
-                            onUpdateTriggerCount = viewModel::updateAutoDetectTriggerCount,
-                            onUpdateBatteryRequirement = viewModel::updateBatteryRequirement
-                        )
-                    }
-                    
-                    item {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        AnalyticsConfigSection(
-                            preferences = uiState.preferences,
-                            onUpdateTimeRange = viewModel::updateActivityTimeRange,
-                            onUpdateBatchSize = viewModel::updateDataProcessingBatchSize
-                        )
-                    }
-                    
-                    item {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        NotificationSettingsSection(
-                            preferences = uiState.preferences,
-                            onUpdateNotificationSettings = viewModel::updateNotificationSettings,
-                            onUpdateNotificationFrequency = viewModel::updateNotificationFrequency,
-                            onRequestNotificationPermission = onRequestNotificationPermission
-                        )
-                    }
-                    
-                    item {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        // Reset button
-                        Card(
-                            modifier = Modifier.fillMaxWidth()
+                }
+            }
+
+            // Debug Section (Only visible in developer mode)
+            if (isDeveloperMode) {
+                item {
+                    GlassCard(
+                        onClick = onNavigateToDebugDataInsertion
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = "Reset Settings",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.padding(bottom = 8.dp)
+                                Icon(
+                                    Icons.Default.Build,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
                                 )
-                                
-                                Button(
-                                    onClick = viewModel::resetPreferencesToDefaults,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "Debug Tools",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold
                                     )
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Developer mode enabled",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Reset All Settings to Defaults")
                                 }
                             }
+                            Icon(
+                                Icons.Default.KeyboardArrowRight,
+                                contentDescription = "Go"
+                            )
                         }
                     }
                 }
             }
-        }
-        
-        // Show messages
-        uiState.exportMessage?.let { message ->
-            LaunchedEffect(message) {
-                kotlinx.coroutines.delay(3000)
-                viewModel.clearMessage()
+
+            // App Info Card
+            item {
+                GlassCard {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Voyager",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Version 1.0.0",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            modifier = Modifier.clickable {
+                                val remainingTaps = developerModeManager.registerTap()
+                                versionTapMessage = remainingTaps?.let {
+                                    "Tap $it more time${if (it > 1) "s" else ""} for developer mode"
+                                } ?: "Developer mode enabled!"
+                            }
+                        )
+
+                        versionTapMessage?.let { message ->
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
             }
-        }
-        
-        uiState.errorMessage?.let { message ->
-            LaunchedEffect(message) {
-                kotlinx.coroutines.delay(5000)
-                viewModel.clearMessage()
-            }
+
+            item { Spacer(modifier = Modifier.height(16.dp)) }
         }
     }
-    
-    // Message snackbar
-    uiState.exportMessage?.let { message ->
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.BottomCenter
-        ) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
-            ) {
-                Text(
-                    text = message,
-                    modifier = Modifier.padding(16.dp),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-        }
-    }
-    
-    uiState.errorMessage?.let { message ->
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.BottomCenter
-        ) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Text(
-                    text = message,
-                    modifier = Modifier.padding(16.dp),
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
-            }
-        }
-    }
-    
-    // Confirmation Dialogs
+
+    // Dialogs
     if (showClearDataDialog) {
         AlertDialog(
             onDismissRequest = { showClearDataDialog = false },
-            title = { Text("Clear All Data") },
-            text = { Text("This will permanently delete all your location data, places, and visits. This action cannot be undone.") },
+            title = { Text("Clear All Data?") },
+            text = { Text("This will permanently delete all your locations, places, and visits. This action cannot be undone.") },
             confirmButton = {
                 TextButton(
                     onClick = {
                         viewModel.deleteAllData()
                         showClearDataDialog = false
-                    }
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
                 ) {
-                    Text("Delete All")
+                    Text("Delete")
                 }
             },
             dismissButton = {
@@ -336,25 +330,24 @@ fun SettingsScreen(
             }
         )
     }
-    
-    if (showDeleteOldDataDialog) {
+
+    if (showExportDialog) {
         AlertDialog(
-            onDismissRequest = { showDeleteOldDataDialog = false },
-            title = { Text("Delete Old Data") },
-            text = { Text("This will delete all location data older than 30 days. This action cannot be undone.") },
+            onDismissRequest = { showExportDialog = false },
+            title = { Text("Export Data") },
+            text = { Text("Export your location history as JSON file?") },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val thirtyDaysAgo = LocalDateTime.now().minusDays(30)
-                        viewModel.deleteOldData(thirtyDaysAgo)
-                        showDeleteOldDataDialog = false
+                        viewModel.exportData(com.cosmiclaboratory.voyager.domain.usecase.ExportFormat.JSON)
+                        showExportDialog = false
                     }
                 ) {
-                    Text("Delete")
+                    Text("Export")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteOldDataDialog = false }) {
+                TextButton(onClick = { showExportDialog = false }) {
                     Text("Cancel")
                 }
             }
@@ -363,108 +356,55 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun DataStatsCard(
-    totalLocations: Int,
-    totalPlaces: Int,
-    totalVisits: Int
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text(
-                text = "Your Data",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                DataStatItem("Locations", totalLocations.toString())
-                DataStatItem("Places", totalPlaces.toString())
-                DataStatItem("Visits", totalVisits.toString())
-            }
-        }
-    }
-}
-
-@Composable
 private fun DataStatItem(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         Text(
             text = value,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
         )
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
         )
     }
 }
 
 @Composable
-private fun SettingsSection(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary,
-        fontWeight = FontWeight.Medium,
-        modifier = Modifier.padding(vertical = 8.dp)
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SettingsItem(
+private fun QuickActionItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     subtitle: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    trailing: @Composable (() -> Unit)? = null,
-    onClick: (() -> Unit)? = null
+    onClick: () -> Unit,
+    destructive: Boolean = false
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        onClick = onClick ?: { }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
             )
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            
-            trailing?.invoke()
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
         }
     }
 }

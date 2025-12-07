@@ -7,7 +7,13 @@
       "Bash(adb:*)",
       "Bash(grep:*)",
       "Bash(sed:*)",
-      "WebSearch"
+      "WebSearch",
+      "mcp__ide__getDiagnostics",
+      "Bash(awk:*)",
+      "Bash(test:*)",
+      "Bash(cat:*)",
+      "Bash(git checkout:*)",
+      "Bash(tee:*)"
     ],
     "deny": [],
     "ask": []

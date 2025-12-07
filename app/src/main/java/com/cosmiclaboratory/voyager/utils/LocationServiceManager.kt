@@ -42,6 +42,8 @@ class LocationServiceManager @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var healthCheckJob: Job? = null
     private var lastKnownServiceState = false
+    private var lastServiceStateChangeTime = 0L
+    private var serviceStopGracePeriodMs = 5000L // 5 second grace period before reporting service stopped
     
     init {
         updateServiceStatus()
@@ -142,13 +144,27 @@ class LocationServiceManager @Inject constructor(
     private fun updateServiceStatus() {
         val isRunning = isServiceActuallyRunning()
         val previousState = _isServiceRunning.value
-        _isServiceRunning.value = isRunning
-        
-        // Detect unexpected service stops
-        if (previousState && !isRunning && lastKnownServiceState) {
-            handleServiceFailure("Location tracking stopped unexpectedly")
+        val currentTime = System.currentTimeMillis()
+
+        // Track state changes
+        if (previousState != isRunning) {
+            lastServiceStateChangeTime = currentTime
         }
-        
+
+        _isServiceRunning.value = isRunning
+
+        // Detect unexpected service stops with grace period
+        if (previousState && !isRunning && lastKnownServiceState) {
+            val timeSinceChange = currentTime - lastServiceStateChangeTime
+
+            // Only report failure after grace period to avoid false positives during transitions
+            if (timeSinceChange >= serviceStopGracePeriodMs) {
+                handleServiceFailure("Location tracking stopped unexpectedly")
+            } else {
+                Log.d(TAG, "Service state change detected, waiting ${serviceStopGracePeriodMs - timeSinceChange}ms grace period")
+            }
+        }
+
         lastKnownServiceState = isRunning
     }
     
@@ -163,7 +179,7 @@ class LocationServiceManager @Inject constructor(
                 Log.d(TAG, "✅ Service status: RUNNING (via service flag)")
                 return true
             }
-            
+
             // Method 2: Try deprecated getRunningServices as fallback
             @Suppress("DEPRECATION")
             val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -178,26 +194,24 @@ class LocationServiceManager @Inject constructor(
             } catch (e: SecurityException) {
                 Log.w(TAG, "⚠️ Cannot use getRunningServices due to security restrictions (Android 8+)")
             }
-            
-            // Method 3: Check stored preferences state
+
+            // Method 3: Check app state manager (synchronous check)
+            val appState = appStateManager.appState.value
+            if (appState.locationTracking.isActive) {
+                Log.d(TAG, "⚠️ Service status: ASSUMED RUNNING (via app state)")
+                return true
+            }
+
+            // Method 4: Check stored preferences state (lowest priority)
             val storedState = prefs.getBoolean("location_tracking_enabled", false)
             if (storedState) {
                 Log.d(TAG, "⚠️ Service status: ASSUMED RUNNING (via stored preferences)")
                 return true
             }
-            
-            // Method 4: Check app state manager
-            scope.launch {
-                val appState = appStateManager.appState.value
-                if (appState.locationTracking.isActive) {
-                    Log.d(TAG, "⚠️ Service status: ASSUMED RUNNING (via app state)")
-                    // Don't return here since we're in a coroutine
-                }
-            }
-            
+
             Log.d(TAG, "❌ Service status: NOT RUNNING (all checks failed)")
             return false
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error checking service status", e)
             // If we can't determine status, assume it's not running for safety

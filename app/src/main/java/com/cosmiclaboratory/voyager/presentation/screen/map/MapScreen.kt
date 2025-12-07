@@ -16,6 +16,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.cosmiclaboratory.voyager.domain.model.Place
 import com.cosmiclaboratory.voyager.presentation.components.OpenStreetMapView
 import com.cosmiclaboratory.voyager.presentation.components.PermissionRequestCard
+import com.cosmiclaboratory.voyager.presentation.components.PlaceMarkerBottomSheet
 import com.cosmiclaboratory.voyager.utils.PermissionStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -142,92 +143,39 @@ fun MapScreen(
                 } else {
                     // Show map and places with floating action buttons
                     Box(modifier = Modifier.fillMaxSize()) {
-                        Row(modifier = Modifier.fillMaxSize()) {
-                            // Map view
-                            OpenStreetMapView(
-                                modifier = Modifier
-                                    .weight(if (uiState.places.isNotEmpty()) 2f else 1f)
-                                    .fillMaxHeight(),
-                                center = uiState.mapCenter,
-                                zoomLevel = uiState.zoomLevel,
-                                locations = uiState.locations,
-                                places = uiState.places,
-                                userLocation = uiState.userLocation,
-                                currentPlace = uiState.currentPlace,
-                                isTracking = uiState.isTracking,
-                                onPlaceClick = { place ->
-                                    viewModel.selectPlace(place)
-                                },
-                                onMapClick = { lat, lng ->
-                                    viewModel.onMapClick(lat, lng)
-                                },
-                                onMapReady = { mapView ->
-                                    viewModel.onMapReady(mapView)
-                                }
-                            )
-                            
-                            // Side panel with places list
-                            if (uiState.places.isNotEmpty()) {
-                                Card(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxHeight()
-                                        .padding(8.dp)
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(16.dp)
-                                    ) {
-                                        Text(
-                                            text = "Places (${uiState.places.size})",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        
-                                        LazyColumn {
-                                            items(uiState.places) { place ->
-                                                PlaceListItem(
-                                                    place = place,
-                                                    isSelected = place == uiState.selectedPlace,
-                                                    isCurrent = place == uiState.currentPlace,
-                                                    onClick = { viewModel.selectPlace(place) }
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
+                        // Map view only - removed side panel
+                        OpenStreetMapView(
+                            modifier = Modifier.fillMaxSize(),
+                            center = uiState.mapCenter,
+                            zoomLevel = uiState.zoomLevel,
+                            locations = uiState.locations,
+                            places = uiState.places,
+                            userLocation = uiState.userLocation,
+                            currentPlace = uiState.currentPlace,
+                            isTracking = uiState.isTracking,
+                            showVisitCounts = true,
+                            onPlaceClick = { place ->
+                                viewModel.selectPlace(place)
+                            },
+                            onMapClick = { lat, lng ->
+                                viewModel.onMapClick(lat, lng)
+                            },
+                            onMapReady = { mapView ->
+                                viewModel.onMapReady(mapView)
                             }
-                        }
+                        )
                         
-                        // Floating action buttons
-                        Column(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // Current location button
-                            if (uiState.userLocation != null) {
-                                FloatingActionButton(
-                                    onClick = { viewModel.centerOnUser() },
-                                    modifier = Modifier.size(48.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.LocationOn,
-                                        contentDescription = "Center on my location"
-                                    )
-                                }
-                            }
-                            
-                            // Refresh button
+                        // Single floating action button - locate current location only
+                        if (uiState.userLocation != null) {
                             FloatingActionButton(
-                                onClick = { viewModel.refreshMapData() },
-                                modifier = Modifier.size(48.dp)
+                                onClick = { viewModel.centerOnUser() },
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(16.dp)
                             ) {
                                 Icon(
-                                    Icons.Default.Refresh,
-                                    contentDescription = "Refresh map data"
+                                    Icons.Default.LocationOn,
+                                    contentDescription = "Center on my location"
                                 )
                             }
                         }
@@ -268,18 +216,16 @@ fun MapScreen(
             }
         }
         
-        // Selected place details bottom sheet
+        // ISSUE #4: Enhanced place details bottom sheet
         uiState.selectedPlace?.let { place ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp)
-            ) {
-                PlaceDetails(
-                    place = place,
-                    onDismiss = { viewModel.selectPlace(null) }
-                )
-            }
+            val timelinePosition = uiState.places.indexOf(place) + 1
+            PlaceMarkerBottomSheet(
+                place = place,
+                visits = uiState.selectedPlaceVisits,
+                timelinePosition = timelinePosition,
+                totalPlaces = uiState.places.size,
+                onDismiss = { viewModel.selectPlace(null) }
+            )
         }
     }
 }
@@ -311,15 +257,17 @@ private fun PlaceListItem(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = place.name,
+                    text = place.osmSuggestedName ?: place.name,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium
                 )
-                Text(
-                    text = place.category.name,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                place.address?.let { address ->
+                    Text(
+                        text = address.split(",").firstOrNull() ?: address,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Text(
                     text = "${place.visitCount} visits",
                     style = MaterialTheme.typography.bodySmall,
@@ -368,10 +316,13 @@ private fun PlaceDetails(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = "Category: ${place.category.name}",
-                style = MaterialTheme.typography.bodyMedium
-            )
+            place.address?.let { address ->
+                Text(
+                    text = address,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f)
+                )
+            }
             Text(
                 text = "Visits: ${place.visitCount}",
                 style = MaterialTheme.typography.bodyMedium

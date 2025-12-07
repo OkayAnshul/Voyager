@@ -88,7 +88,16 @@ class LocationTrackingService : Service() {
     
     @Inject
     lateinit var placeDetectionUseCases: PlaceDetectionUseCases
-    
+
+    @Inject
+    lateinit var sleepScheduleManager: com.cosmiclaboratory.voyager.utils.SleepScheduleManager
+
+    @Inject
+    lateinit var motionDetectionManager: com.cosmiclaboratory.voyager.utils.MotionDetectionManager
+
+    @Inject
+    lateinit var activityRecognitionManager: com.cosmiclaboratory.voyager.utils.HybridActivityRecognitionManager
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var isTracking = false
     private var isPaused = false
@@ -230,6 +239,12 @@ class LocationTrackingService : Service() {
                         Looper.getMainLooper()
                     )
                     isTracking = true
+
+                    // Phase 2: Start activity recognition if enabled
+                    if (preferences.useActivityRecognition) {
+                        activityRecognitionManager.startActivityRecognition()
+                        Log.d(TAG, "Activity recognition started")
+                    }
                     
                     // CRITICAL FIX: Update AppStateManager directly instead of using events to prevent circular dependencies
                     serviceScope.launch {
@@ -270,6 +285,11 @@ class LocationTrackingService : Service() {
                     
                     // Start monitoring permissions
                     startPermissionMonitoring()
+
+                    // Phase 8.4: Start motion detection if enabled
+                    if (preferences.motionDetectionEnabled && preferences.sleepModeEnabled) {
+                        startMotionDetection()
+                    }
                 } catch (e: SecurityException) {
                     Log.e(TAG, "Security exception when requesting location updates: ${e.message}")
                     updateNotification(getString(R.string.location_permission_required))
@@ -301,9 +321,13 @@ class LocationTrackingService : Service() {
     
     private fun stopLocationTracking() {
         if (!isTracking) return
-        
+
         fusedLocationClient.removeLocationUpdates(locationCallback)
         isTracking = false
+
+        // Phase 2: Stop activity recognition
+        activityRecognitionManager.stopActivityRecognition()
+        Log.d(TAG, "Activity recognition stopped")
         
         // CRITICAL FIX: Update AppStateManager directly instead of using events to prevent circular dependencies
         serviceScope.launch {
@@ -348,7 +372,35 @@ class LocationTrackingService : Service() {
     
     private suspend fun saveLocation(androidLocation: AndroidLocation) {
         if (isPaused) return
-        
+
+        // Phase 8.1 & 8.4: Skip location tracking during sleep hours unless motion detected
+        if (sleepScheduleManager.isInSleepWindow()) {
+            val prefs = currentPreferences ?: return
+
+            // If motion detection is enabled and motion is detected, allow tracking
+            if (prefs.motionDetectionEnabled && motionDetectionManager.isMotionDetected()) {
+                logger.d(TAG, "Sleep mode active but motion detected - continuing tracking")
+            } else {
+                logger.d(TAG, "Location skipped - sleep mode active")
+                return
+            }
+        }
+
+        // Phase 2: Update fallback activity detection with GPS speed
+        motionDetectionManager.updateActivityFromSpeed(
+            speedKmh = androidLocation.speed * 3.6f, // Convert m/s to km/h
+            accuracy = androidLocation.accuracy
+        )
+
+        // Phase 2: Skip location saves when user is driving (prevents false detections)
+        val prefs = currentPreferences
+        if (prefs != null && prefs.useActivityRecognition) {
+            if (activityRecognitionManager.isUserMoving(confidenceThreshold = 0.75f)) {
+                logger.d(TAG, "Location skipped - user is driving (activity: ${activityRecognitionManager.getCurrentActivity().activity})")
+                return
+            }
+        }
+
         errorHandler.executeWithErrorHandling(
             operation = {
                 val startTime = System.currentTimeMillis()
@@ -359,14 +411,26 @@ class LocationTrackingService : Service() {
                     return@executeWithErrorHandling Unit
                 }
                 
+                // Phase 1: Get current activity detection
+                val activityDetection = activityRecognitionManager.getCurrentActivity()
+                val timestamp = ApiCompatibilityUtils.getCurrentDateTime()
+
                 val location = Location(
                     latitude = androidLocation.latitude,
                     longitude = androidLocation.longitude,
-                    timestamp = ApiCompatibilityUtils.getCurrentDateTime(),
+                    timestamp = timestamp,
                     accuracy = androidLocation.accuracy,
                     speed = if (androidLocation.hasSpeed()) androidLocation.speed else null,
                     altitude = if (androidLocation.hasAltitude()) androidLocation.altitude else null,
-                    bearing = if (androidLocation.hasBearing()) androidLocation.bearing else null
+                    bearing = if (androidLocation.hasBearing()) androidLocation.bearing else null,
+                    // Phase 1: Activity context
+                    userActivity = activityDetection.activity,
+                    activityConfidence = activityDetection.confidence,
+                    semanticContext = inferSemanticContext(
+                        activity = activityDetection.activity,
+                        timestamp = timestamp,
+                        speed = if (androidLocation.hasSpeed()) androidLocation.speed else null
+                    )
                 )
                 
                 logger.logLocationProcessing(TAG, location.latitude, location.longitude, location.accuracy)
@@ -507,6 +571,62 @@ class LocationTrackingService : Service() {
         }
     }
     
+    /**
+     * Phase 1: Infer semantic context from activity + time + speed
+     * This provides a high-level understanding of what the user is doing
+     */
+    private fun inferSemanticContext(
+        activity: com.cosmiclaboratory.voyager.domain.model.UserActivity,
+        timestamp: LocalDateTime,
+        speed: Float?
+    ): com.cosmiclaboratory.voyager.domain.model.SemanticContext? {
+        val hour = timestamp.hour
+        val isWeekday = timestamp.dayOfWeek.value in 1..5 // Monday-Friday
+        val isWorkHours = hour in 9..17
+        val isMealTime = hour in listOf(7, 8, 12, 13, 18, 19, 20)
+        val isWorkoutTime = hour in 5..9 || hour in 17..21
+
+        return when (activity) {
+            com.cosmiclaboratory.voyager.domain.model.UserActivity.DRIVING -> {
+                // Driving during commute hours on weekdays = likely commuting
+                if (isWeekday && (hour in 7..9 || hour in 17..19)) {
+                    com.cosmiclaboratory.voyager.domain.model.SemanticContext.COMMUTING
+                } else {
+                    com.cosmiclaboratory.voyager.domain.model.SemanticContext.IN_TRANSIT
+                }
+            }
+
+            com.cosmiclaboratory.voyager.domain.model.UserActivity.WALKING -> {
+                val speedKmh = (speed ?: 0f) * 3.6f
+                when {
+                    // Fast walking/running during workout times = outdoor exercise
+                    speedKmh > 6 && isWorkoutTime -> com.cosmiclaboratory.voyager.domain.model.SemanticContext.OUTDOOR_EXERCISE
+                    // Slow walking = likely shopping/browsing
+                    speedKmh < 3 -> com.cosmiclaboratory.voyager.domain.model.SemanticContext.SHOPPING
+                    // Default: will be refined with place context later
+                    else -> null
+                }
+            }
+
+            com.cosmiclaboratory.voyager.domain.model.UserActivity.CYCLING -> {
+                com.cosmiclaboratory.voyager.domain.model.SemanticContext.OUTDOOR_EXERCISE
+            }
+
+            com.cosmiclaboratory.voyager.domain.model.UserActivity.STATIONARY -> {
+                // Will be refined when we know the place
+                // For now, make basic inferences based on time
+                when {
+                    isWorkHours && isWeekday -> com.cosmiclaboratory.voyager.domain.model.SemanticContext.WORKING
+                    isMealTime -> com.cosmiclaboratory.voyager.domain.model.SemanticContext.EATING
+                    hour >= 22 || hour <= 6 -> com.cosmiclaboratory.voyager.domain.model.SemanticContext.RELAXING_HOME
+                    else -> null
+                }
+            }
+
+            com.cosmiclaboratory.voyager.domain.model.UserActivity.UNKNOWN -> null
+        }
+    }
+
     /**
      * Update stationary mode detection based on movement patterns
      */
@@ -740,12 +860,15 @@ class LocationTrackingService : Service() {
         
         // Stop permission monitoring
         permissionCheckJob?.cancel()
-        
+
+        // Phase 8.4: Stop motion detection
+        motionDetectionManager.cleanup()
+
         // Notify manager before stopping if we're still tracking
         if (isTracking) {
             locationServiceManager.notifyServiceStopped("Service destroyed")
         }
-        
+
         stopLocationTracking()
         
         // CRITICAL FIX: Graceful scope cancellation to prevent JobCancellationException
@@ -847,14 +970,17 @@ class LocationTrackingService : Service() {
     
     private suspend fun restartLocationTracking() {
         if (!isTracking) return
-        
+
         // Stop current tracking
         fusedLocationClient.removeLocationUpdates(locationCallback)
-        
+
+        // Phase 8.4: Stop motion detection before restart
+        motionDetectionManager.stopListening()
+
         // Create new location request with updated preferences
         currentPreferences?.let { preferences ->
             locationRequest = createLocationRequest(preferences)
-            
+
             // Restart tracking with new settings
             try {
                 fusedLocationClient.requestLocationUpdates(
@@ -863,6 +989,14 @@ class LocationTrackingService : Service() {
                     Looper.getMainLooper()
                 )
                 updateNotification(getString(R.string.location_tracking_active))
+
+                // Phase 8.4: Restart motion detection with new preferences
+                if (preferences.motionDetectionEnabled && preferences.sleepModeEnabled) {
+                    startMotionDetection()
+                    logger.d(TAG, "Motion detection restarted with updated preferences")
+                } else {
+                    logger.d(TAG, "Motion detection not started (enabled: ${preferences.motionDetectionEnabled}, sleep: ${preferences.sleepModeEnabled})")
+                }
             } catch (e: SecurityException) {
                 locationServiceManager.notifyServiceStopped("Security exception during restart")
                 stopSelf()
@@ -1023,7 +1157,28 @@ class LocationTrackingService : Service() {
             }
         }
     }
-    
+
+    /**
+     * Phase 8.4: Start motion detection
+     * Monitors accelerometer to detect user movement during sleep hours
+     */
+    private fun startMotionDetection() {
+        if (!motionDetectionManager.isMotionDetectionAvailable()) {
+            logger.d(TAG, "Motion detection not available on this device")
+            return
+        }
+
+        serviceScope.launch {
+            motionDetectionManager.startListening { motionDetected ->
+                if (motionDetected) {
+                    logger.d(TAG, "Motion detected during sleep hours - waking up tracking")
+                    // Motion is detected, the saveLocation method will allow tracking
+                }
+            }
+            logger.d(TAG, "Motion detection started")
+        }
+    }
+
     companion object {
         const val ACTION_START_TRACKING = "ACTION_START_TRACKING"
         const val ACTION_STOP_TRACKING = "ACTION_STOP_TRACKING"

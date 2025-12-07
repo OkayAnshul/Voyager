@@ -15,11 +15,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.cosmiclaboratory.voyager.utils.PermissionStatus
 import com.cosmiclaboratory.voyager.domain.model.Place
+import com.cosmiclaboratory.voyager.presentation.theme.GlassCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     permissionStatus: PermissionStatus = PermissionStatus.ALL_GRANTED,
+    onNavigateToReview: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -90,7 +92,7 @@ fun DashboardScreen(
                 ) {
             // Stats Cards - Basic version for now
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Total Locations", style = MaterialTheme.typography.titleMedium)
                         Text(uiState.totalLocations.toString(), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
@@ -98,9 +100,9 @@ fun DashboardScreen(
                     }
                 }
             }
-            
+
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Places Visited", style = MaterialTheme.typography.titleMedium)
                         Text(uiState.totalPlaces.toString(), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
@@ -110,11 +112,13 @@ fun DashboardScreen(
             }
             
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Total Time", style = MaterialTheme.typography.titleMedium)
-                        Text("${uiState.totalTimeTracked / (1000 * 60)}m", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-                        Text("Time spent tracking", style = MaterialTheme.typography.bodySmall)
+                        val hours = uiState.totalTimeTracked / (1000 * 60 * 60)
+                        val minutes = (uiState.totalTimeTracked % (1000 * 60 * 60)) / (1000 * 60)
+                        Text(if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                        Text("Time spent tracking (updates live)", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -122,10 +126,7 @@ fun DashboardScreen(
             // Real-time current visit status
             if (uiState.isAtPlace && uiState.currentPlace != null) {
                 item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                    ) {
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.LocationOn, contentDescription = "Current location", tint = MaterialTheme.colorScheme.primary)
@@ -141,9 +142,54 @@ fun DashboardScreen(
                     }
                 }
             }
+
+            // Review System - Place Review Card
+            if (uiState.pendingReviewCount > 0) {
+                item {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onNavigateToReview
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        "Review Places",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        "${uiState.pendingReviewCount} places need review",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Icon(
+                                Icons.Default.KeyboardArrowRight,
+                                contentDescription = "Go to reviews",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
             
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -168,7 +214,7 @@ fun DashboardScreen(
             }
             
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -193,90 +239,7 @@ fun DashboardScreen(
                 }
             }
             
-            // Debug section for troubleshooting
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f)
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            "🔧 Debug Tools", 
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Text(
-                            "Troubleshoot place detection issues",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        
-                        Spacer(modifier = Modifier.height(12.dp))
-                        
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { viewModel.debugGetDiagnosticInfo() },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("📊 Diagnostics")
-                            }
-                            
-                            OutlinedButton(
-                                onClick = { viewModel.debugManualPlaceDetection() },
-                                enabled = !uiState.isDetectingPlaces,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("🚀 Force Detection")
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { viewModel.debugWorkManagerHealth() },
-                                enabled = !uiState.isDetectingPlaces,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("🔧 Health")
-                            }
-                            
-                            OutlinedButton(
-                                onClick = { viewModel.debugResetPreferences() },
-                                enabled = !uiState.isDetectingPlaces,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("🔄 Reset")
-                            }
-                        }
-                        
-                        // Show diagnostic/error info if available
-                        uiState.errorMessage?.let { message ->
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                )
-                            ) {
-                                Text(
-                                    text = message,
-                                    modifier = Modifier.padding(12.dp),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+            // Removed debug section - moved to Settings > Developer section
         }
     }
 }
@@ -288,7 +251,7 @@ fun DashboardScreen(
     value: String,
     subtitle: String
 ) {
-    Card(
+    GlassCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -323,7 +286,7 @@ fun DashboardScreen(
     onToggleTracking: () -> Unit,
     permissionStatus: PermissionStatus
 ) {
-    Card(
+    GlassCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -376,7 +339,7 @@ fun DashboardScreen(
     onDetectNow: () -> Unit,
     isDetecting: Boolean
 ) {
-    Card(
+    GlassCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -425,15 +388,7 @@ fun DashboardScreen(
     visitDuration: Long,
     isActive: Boolean
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isActive) 
-                MaterialTheme.colorScheme.primaryContainer 
-            else 
-                MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

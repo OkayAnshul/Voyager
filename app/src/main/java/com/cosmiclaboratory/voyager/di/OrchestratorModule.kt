@@ -48,7 +48,8 @@ object OrchestratorModule {
         logger: ProductionLogger,
         appStateManager: com.cosmiclaboratory.voyager.data.state.AppStateManager,
         errorHandler: com.cosmiclaboratory.voyager.utils.ErrorHandler,
-        validationService: com.cosmiclaboratory.voyager.domain.validation.ValidationService
+        validationService: com.cosmiclaboratory.voyager.domain.validation.ValidationService,
+        preferencesRepository: com.cosmiclaboratory.voyager.domain.repository.PreferencesRepository
     ): SmartDataProcessor {
         return SmartDataProcessor(
             locationRepository,
@@ -59,7 +60,8 @@ object OrchestratorModule {
             logger,
             appStateManager,
             errorHandler,
-            validationService
+            validationService,
+            preferencesRepository
         )
     }
 }

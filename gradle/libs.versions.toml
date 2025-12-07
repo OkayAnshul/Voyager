@@ -20,10 +20,12 @@ ksp = "2.0.21-1.0.25"
 # Room
 room = "2.6.1"
 sqlcipher = "4.5.4"
+paging = "3.3.0"
 
 # Google Services
 playServicesLocation = "21.3.0"
 playServicesMaps = "18.2.0"
+playServicesActivityRecognition = "21.1.0"
 placesApi = "3.5.0"
 
 # Navigation
@@ -63,6 +65,7 @@ securityCrypto = "1.0.0"
 # Network (for Places API)
 retrofit = "2.11.0"
 okhttp = "4.12.0"
+ktor = "2.3.12"
 
 # Charts (using custom Canvas implementation)
 # We'll implement custom charts using Compose Canvas
@@ -98,11 +101,17 @@ androidx-hilt-compiler = { group = "androidx.hilt", name = "hilt-compiler", vers
 room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+room-paging = { group = "androidx.room", name = "room-paging", version.ref = "room" }
 sqlcipher = { group = "net.zetetic", name = "android-database-sqlcipher", version.ref = "sqlcipher" }
+
+# Paging
+paging-runtime = { group = "androidx.paging", name = "paging-runtime-ktx", version.ref = "paging" }
+paging-compose = { group = "androidx.paging", name = "paging-compose", version.ref = "paging" }
 
 # Google Play Services
 play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
 play-services-maps = { group = "com.google.android.gms", name = "play-services-maps", version.ref = "playServicesMaps" }
+play-services-activity-recognition = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
 places = { group = "com.google.android.libraries.places", name = "places", version.ref = "placesApi" }
 
 # Navigation
@@ -137,6 +146,10 @@ security-crypto = { group = "androidx.security", name = "security-crypto", versi
 retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 retrofit-converter-gson = { group = "com.squareup.retrofit2", name = "converter-gson", version.ref = "retrofit" }
+ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
+ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktor" }
+ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
 
 # JSON
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }

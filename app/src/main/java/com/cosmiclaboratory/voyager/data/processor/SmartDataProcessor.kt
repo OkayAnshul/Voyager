@@ -28,6 +28,16 @@ import java.time.LocalDateTime
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * FIX 3: PendingVisit data class for dwell time detection
+ */
+data class PendingVisit(
+    val placeId: Long,
+    val firstDetectionTime: LocalDateTime,
+    val lastLocationInside: LocalDateTime,
+    val isConfirmed: Boolean = false
+)
+
 @Singleton
 class SmartDataProcessor @Inject constructor(
     private val locationRepository: LocationRepository,
@@ -38,16 +48,23 @@ class SmartDataProcessor @Inject constructor(
     private val logger: ProductionLogger,
     private val appStateManager: AppStateManager,
     private val errorHandler: ErrorHandler,
-    private val validationService: ValidationService
+    private val validationService: ValidationService,
+    private val preferencesRepository: com.cosmiclaboratory.voyager.domain.repository.PreferencesRepository
 ) {
-    
+
     companion object {
         private const val TAG = "SmartDataProcessor"
         private const val PLACE_PROXIMITY_THRESHOLD = 100.0 // meters
-        private const val VISIT_START_THRESHOLD = 50.0 // meters - closer threshold for visit start
+        // FIX 4: Entry/exit hysteresis thresholds
+        private const val ENTRY_THRESHOLD = 50.0 // meters - smaller threshold for entering a place
+        private const val EXIT_THRESHOLD = 150.0 // meters - larger threshold for exiting (3x entry)
+        private const val VISIT_START_THRESHOLD = 50.0 // meters - kept for compatibility
     }
-    
+
     private val processingScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // FIX 3: Track pending visits for dwell time detection
+    private var pendingVisit: PendingVisit? = null
     
     /**
      * Main entry point for processing new location data
@@ -208,7 +225,7 @@ class SmartDataProcessor @Inject constructor(
     }
     
     /**
-     * Check if location is near any known places and manage visits accordingly
+     * FIX 3: Check if location is near any known places and manage visits with dwell time detection
      */
     private suspend fun checkPlaceProximityAndManageVisits(location: Location) {
         try {
@@ -217,74 +234,112 @@ class SmartDataProcessor @Inject constructor(
                 Log.d(TAG, "No places found for proximity check")
                 return
             }
-            
+
             // Find the closest place
             val nearbyPlace = findNearestPlace(location, allPlaces)
             val currentState = currentStateRepository.getCurrentStateSync()
-            
+
+            // Get preferences for dwell time configuration
+            val preferences = preferencesRepository.getCurrentPreferences()
+            val minDwellTimeSeconds = preferences.minDwellTimeSeconds
+
             when {
-                // Case 1: Near a place and not currently visiting any place
-                nearbyPlace != null && currentState?.currentPlace == null -> {
-                    Log.d(TAG, "Entering place: ${nearbyPlace.name}")
-                    startVisitAtPlace(nearbyPlace, location.timestamp)
+                // Case 1: Near a place, no pending or active visit
+                nearbyPlace != null && pendingVisit == null && currentState?.currentPlace == null -> {
+                    pendingVisit = PendingVisit(
+                        placeId = nearbyPlace.id,
+                        firstDetectionTime = location.timestamp,
+                        lastLocationInside = location.timestamp
+                    )
+                    Log.d(TAG, "Started dwell time tracking for: ${nearbyPlace.name}")
                 }
-                
-                // Case 2: Near a different place than current
-                nearbyPlace != null && currentState?.currentPlace?.id != nearbyPlace.id -> {
-                    Log.d(TAG, "Moving from ${currentState?.currentPlace?.name} to ${nearbyPlace.name}")
-                    // End current visit and start new one
-                    endCurrentVisit(location.timestamp)
-                    startVisitAtPlace(nearbyPlace, location.timestamp)
+
+                // Case 2: Continuing dwell at same place
+                nearbyPlace != null && pendingVisit?.placeId == nearbyPlace.id -> {
+                    val dwellDuration = java.time.Duration.between(
+                        pendingVisit!!.firstDetectionTime,
+                        location.timestamp
+                    ).seconds
+
+                    pendingVisit = pendingVisit!!.copy(lastLocationInside = location.timestamp)
+
+                    // Confirm visit after minimum dwell time
+                    if (dwellDuration >= minDwellTimeSeconds && !pendingVisit!!.isConfirmed) {
+                        startVisitAtPlace(nearbyPlace, pendingVisit!!.firstDetectionTime)
+                        pendingVisit = pendingVisit!!.copy(isConfirmed = true)
+                        Log.d(TAG, "Visit confirmed after ${dwellDuration}s dwell time")
+                    }
                 }
-                
-                // Case 3: No longer near any place but currently visiting
-                nearbyPlace == null && currentState?.currentPlace != null -> {
-                    Log.d(TAG, "Leaving place: ${currentState.currentPlace.name}")
-                    endCurrentVisit(location.timestamp)
+
+                // Case 3: Near a different place than pending
+                nearbyPlace != null && pendingVisit != null && pendingVisit!!.placeId != nearbyPlace.id -> {
+                    if (pendingVisit!!.isConfirmed) {
+                        // End confirmed visit and start tracking new place
+                        endCurrentVisit(location.timestamp)
+                    }
+                    // Abandon unconfirmed pending visit and start new one
+                    pendingVisit = PendingVisit(
+                        placeId = nearbyPlace.id,
+                        firstDetectionTime = location.timestamp,
+                        lastLocationInside = location.timestamp
+                    )
+                    Log.d(TAG, "Switched to tracking new place: ${nearbyPlace.name}")
                 }
-                
-                // Case 4: Still at the same place - no action needed
+
+                // Case 4: Moved away from place
+                nearbyPlace == null && pendingVisit != null -> {
+                    if (!pendingVisit!!.isConfirmed) {
+                        Log.d(TAG, "Abandoned dwell - no visit created (just passing by)")
+                    } else if (currentState?.currentPlace != null) {
+                        endCurrentVisit(location.timestamp)
+                    }
+                    pendingVisit = null
+                }
+
+                // Case 5: Still at confirmed place - update if needed
                 nearbyPlace != null && currentState?.currentPlace?.id == nearbyPlace.id -> {
-                    // Still at same place, just update location time
                     Log.d(TAG, "Still at place: ${nearbyPlace.name}")
                 }
             }
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error checking place proximity", e)
         }
     }
     
     /**
-     * Find the nearest place within threshold distance
+     * FIX 4: Find the nearest place with entry/exit hysteresis
      */
-    private fun findNearestPlace(location: Location, places: List<Place>): Place? {
+    private suspend fun findNearestPlace(location: Location, places: List<Place>): Place? {
+        val currentState = currentStateRepository.getCurrentStateSync()
         var nearestPlace: Place? = null
         var nearestDistance = Double.MAX_VALUE
-        
+
         places.forEach { place ->
             val distance = LocationUtils.calculateDistance(
                 location.latitude, location.longitude,
                 place.latitude, place.longitude
             )
-            
-            // Use different thresholds based on place radius and accuracy
-            val threshold = maxOf(
-                VISIT_START_THRESHOLD,
-                place.radius,
-                location.accuracy.toDouble() * 1.5
-            )
-            
+
+            // FIX 4: Hysteresis - different thresholds for entry vs exit
+            val threshold = if (currentState?.currentPlace?.id == place.id || pendingVisit?.placeId == place.id) {
+                // Currently at or tracking this place - use larger threshold to prevent ping-pong
+                maxOf(EXIT_THRESHOLD, place.radius * 1.5, location.accuracy.toDouble() * 2.0)
+            } else {
+                // Not at this place - use smaller threshold for entry
+                maxOf(ENTRY_THRESHOLD, place.radius, location.accuracy.toDouble() * 1.5)
+            }
+
             if (distance <= threshold && distance < nearestDistance) {
                 nearestPlace = place
                 nearestDistance = distance
             }
         }
-        
+
         if (nearestPlace != null) {
-            Log.d(TAG, "Found nearby place: ${nearestPlace!!.name} at ${nearestDistance}m")
+            Log.d(TAG, "Found nearby place: ${nearestPlace!!.name} at ${String.format("%.1f", nearestDistance)}m")
         }
-        
+
         return nearestPlace
     }
     

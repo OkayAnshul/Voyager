@@ -7,6 +7,8 @@ import com.cosmiclaboratory.voyager.domain.repository.LocationRepository
 import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
 import com.cosmiclaboratory.voyager.domain.repository.VisitRepository
 import com.cosmiclaboratory.voyager.domain.usecase.AnalyticsUseCases
+import com.cosmiclaboratory.voyager.domain.usecase.GenerateTimelineSegmentsUseCase
+import com.cosmiclaboratory.voyager.domain.usecase.RenamePlaceUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -21,7 +23,8 @@ private data class TimelineLoadResult(
     val placesMap: Map<Long, com.cosmiclaboratory.voyager.domain.model.Place>,
     val locations: List<com.cosmiclaboratory.voyager.domain.model.Location>,
     val dayAnalytics: com.cosmiclaboratory.voyager.domain.model.DayAnalytics,
-    val timelineEntries: List<TimelineEntry>
+    val timelineEntries: List<TimelineEntry>,
+    val timelineSegments: List<TimelineSegment> = emptyList() // Phase 2
 )
 
 data class TimelineEntry(
@@ -47,9 +50,16 @@ enum class TimelineEntryType {
 data class TimelineUiState(
     val selectedDate: LocalDate = LocalDate.now(),
     val timelineEntries: List<TimelineEntry> = emptyList(),
+    val timelineSegments: List<TimelineSegment> = emptyList(), // Phase 2: New segment-based timeline
     val dayAnalytics: DayAnalytics? = null,
     val isLoading: Boolean = true,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val useSegmentView: Boolean = true, // Phase 2: Toggle between old and new view
+    // Real-time current location tracking
+    val currentLocation: Location? = null,
+    val currentPlace: Place? = null,
+    val currentVisitDuration: Long = 0L,
+    val isTracking: Boolean = false
 )
 
 @HiltViewModel
@@ -57,7 +67,9 @@ class TimelineViewModel @Inject constructor(
     private val visitRepository: VisitRepository,
     private val placeRepository: PlaceRepository,
     private val locationRepository: LocationRepository,
-    private val analyticsUseCases: AnalyticsUseCases
+    private val analyticsUseCases: AnalyticsUseCases,
+    private val generateTimelineSegmentsUseCase: GenerateTimelineSegmentsUseCase, // Phase 2
+    private val renamePlaceUseCase: RenamePlaceUseCase
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(TimelineUiState())
@@ -81,25 +93,25 @@ class TimelineViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
-                
+
                 // Run heavy database operations on IO dispatcher
-                val (visits, placesMap, locations, dayAnalytics, timelineEntries) = withContext(Dispatchers.IO) {
+                val (visits, placesMap, locations, dayAnalytics, timelineEntries, timelineSegments) = withContext(Dispatchers.IO) {
                     val startTime = System.currentTimeMillis()
-                    
+
                     val startOfDay = date.atStartOfDay()
                     val endOfDay = date.plusDays(1).atStartOfDay()
-                    
+
                     // Get visits for the day
                     val visits = visitRepository.getVisitsBetween(startOfDay, endOfDay).first()
-                    
+
                     // Get all places
                     val places = placeRepository.getAllPlaces().first()
                     val placesMap = places.associateBy { it.id }
-                    
+
                     // Get locations for the day
                     val locations = locationRepository.getLocationsSince(startOfDay)
                         .filter { it.timestamp.isBefore(endOfDay) }
-                    
+
                     // Use cached analytics if available and not expired
                     val currentTime = System.currentTimeMillis()
                     val dayAnalytics = if (analyticsCache.containsKey(date) &&
@@ -114,22 +126,33 @@ class TimelineViewModel @Inject constructor(
                         cacheTimestamps[date] = currentTime
                         analytics
                     }
-                    
-                    // Build timeline entries
+
+                    // Phase 2: Generate timeline segments (new grouped view)
+                    val timelineSegments = try {
+                        generateTimelineSegmentsUseCase(date)
+                    } catch (e: Exception) {
+                        android.util.Log.e("TimelineViewModel", "Failed to generate timeline segments", e)
+                        emptyList()
+                    }
+
+                    // Build timeline entries (legacy view, kept for backward compatibility)
                     val timelineEntries = buildTimelineEntries(visits, placesMap, locations, date)
-                    
+
                     val duration = System.currentTimeMillis() - startTime
                     android.util.Log.d("TimelineViewModel", "Timeline data loaded in ${duration}ms")
-                    
-                    TimelineLoadResult(visits, placesMap, locations, dayAnalytics, timelineEntries)
+
+                    TimelineLoadResult(visits, placesMap, locations, dayAnalytics, timelineEntries).copy(
+                        timelineSegments = timelineSegments
+                    )
                 }
-                
+
                 _uiState.value = _uiState.value.copy(
                     timelineEntries = timelineEntries,
+                    timelineSegments = timelineSegments,
                     dayAnalytics = dayAnalytics,
                     isLoading = false
                 )
-                
+
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -247,5 +270,51 @@ class TimelineViewModel @Inject constructor(
     
     fun refreshTimeline() {
         loadTimelineForDate(_uiState.value.selectedDate)
+    }
+
+    /**
+     * Rename a place with a custom user-provided name
+     */
+    fun renamePlace(placeId: Long, customName: String) {
+        viewModelScope.launch {
+            try {
+                val result = renamePlaceUseCase(placeId, customName)
+                if (result.isSuccess) {
+                    // Refresh timeline to show updated name
+                    refreshTimeline()
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        errorMessage = result.exceptionOrNull()?.message ?: "Failed to rename place"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = "Error: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * Revert place to automatic naming (remove custom name)
+     */
+    fun revertPlaceToAutomatic(placeId: Long) {
+        viewModelScope.launch {
+            try {
+                val result = renamePlaceUseCase.removeCustomName(placeId)
+                if (result.isSuccess) {
+                    // Refresh timeline to show automatic name
+                    refreshTimeline()
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        errorMessage = result.exceptionOrNull()?.message ?: "Failed to revert place name"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = "Error: ${e.message}"
+                )
+            }
+        }
     }
 }

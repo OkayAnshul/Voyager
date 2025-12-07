@@ -24,7 +24,11 @@ class PlaceDetectionUseCases @Inject constructor(
     private val visitRepository: VisitRepository,
     private val preferencesRepository: PreferencesRepository,
     private val errorHandler: ErrorHandler,
-    private val validationService: ValidationService
+    private val validationService: ValidationService,
+    private val enrichPlaceWithDetailsUseCase: EnrichPlaceWithDetailsUseCase,  // NEW: Geocoding integration
+    private val autoAcceptDecisionUseCase: AutoAcceptDecisionUseCase,  // Week 3: Auto-accept decision
+    private val placeReviewUseCases: PlaceReviewUseCases,  // Week 3: Review management
+    private val categoryLearningEngine: CategoryLearningEngine  // Week 3: Category learning
 ) {
     
     companion object {
@@ -198,24 +202,33 @@ class PlaceDetectionUseCases @Inject constructor(
                         centerLat, centerLng, preferences.placeDetectionRadius / 1000.0 // Convert to km
                     )
                     
-                    // CRITICAL FIX: Check distance to existing places and only skip if too close
+                    // IMPROVED DUPLICATE DETECTION: Check both center distance AND cluster overlap
                     val minDistanceToExisting = nearbyPlaces.minOfOrNull { existingPlace ->
                         LocationUtils.calculateDistance(
                             existingPlace.latitude, existingPlace.longitude,
                             centerLat, centerLng
                         )
                     } ?: Double.MAX_VALUE
-                    
-                    // Only create new place if far enough from existing places (minimum 25 meters)
-                    val minimumDistanceBetweenPlaces = 25.0 // meters
-                    val shouldCreatePlace = minDistanceToExisting >= minimumDistanceBetweenPlaces
+
+                    // NEW: Check if cluster points fall within existing place radius (overlap detection)
+                    val overlapsWithExisting = nearbyPlaces.any { existingPlace ->
+                        isClusterOverlappingWithPlace(cluster, existingPlace)
+                    }
+
+                    // Only create new place if far enough from existing places AND doesn't overlap
+                    val minimumDistanceBetweenPlaces = preferences.minimumDistanceBetweenPlaces.toDouble()
+                    val shouldCreatePlace = minDistanceToExisting >= minimumDistanceBetweenPlaces && !overlapsWithExisting
                     
                     if (shouldCreatePlace) {
                         Log.d(TAG, "CLUSTER ANALYSIS: Creating place at ($centerLat, $centerLng). " +
-                            "Distance to nearest existing place: ${String.format("%.1f", minDistanceToExisting)}m")
+                            "Distance to nearest existing place: ${String.format("%.1f", minDistanceToExisting)}m, " +
+                            "Overlaps with existing: $overlapsWithExisting")
                     } else {
-                        Log.d(TAG, "CLUSTER SKIPPED: Too close to existing place " +
-                            "(${String.format("%.1f", minDistanceToExisting)}m < ${minimumDistanceBetweenPlaces}m)")
+                        val reason = when {
+                            overlapsWithExisting -> "overlaps with existing place"
+                            else -> "too close (${String.format("%.1f", minDistanceToExisting)}m < ${minimumDistanceBetweenPlaces}m)"
+                        }
+                        Log.d(TAG, "CLUSTER SKIPPED: $reason")
                     }
                     
                     if (shouldCreatePlace) {
@@ -229,10 +242,49 @@ class PlaceDetectionUseCases @Inject constructor(
                         }
                         
                         if (locationsInCluster.size >= preferences.minPointsForCluster) {
-                            val category = categorizePlace(locationsInCluster, preferences)
+                            // Phase 2: Analyze activity distribution at this cluster
+                            val activityCounts = locationsInCluster
+                                .groupBy { it.userActivity }
+                                .mapValues { it.value.size }
+
+                            val dominantActivity = activityCounts.maxByOrNull { it.value }?.key
+
+                            val activityDistribution = activityCounts.mapValues {
+                                it.value.toFloat() / locationsInCluster.size
+                            }
+
+                            Log.d(TAG, "Phase 2: Activity distribution at cluster: $activityDistribution")
+
+                            // Phase 2: Analyze semantic contexts
+                            val contextCounts = locationsInCluster
+                                .mapNotNull { it.semanticContext }
+                                .groupBy { it }
+                                .mapValues { it.value.size }
+
+                            val dominantContext = contextCounts.maxByOrNull { it.value }?.key
+
+                            val contextDistribution = contextCounts.mapValues {
+                                it.value.toFloat() / locationsInCluster.size
+                            }
+
+                            Log.d(TAG, "Phase 2: Context distribution at cluster: $contextDistribution")
+
+                            // ISSUE #3 FIX: Stop automatic category prediction
+                            // All places start as UNKNOWN until user manually categorizes them
+                            val category = PlaceCategory.UNKNOWN
+
+                            // OLD CODE (removed): Automatic categorization based on activity data
+                            // val category = categorizePlaceFromActivityAndTime(
+                            //     locationsInCluster,
+                            //     dominantActivity,
+                            //     dominantContext,
+                            //     activityDistribution,
+                            //     preferences
+                            // )
+
                             val placeName = generatePlaceName(category, centerLat, centerLng)
-                            
-                            val place = Place(
+
+                            var place = Place(
                                 name = placeName,
                                 category = category,
                                 latitude = centerLat,
@@ -240,23 +292,52 @@ class PlaceDetectionUseCases @Inject constructor(
                                 visitCount = 1,
                                 radius = calculateOptimalRadius(cluster),
                                 isCustom = false,
-                                confidence = calculateConfidence(locationsInCluster, category, preferences)
+                                confidence = calculateConfidence(locationsInCluster, category, preferences),
+                                // Phase 2: Activity insights
+                                dominantActivity = dominantActivity,
+                                activityDistribution = activityDistribution,
+                                dominantSemanticContext = dominantContext,
+                                contextDistribution = contextDistribution
                             )
-                            
+
+                            // NEW: Enrich place with geocoding (real addresses and names)
+                            try {
+                                place = enrichPlaceWithDetailsUseCase(place)
+                                Log.d(TAG, "Enriched place with geocoding: ${place.name}, address: ${place.address}")
+                            } catch (geocodingException: Exception) {
+                                Log.w(TAG, "Geocoding failed for place, using generic name", geocodingException)
+                                // Continue with generic name if geocoding fails
+                            }
+
                             // CRITICAL FIX: Robust place creation with error recovery
                             try {
                                 val placeId = placeRepository.insertPlace(place)
-                                newPlaces.add(place.copy(id = placeId))
+                                val createdPlace = place.copy(id = placeId)
+                                newPlaces.add(createdPlace)
                                 Log.d(TAG, "Created new place: $placeName at ($centerLat, $centerLng) " +
                                     "with confidence ${String.format("%.2f", place.confidence)} and ${locationsInCluster.size} locations")
-                                
+
                                 // Create initial visit records for this place with error recovery
+                                var visitCount = 0
                                 try {
-                                    createInitialVisits(placeId, locationsInCluster, preferences)
-                                    Log.d(TAG, "Successfully created initial visits for place $placeName")
+                                    visitCount = createInitialVisits(placeId, locationsInCluster, preferences)
+                                    Log.d(TAG, "Successfully created $visitCount initial visits for place $placeName")
                                 } catch (visitException: Exception) {
                                     Log.w(TAG, "Failed to create initial visits for place $placeName - place created but no visits", visitException)
                                     // Place creation succeeded, visit creation failed - this is acceptable
+                                }
+
+                                // Week 3: Auto-accept decision and review system integration
+                                try {
+                                    handlePlaceReview(
+                                        createdPlace,
+                                        locationsInCluster.size,
+                                        visitCount,
+                                        preferences
+                                    )
+                                } catch (reviewException: Exception) {
+                                    Log.w(TAG, "Failed to create place review for $placeName - place created but review not tracked", reviewException)
+                                    // Place creation succeeded, review failed - this is acceptable
                                 }
                             } catch (placeException: Exception) {
                                 Log.e(TAG, "CRITICAL ERROR: Failed to create place $placeName at ($centerLat, $centerLng)", placeException)
@@ -318,70 +399,288 @@ class PlaceDetectionUseCases @Inject constructor(
         }
     }
     
+    /**
+     * Phase 2: Infer place category using activity data + time patterns
+     * Much more accurate than time patterns alone
+     */
+    private fun categorizePlaceFromActivityAndTime(
+        locations: List<Location>,
+        dominantActivity: UserActivity?,
+        dominantContext: SemanticContext?,
+        activityDistribution: Map<UserActivity, Float>,
+        preferences: UserPreferences
+    ): PlaceCategory {
+        if (locations.isEmpty()) return PlaceCategory.UNKNOWN
+
+        // Priority 1: Use semantic context if available (most reliable)
+        dominantContext?.let { context ->
+            return when (context) {
+                SemanticContext.WORKING -> PlaceCategory.WORK
+                SemanticContext.WORKING_OUT -> PlaceCategory.GYM
+                SemanticContext.OUTDOOR_EXERCISE -> PlaceCategory.OUTDOOR
+                SemanticContext.EATING -> PlaceCategory.RESTAURANT
+                SemanticContext.SHOPPING,
+                SemanticContext.RUNNING_ERRANDS -> PlaceCategory.SHOPPING
+                SemanticContext.SOCIALIZING -> PlaceCategory.SOCIAL
+                SemanticContext.ENTERTAINMENT -> PlaceCategory.ENTERTAINMENT
+                SemanticContext.RELAXING_HOME -> PlaceCategory.HOME
+                else -> PlaceCategory.UNKNOWN
+            }
+        }
+
+        // Priority 2: Use activity patterns
+        val stationaryPercent = activityDistribution[UserActivity.STATIONARY] ?: 0f
+        val walkingPercent = activityDistribution[UserActivity.WALKING] ?: 0f
+
+        // High stationary + work hours = likely WORK or HOME
+        if (stationaryPercent > 0.8f) {
+            val nightHours = locations.count { it.timestamp.hour in 22..23 || it.timestamp.hour in 0..6 }
+            val nightPercent = nightHours.toFloat() / locations.size
+
+            if (nightPercent > 0.6f) return PlaceCategory.HOME
+
+            val workHours = locations.count {
+                it.timestamp.hour in 9..17 &&
+                it.timestamp.dayOfWeek.value in 1..5
+            }
+            val workPercent = workHours.toFloat() / locations.size
+
+            if (workPercent > 0.5f) return PlaceCategory.WORK
+        }
+
+        // Moderate walking + stationary = SHOPPING or RESTAURANT
+        if (walkingPercent in 0.2f..0.6f && stationaryPercent in 0.3f..0.7f) {
+            val avgDurationMinutes = calculateAverageDuration(locations)
+
+            return when {
+                avgDurationMinutes in 30..120 -> PlaceCategory.SHOPPING
+                avgDurationMinutes in 45..90 -> PlaceCategory.RESTAURANT
+                else -> PlaceCategory.UNKNOWN
+            }
+        }
+
+        // Fallback to time-based inference
+        return PlaceCategory.UNKNOWN
+    }
+
+    private fun calculateAverageDuration(locations: List<Location>): Int {
+        if (locations.size < 2) return 0
+
+        val sorted = locations.sortedBy { it.timestamp }
+        val duration = java.time.Duration.between(
+            sorted.first().timestamp,
+            sorted.last().timestamp
+        )
+
+        return duration.toMinutes().toInt()
+    }
+
     private suspend fun categorizePlace(locations: List<Location>, preferences: UserPreferences): PlaceCategory {
         if (locations.isEmpty()) return PlaceCategory.UNKNOWN
-        
-        val hourCounts = locations.groupBy { it.timestamp.hour }
-            .mapValues { it.value.size }
-        
-        val dayOfWeekCounts = locations.groupBy { it.timestamp.dayOfWeek }
-            .mapValues { it.value.size }
-        
-        val nightHours = hourCounts.filterKeys { it >= 22 || it <= 6 }.values.sum()
-        val morningHours = hourCounts.filterKeys { it in 7..9 }.values.sum()
-        val workHours = hourCounts.filterKeys { it in 9..17 }.values.sum()
-        val eveningHours = hourCounts.filterKeys { it in 18..21 }.values.sum()
-        
-        val weekdayCount = dayOfWeekCounts.filterKeys { 
-            it in listOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)
-        }.values.sum()
-        
-        val weekendCount = dayOfWeekCounts.filterKeys { 
-            it in listOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
-        }.values.sum()
-        
-        val totalCount = locations.size
-        
-        return when {
-            // Home: Most activity during night/evening hours
-            (nightHours + eveningHours) > totalCount * preferences.homeNightActivityThreshold -> PlaceCategory.HOME
-            
-            // Work: Most activity during work hours on weekdays
-            workHours > totalCount * preferences.workHoursActivityThreshold && weekdayCount > weekendCount * 1.5 -> PlaceCategory.WORK
-            
-            // Gym: Activity patterns suggest regular workout times
-            isGymPattern(hourCounts, dayOfWeekCounts, preferences) -> PlaceCategory.GYM
-            
-            // Shopping: Short visits during day hours, especially weekends
-            isShoppingPattern(locations, preferences) -> PlaceCategory.SHOPPING
-            
-            // Restaurant: Meal time patterns
-            isRestaurantPattern(hourCounts, preferences) -> PlaceCategory.RESTAURANT
-            
-            else -> PlaceCategory.UNKNOWN
+
+        // FIX: Score-based categorization instead of order-dependent
+        val scores = mutableMapOf<PlaceCategory, Float>()
+
+        scores[PlaceCategory.HOME] = calculateHomeScore(locations, preferences)
+        scores[PlaceCategory.WORK] = calculateWorkScore(locations, preferences)
+        scores[PlaceCategory.EDUCATION] = calculateEducationScore(locations, preferences)
+        scores[PlaceCategory.GYM] = calculateGymScore(locations, preferences)
+        scores[PlaceCategory.SHOPPING] = calculateShoppingScore(locations, preferences)
+        scores[PlaceCategory.RESTAURANT] = calculateRestaurantScore(locations, preferences)
+
+        // Find highest scoring category
+        val bestMatch = scores.maxByOrNull { it.value }
+
+        // Only accept if score > threshold, otherwise UNKNOWN
+        return if (bestMatch != null && bestMatch.value >= 0.5f) {
+            Log.d(TAG, "Category: ${bestMatch.key} (score: ${String.format("%.2f", bestMatch.value)})")
+            bestMatch.key
+        } else {
+            Log.d(TAG, "Category: UNKNOWN (best score: ${String.format("%.2f", bestMatch?.value ?: 0f)})")
+            PlaceCategory.UNKNOWN
         }
     }
-    
-    private fun isGymPattern(hourCounts: Map<Int, Int>, dayOfWeekCounts: Map<DayOfWeek, Int>, preferences: UserPreferences): Boolean {
+
+    private fun calculateHomeScore(locations: List<Location>, preferences: UserPreferences): Float {
+        if (locations.isEmpty()) return 0f
+
+        val hourCounts = locations.groupBy { it.timestamp.hour }.mapValues { it.value.size }
+        val nightHours = hourCounts.filterKeys { it >= 22 || it <= 6 }.values.sum()
+        val eveningHours = hourCounts.filterKeys { it in 18..21 }.values.sum()
+        val totalCount = locations.size
+
+        val nightEveningRatio = (nightHours + eveningHours).toFloat() / totalCount
+
+        // Home gets high score for night/evening activity
+        return when {
+            nightEveningRatio > preferences.homeNightActivityThreshold -> nightEveningRatio
+            nightEveningRatio > 0.4f -> nightEveningRatio * 0.7f  // Possible home
+            else -> nightEveningRatio * 0.3f  // Unlikely
+        }
+    }
+
+    private fun calculateWorkScore(locations: List<Location>, preferences: UserPreferences): Float {
+        if (locations.isEmpty()) return 0f
+
+        val hourCounts = locations.groupBy { it.timestamp.hour }.mapValues { it.value.size }
+        val dayOfWeekCounts = locations.groupBy { it.timestamp.dayOfWeek }.mapValues { it.value.size }
+
+        val workHours = hourCounts.filterKeys { it in 9..17 }.values.sum()
+        val weekdayCount = dayOfWeekCounts.filterKeys {
+            it in listOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)
+        }.values.sum()
+        val weekendCount = dayOfWeekCounts.filterKeys {
+            it in listOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
+        }.values.sum()
+
+        val totalCount = locations.size
+        val workHoursRatio = workHours.toFloat() / totalCount
+        val weekdayRatio = weekdayCount.toFloat() / maxOf(1, weekdayCount + weekendCount)
+
+        // Work requires both work hours AND weekday predominance
+        return if (workHoursRatio > preferences.workHoursActivityThreshold && weekdayRatio > 0.7f) {
+            (workHoursRatio + weekdayRatio) / 2f
+        } else {
+            (workHoursRatio * weekdayRatio) * 0.5f
+        }
+    }
+
+    private fun calculateEducationScore(locations: List<Location>, preferences: UserPreferences): Float {
+        if (locations.isEmpty()) return 0f
+
+        val hourCounts = locations.groupBy { it.timestamp.hour }.mapValues { it.value.size }
+        val dayOfWeekCounts = locations.groupBy { it.timestamp.dayOfWeek }.mapValues { it.value.size }
+
+        // Education hours: Morning classes (8-12) and afternoon (13-17)
+        val morningClassHours = hourCounts.filterKeys { it in 8..12 }.values.sum()
+        val afternoonClassHours = hourCounts.filterKeys { it in 13..17 }.values.sum()
+        val classHoursTotal = morningClassHours + afternoonClassHours
+
+        // Strong weekday pattern but can have some weekend activity (study, labs)
+        val weekdayCount = dayOfWeekCounts.filterKeys {
+            it in listOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)
+        }.values.sum()
+        val weekendCount = dayOfWeekCounts.filterKeys {
+            it in listOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
+        }.values.sum()
+
+        val totalCount = locations.size
+        val classHoursRatio = classHoursTotal.toFloat() / totalCount
+        val weekdayRatio = weekdayCount.toFloat() / maxOf(1, weekdayCount + weekendCount)
+
+        // Education differs from work by:
+        // 1. Less strict on continuous presence (classes have gaps)
+        // 2. Strong morning concentration (8-12)
+        // 3. Moderate afternoon presence (not as late as work)
+        // 4. Weekday dominant but more flexible (60%+ instead of 70%+)
+
+        val morningRatio = morningClassHours.toFloat() / totalCount
+        val afternoonRatio = afternoonClassHours.toFloat() / totalCount
+
+        // Bonus for balanced morning/afternoon pattern (indicates multiple classes)
+        val balanceBonus = if (morningRatio > 0.2f && afternoonRatio > 0.2f) 0.1f else 0f
+
+        // Education requires class hours AND weekday pattern (more lenient than work)
+        return if (classHoursRatio > 0.4f && weekdayRatio > 0.6f) {
+            val baseScore = (classHoursRatio + weekdayRatio) / 2f
+            (baseScore + balanceBonus).coerceAtMost(1.0f)
+        } else {
+            (classHoursRatio * weekdayRatio * 0.6f)  // Lower than work multiplier
+        }
+    }
+
+    private suspend fun calculateGymScore(locations: List<Location>, preferences: UserPreferences): Float {
+        if (locations.size < 5) return 0f
+
+        val hourCounts = locations.groupBy { it.timestamp.hour }.mapValues { it.value.size }
         val morningWorkout = hourCounts.filterKeys { it in 6..9 }.values.sum()
         val eveningWorkout = hourCounts.filterKeys { it in 17..20 }.values.sum()
-        val totalCount = hourCounts.values.sum()
-        
-        return (morningWorkout + eveningWorkout) > totalCount * preferences.gymActivityThreshold
-    }
-    
-    private suspend fun isShoppingPattern(locations: List<Location>, preferences: UserPreferences): Boolean {
-        if (locations.isEmpty()) return false
-        
+        val totalCount = locations.size
+
+        // Requirement 1: Workout time pattern
+        val workoutTimeFactor = (morningWorkout + eveningWorkout).toFloat() / totalCount
+
+        // Requirement 2: 2-3x per week frequency (not daily like work)
+        val distinctDays = locations.map { it.timestamp.toLocalDate() }.distinct().size
+        val daysSpan = if (locations.size > 1) {
+            java.time.Duration.between(
+                locations.minOf { it.timestamp },
+                locations.maxOf { it.timestamp }
+            ).toDays()
+        } else 1L
+
+        val weeksSpan = maxOf(1, daysSpan / 7)
+        val visitsPerWeek = distinctDays.toFloat() / weeksSpan
+        val frequencyFactor = when {
+            visitsPerWeek in 2f..4f -> 1.0f  // Perfect gym frequency
+            visitsPerWeek in 1f..5f -> 0.5f  // Possible
+            else -> 0.1f  // Too frequent (work) or too rare
+        }
+
+        // Requirement 3: Short-medium duration (30min-2hr typical)
         val avgDuration = calculateAverageStayDuration(locations, preferences)
-        return avgDuration in preferences.shoppingMinDurationMinutes..preferences.shoppingMaxDurationMinutes
+        val durationFactor = when {
+            avgDuration in 30L..120L -> 1.0f  // Perfect gym duration
+            avgDuration in 20L..180L -> 0.5f  // Possible
+            else -> 0.1f  // Too short or too long
+        }
+
+        // Combined score (all factors must be reasonable)
+        return workoutTimeFactor * frequencyFactor * durationFactor
     }
     
-    private fun isRestaurantPattern(hourCounts: Map<Int, Int>, preferences: UserPreferences): Boolean {
+    private suspend fun calculateShoppingScore(locations: List<Location>, preferences: UserPreferences): Float {
+        if (locations.isEmpty()) return 0f
+
+        val avgDuration = calculateAverageStayDuration(locations, preferences)
+
+        // Shopping has medium duration
+        val durationScore = when {
+            avgDuration in preferences.shoppingMinDurationMinutes..preferences.shoppingMaxDurationMinutes -> 1.0f
+            avgDuration in (preferences.shoppingMinDurationMinutes - 10)..(preferences.shoppingMaxDurationMinutes + 30) -> 0.5f
+            else -> 0.1f
+        }
+
+        return durationScore * 0.7f  // Lower baseline confidence for shopping
+    }
+    
+    private suspend fun calculateRestaurantScore(locations: List<Location>, preferences: UserPreferences): Float {
+        if (locations.isEmpty()) return 0f
+
+        val hourCounts = locations.groupBy { it.timestamp.hour }.mapValues { it.value.size }
         val mealTimes = hourCounts.filterKeys { it in 11..14 || it in 18..21 }.values.sum()
-        val totalCount = hourCounts.values.sum()
-        
-        return mealTimes > totalCount * preferences.restaurantMealTimeThreshold
+        val totalCount = locations.size
+
+        // Requirement 1: Meal time pattern
+        val mealTimeFactor = mealTimes.toFloat() / totalCount
+
+        // Requirement 2: Medium duration (30min-2hr)
+        val avgDuration = calculateAverageStayDuration(locations, preferences)
+        val durationFactor = when {
+            avgDuration in 30L..120L -> 1.0f
+            avgDuration in 20L..180L -> 0.5f
+            else -> 0.1f
+        }
+
+        // Requirement 3: Irregular visits (not daily routine)
+        val distinctDays = locations.map { it.timestamp.toLocalDate() }.distinct().size
+        val daysSpan = if (locations.size > 1) {
+            java.time.Duration.between(
+                locations.minOf { it.timestamp },
+                locations.maxOf { it.timestamp }
+            ).toDays()
+        } else 1L
+
+        val weeksSpan = maxOf(1, daysSpan / 7)
+        val visitsPerWeek = distinctDays.toFloat() / weeksSpan
+        val irregularityFactor = when {
+            visitsPerWeek < 2f -> 1.0f  // Irregular visits - good for restaurant
+            visitsPerWeek < 4f -> 0.5f  // Semi-regular
+            else -> 0.2f  // Too regular (likely work/home during meal times)
+        }
+
+        // Combined score
+        return mealTimeFactor * durationFactor * irregularityFactor
     }
     
     private suspend fun calculateAverageStayDuration(locations: List<Location>, preferences: UserPreferences): Long {
@@ -416,30 +715,25 @@ class PlaceDetectionUseCases @Inject constructor(
         return if (durations.isNotEmpty()) durations.average().toLong() else 0
     }
     
-    private fun calculateConfidence(locations: List<Location>, category: PlaceCategory, preferences: UserPreferences): Float {
+    private suspend fun calculateConfidence(locations: List<Location>, category: PlaceCategory, preferences: UserPreferences): Float {
         if (locations.isEmpty()) return 0.0f
-        
-        val baseConfidence = when (category) {
-            PlaceCategory.HOME -> 0.7f
-            PlaceCategory.WORK -> 0.6f
-            PlaceCategory.GYM -> 0.5f
-            PlaceCategory.RESTAURANT -> 0.4f
-            PlaceCategory.SHOPPING -> 0.4f
-            else -> 0.2f
-        }
-        
+
+        // ISSUE #3 FIX: Base confidence on data quality, not category prediction
+        // Since categories are no longer auto-assigned, confidence reflects
+        // how confident we are about the PLACE detection (not categorization)
+
         val locationCount = locations.size
-        val countBonus = minOf(locationCount / 30.0f, 0.25f) // Up to 0.25 bonus for many locations
-        
+        val countBonus = minOf(locationCount / 30.0f, 0.3f) // Up to 0.3 bonus for many locations
+
         // Factor in location accuracy - better accuracy increases confidence
         val avgAccuracy = locations.map { it.accuracy }.average()
         val accuracyBonus = when {
-            avgAccuracy <= 10f -> 0.15f // Very accurate GPS
-            avgAccuracy <= 25f -> 0.1f  // Good GPS
-            avgAccuracy <= 50f -> 0.05f // Moderate GPS
-            else -> 0.0f // Poor GPS gets no bonus
+            avgAccuracy <= 10f -> 0.2f  // Very accurate GPS
+            avgAccuracy <= 25f -> 0.15f  // Good GPS
+            avgAccuracy <= 50f -> 0.1f  // Moderate GPS
+            else -> 0.05f // Poor GPS gets minimal bonus
         }
-        
+
         // Factor in time span - places visited over longer periods are more confident
         val timeSpanHours = if (locations.size > 1) {
             val sortedLocations = locations.sortedBy { it.timestamp }
@@ -448,15 +742,18 @@ class PlaceDetectionUseCases @Inject constructor(
                 sortedLocations.last().timestamp
             ).toHours()
         } else 0L
-        
+
         val timeSpanBonus = when {
-            timeSpanHours >= 24 * 7 -> 0.1f  // Week or more
-            timeSpanHours >= 24 -> 0.05f     // Day or more
-            else -> 0.0f
+            timeSpanHours >= 24 * 7 -> 0.15f  // Week or more
+            timeSpanHours >= 24 -> 0.1f      // Day or more
+            else -> 0.05f
         }
-        
+
+        // Base confidence starts at 0.3 (detected cluster is a real place)
+        val baseConfidence = 0.3f
+
         val finalConfidence = baseConfidence + countBonus + accuracyBonus + timeSpanBonus
-        return minOf(finalConfidence, 0.95f) // Cap at 95% to leave room for improvement
+        return finalConfidence.coerceIn(0.3f, 0.85f) // Keep between 30% and 85%
     }
     
     private fun generatePlaceName(category: PlaceCategory, lat: Double, lng: Double): String {
@@ -496,9 +793,122 @@ class PlaceDetectionUseCases @Inject constructor(
         // Ensure reasonable radius bounds: minimum 25m, maximum 200m
         return radius.coerceIn(25.0, 200.0)
     }
-    
-    private suspend fun createInitialVisits(placeId: Long, locations: List<Location>, preferences: UserPreferences) {
-        if (locations.isEmpty()) return
+
+    /**
+     * Check if a cluster overlaps significantly with an existing place
+     * This prevents creating duplicate places for the same building
+     *
+     * @param cluster List of (lat, lng) coordinates in the cluster
+     * @param existingPlace Existing place to check overlap against
+     * @return true if >50% of cluster points fall within existing place's radius
+     */
+    private fun isClusterOverlappingWithPlace(
+        cluster: List<Pair<Double, Double>>,
+        existingPlace: Place
+    ): Boolean {
+        if (cluster.isEmpty()) return false
+
+        // Count how many cluster points fall within existing place's radius
+        val pointsInside = cluster.count { (lat, lng) ->
+            val distance = LocationUtils.calculateDistance(
+                existingPlace.latitude, existingPlace.longitude,
+                lat, lng
+            )
+            distance <= existingPlace.radius
+        }
+
+        // If more than 50% of points are inside existing place, consider it overlapping
+        val overlapRatio = pointsInside.toFloat() / cluster.size
+        return overlapRatio > 0.5f
+    }
+
+    /**
+     * Week 3: Handle place review decision and creation
+     * Decides if place should be auto-accepted or needs review
+     */
+    private suspend fun handlePlaceReview(
+        place: Place,
+        locationCount: Int,
+        visitCount: Int,
+        preferences: UserPreferences
+    ) {
+        // Get OSM suggested category if available (from enrichment)
+        val osmSuggestedCategory = place.osmSuggestedCategory
+
+        // Make auto-accept decision
+        val decision = autoAcceptDecisionUseCase.shouldAutoAccept(
+            detectedPlace = place,
+            confidence = place.confidence,
+            visitCount = visitCount,
+            osmSuggestedCategory = osmSuggestedCategory
+        )
+
+        when (decision) {
+            is AutoAcceptDecision.AutoAccept -> {
+                // Auto-accepted - create approved review record for tracking
+                Log.d(TAG, "Place ${place.name} AUTO-ACCEPTED with status ${decision.status}")
+
+                placeReviewUseCases.createPlaceReview(
+                    place = place,
+                    confidence = place.confidence,
+                    locationCount = locationCount,
+                    visitCount = visitCount,
+                    reviewType = ReviewType.NEW_PLACE,
+                    priority = ReviewPriority.LOW,
+                    osmSuggestedName = place.osmSuggestedName,
+                    osmSuggestedCategory = osmSuggestedCategory,
+                    osmPlaceType = place.osmPlaceType
+                ).onSuccess { reviewId ->
+                    // Immediately approve it
+                    placeReviewUseCases.approvePlace(reviewId)
+                    Log.d(TAG, "Auto-accepted place review ID: $reviewId")
+                }
+            }
+
+            is AutoAcceptDecision.NeedsReview -> {
+                // Needs user review - create pending review
+                Log.d(TAG, "Place ${place.name} NEEDS REVIEW - Priority: ${decision.priority}, Type: ${decision.reviewType}")
+
+                placeReviewUseCases.createPlaceReview(
+                    place = place,
+                    confidence = place.confidence,
+                    locationCount = locationCount,
+                    visitCount = visitCount,
+                    reviewType = decision.reviewType,
+                    priority = decision.priority,
+                    osmSuggestedName = place.osmSuggestedName,
+                    osmSuggestedCategory = osmSuggestedCategory,
+                    osmPlaceType = place.osmPlaceType
+                ).onSuccess { reviewId ->
+                    Log.d(TAG, "Created pending place review ID: $reviewId")
+                }
+            }
+
+            is AutoAcceptDecision.Reject -> {
+                // Category disabled - reject and delete place
+                Log.d(TAG, "Place ${place.name} REJECTED - Reason: ${decision.reason}")
+
+                placeReviewUseCases.createPlaceReview(
+                    place = place,
+                    confidence = place.confidence,
+                    locationCount = locationCount,
+                    visitCount = visitCount,
+                    reviewType = ReviewType.CATEGORY_UNCERTAIN,
+                    priority = ReviewPriority.LOW,
+                    osmSuggestedName = place.osmSuggestedName,
+                    osmSuggestedCategory = osmSuggestedCategory,
+                    osmPlaceType = place.osmPlaceType
+                ).onSuccess { reviewId ->
+                    // Immediately reject it
+                    placeReviewUseCases.rejectPlace(reviewId, decision.reason)
+                    Log.d(TAG, "Auto-rejected place review ID: $reviewId, place deleted")
+                }
+            }
+        }
+    }
+
+    private suspend fun createInitialVisits(placeId: Long, locations: List<Location>, preferences: UserPreferences): Int {
+        if (locations.isEmpty()) return 0
         
         val sortedLocations = locations.sortedBy { it.timestamp }
         val visits = mutableListOf<Visit>()
@@ -531,11 +941,15 @@ class PlaceDetectionUseCases @Inject constructor(
         visits.add(finalVisit)
         
         // Insert visits with minimum duration filter based on user preference
-        visits.filter { 
-            java.time.Duration.between(it.entryTime, it.exitTime).toMinutes() >= preferences.minVisitDurationMinutes 
-        }.forEach { visit ->
+        val filteredVisits = visits.filter {
+            java.time.Duration.between(it.entryTime, it.exitTime).toMinutes() >= preferences.minVisitDurationMinutes
+        }
+
+        filteredVisits.forEach { visit ->
             visitRepository.insertVisit(visit)
         }
+
+        return filteredVisits.size
     }
     
     /**
@@ -543,17 +957,28 @@ class PlaceDetectionUseCases @Inject constructor(
      */
     private fun filterLocationsByQuality(locations: List<Location>, preferences: UserPreferences): List<Location> {
         if (locations.isEmpty()) return emptyList()
-        
+
         Log.d(TAG, "Filtering ${locations.size} locations with user preferences: " +
             "maxAccuracy=${preferences.maxGpsAccuracyMeters}m, " +
             "maxSpeed=${preferences.maxSpeedKmh}km/h, " +
             "minTimeGap=${preferences.minTimeBetweenUpdatesSeconds}s")
-        
+
         val maxAccuracyMeters = preferences.maxGpsAccuracyMeters
         val maxSpeedKmh = preferences.maxSpeedKmh
-        
+
+        // Phase 2: Filter out locations captured while moving (prevents false places while driving)
+        val stationaryLocations = locations.filter { location ->
+            location.userActivity !in setOf(UserActivity.DRIVING, UserActivity.CYCLING) ||
+            location.activityConfidence < 0.75f
+        }
+
+        val movingFiltered = locations.size - stationaryLocations.size
+        if (movingFiltered > 0) {
+            Log.i(TAG, "Phase 2: Filtered out $movingFiltered moving locations (DRIVING/CYCLING with confidence >75%)")
+        }
+
         // First filter by accuracy
-        val accurateLocations = locations.filter { location ->
+        val accurateLocations = stationaryLocations.filter { location ->
             location.accuracy <= maxAccuracyMeters
         }
         
@@ -567,8 +992,8 @@ class PlaceDetectionUseCases @Inject constructor(
         
         for (i in 1 until sortedLocations.size) {
             val current = sortedLocations[i]
-            val previous = filteredLocations.last()
-            
+            val previous = sortedLocations[i-1]  // FIX: Compare with actual previous in sorted list
+
             // Calculate time difference in seconds
             val timeDiffSeconds = java.time.Duration.between(previous.timestamp, current.timestamp).seconds
             

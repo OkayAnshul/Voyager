@@ -53,4 +53,35 @@ abstract class RepositoryModule {
     abstract fun bindCurrentStateRepository(
         currentStateRepositoryImpl: CurrentStateRepositoryImpl
     ): CurrentStateRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindGeocodingRepository(
+        geocodingRepositoryImpl: GeocodingRepositoryImpl
+    ): GeocodingRepository
+
+    // Week 2: Review System Repositories
+    @Binds
+    @Singleton
+    abstract fun bindPlaceReviewRepository(
+        placeReviewRepositoryImpl: PlaceReviewRepositoryImpl
+    ): PlaceReviewRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindVisitReviewRepository(
+        visitReviewRepositoryImpl: VisitReviewRepositoryImpl
+    ): VisitReviewRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindUserCorrectionRepository(
+        userCorrectionRepositoryImpl: UserCorrectionRepositoryImpl
+    ): UserCorrectionRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindCategoryPreferenceRepository(
+        categoryPreferenceRepositoryImpl: CategoryPreferenceRepositoryImpl
+    ): CategoryPreferenceRepository
 }

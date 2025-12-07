@@ -31,6 +31,9 @@ fun OpenStreetMapView(
     userLocation: Location? = null,
     currentPlace: Place? = null,
     isTracking: Boolean = false,
+    showRoute: Boolean = true, // NEW: Show route between places
+    showTimelineNumbers: Boolean = true, // NEW: Show timeline numbers on markers
+    showVisitCounts: Boolean = true, // NEW: Show visit counts on markers
     onPlaceClick: (Place) -> Unit = {},
     onMapClick: (Double, Double) -> Unit = { _, _ -> },
     onMapReady: (MapView) -> Unit = {}
@@ -140,14 +143,20 @@ fun OpenStreetMapView(
                 mapView.overlays.add(myLocationOverlay)
             }
             
-            // Add location path
-            if (locations.isNotEmpty()) {
+            // Add location path (raw GPS trail)
+            if (locations.isNotEmpty() && !showRoute) {
                 addLocationPath(mapView, locations)
             }
-            
-            // Add place markers
-            places.forEach { place ->
-                addPlaceMarker(mapView, place, onPlaceClick, place == currentPlace)
+
+            // Add route between places (timeline order)
+            if (showRoute && places.size >= 2) {
+                addPlaceRoute(mapView, places)
+            }
+
+            // Add place markers with timeline numbers
+            places.forEachIndexed { index, place ->
+                val timelineNumber = if (showTimelineNumbers) index + 1 else null
+                addPlaceMarker(mapView, place, onPlaceClick, place == currentPlace, timelineNumber)
             }
             
             // Add user location marker (blue dot)
@@ -198,38 +207,102 @@ private fun addLocationPath(mapView: MapView, locations: List<Location>) {
     }
 }
 
-private fun addPlaceMarker(mapView: MapView, place: Place, onPlaceClick: (Place) -> Unit, isCurrent: Boolean = false) {
+/**
+ * Add route visualization between places in timeline order
+ * Shows how the user traveled through the day
+ */
+private fun addPlaceRoute(mapView: MapView, places: List<Place>) {
+    if (places.size < 2) return
+
+    try {
+        // Sort places by last visit time to show chronological route
+        val sortedPlaces = places.sortedBy { it.lastVisit }
+
+        // Create polyline for the route
+        val routePolyline = Polyline(mapView).apply {
+            // Styled route line
+            outlinePaint.color = Color.parseColor("#FF6B35") // Orange color for route
+            outlinePaint.strokeWidth = 10f
+            outlinePaint.isAntiAlias = true
+            outlinePaint.alpha = 220
+
+            // Add dashed effect for better visibility
+            outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(20f, 10f), 0f)
+
+            title = "Your Route"
+            snippet = "${sortedPlaces.size} places visited"
+        }
+
+        // Convert places to GeoPoints
+        val routePoints = sortedPlaces.map { place ->
+            GeoPoint(place.latitude, place.longitude)
+        }
+
+        routePolyline.setPoints(routePoints)
+        mapView.overlays.add(0, routePolyline) // Add at bottom so markers are on top
+
+    } catch (e: Exception) {
+        android.util.Log.e("OpenStreetMapView", "Failed to add place route", e)
+    }
+}
+
+private fun addPlaceMarker(
+    mapView: MapView,
+    place: Place,
+    onPlaceClick: (Place) -> Unit,
+    isCurrent: Boolean = false,
+    timelineNumber: Int? = null
+) {
     val marker = Marker(mapView).apply {
         position = GeoPoint(place.latitude, place.longitude)
-        title = place.name
-        snippet = "${place.category.name} • ${place.visitCount} visits"
-        
+
+        // Enhanced title with timeline number
+        title = if (timelineNumber != null) {
+            "#$timelineNumber - ${place.name}"
+        } else {
+            place.name
+        }
+
+        snippet = if (place.isUserRenamed) {
+            "Custom: ${place.name} • ${place.visitCount} visits"
+        } else {
+            "${place.address?.split(",")?.firstOrNull() ?: "Place"} • ${place.visitCount} visits"
+        }
+
         setOnMarkerClickListener { _, _ ->
             onPlaceClick(place)
             true
         }
-        
+
         // Set marker anchor for proper positioning
         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-        
-        // Set different icons based on place category and current status
+
+        // Create custom marker with timeline number
         try {
-            val iconRes = when {
-                isCurrent -> android.R.drawable.star_big_on // Current place highlighted
-                place.category == com.cosmiclaboratory.voyager.domain.model.PlaceCategory.HOME -> 
-                    android.R.drawable.ic_menu_mylocation
-                place.category == com.cosmiclaboratory.voyager.domain.model.PlaceCategory.WORK -> 
-                    android.R.drawable.ic_menu_agenda
-                else -> android.R.drawable.ic_menu_mapmode
+            if (timelineNumber != null) {
+                // Create numbered marker
+                icon = createNumberedMarker(mapView.context, timelineNumber, isCurrent, place.isUserRenamed)
+            } else {
+                // Use default category-based icons
+                val iconRes = when {
+                    isCurrent -> android.R.drawable.star_big_on
+                    place.category == com.cosmiclaboratory.voyager.domain.model.PlaceCategory.HOME ->
+                        android.R.drawable.ic_menu_mylocation
+                    place.category == com.cosmiclaboratory.voyager.domain.model.PlaceCategory.WORK ->
+                        android.R.drawable.ic_menu_agenda
+                    else -> android.R.drawable.ic_menu_mapmode
+                }
+
+                icon = mapView.context.getDrawable(iconRes)
             }
-            
-            icon = mapView.context.getDrawable(iconRes)
-            
-            // Scale icon appropriately
-            val density = mapView.context.resources.displayMetrics.density
-            val size = (32 * density).toInt()
-            icon?.setBounds(0, 0, size, size)
-            
+
+            // Scale icon appropriately if using default icons
+            if (timelineNumber == null) {
+                val density = mapView.context.resources.displayMetrics.density
+                val size = (32 * density).toInt()
+                icon?.setBounds(0, 0, size, size)
+            }
+
         } catch (e: Exception) {
             android.util.Log.w("OpenStreetMapView", "Failed to set place marker icon", e)
         }
@@ -315,4 +388,63 @@ private fun addAccuracyCircle(mapView: MapView, location: Location) {
     } catch (e: Exception) {
         android.util.Log.w("OpenStreetMapView", "Failed to add accuracy circle", e)
     }
+}
+
+/**
+ * Create a numbered marker icon for timeline visualization
+ */
+private fun createNumberedMarker(
+    context: Context,
+    number: Int,
+    isCurrent: Boolean,
+    isUserRenamed: Boolean
+): android.graphics.drawable.Drawable {
+    val density = context.resources.displayMetrics.density
+    val size = (32 * density).toInt()  // ISSUE #4: Reduced from 48dp to 32dp
+
+    // Create bitmap for custom marker
+    val bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bitmap)
+
+    // Determine marker color based on state
+    val markerColor = when {
+        isCurrent -> Color.parseColor("#4CAF50") // Green for current
+        isUserRenamed -> Color.parseColor("#9C27B0") // Purple for user-renamed
+        else -> Color.parseColor("#2196F3") // Blue for regular
+    }
+
+    // Draw circle background
+    val paint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        style = android.graphics.Paint.Style.FILL
+        color = markerColor
+    }
+
+    val centerX = size / 2f
+    val centerY = size / 2f
+    val radius = size / 2.8f  // ISSUE #4: Adjusted for smaller size
+
+    canvas.drawCircle(centerX, centerY, radius, paint)
+
+    // Draw white border
+    paint.style = android.graphics.Paint.Style.STROKE
+    paint.strokeWidth = 3f * density
+    paint.color = Color.WHITE
+    canvas.drawCircle(centerX, centerY, radius, paint)
+
+    // Draw number text
+    val textPaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = Color.WHITE
+        textAlign = android.graphics.Paint.Align.CENTER
+        textSize = 20f * density
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+    }
+
+    val numberText = number.toString()
+    val textY = centerY - (textPaint.descent() + textPaint.ascent()) / 2
+
+    canvas.drawText(numberText, centerX, textY, textPaint)
+
+    return android.graphics.drawable.BitmapDrawable(context.resources, bitmap)
 }

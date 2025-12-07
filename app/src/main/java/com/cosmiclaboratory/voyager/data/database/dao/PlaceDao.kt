@@ -1,5 +1,6 @@
 package com.cosmiclaboratory.voyager.data.database.dao
 
+import androidx.paging.PagingSource
 import androidx.room.*
 import com.cosmiclaboratory.voyager.data.database.entity.PlaceEntity
 import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
@@ -7,9 +8,16 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PlaceDao {
-    
+
     @Query("SELECT * FROM places ORDER BY visitCount DESC")
     fun getAllPlaces(): Flow<List<PlaceEntity>>
+
+    /**
+     * Paginated version for large datasets
+     * Sorted by most visited places first
+     */
+    @Query("SELECT * FROM places ORDER BY visitCount DESC")
+    fun getAllPlacesPaged(): PagingSource<Int, PlaceEntity>
     
     @Query("SELECT * FROM places WHERE category = :category ORDER BY visitCount DESC")
     fun getPlacesByCategory(category: PlaceCategory): Flow<List<PlaceEntity>>

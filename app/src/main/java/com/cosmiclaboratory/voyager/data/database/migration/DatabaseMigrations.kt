@@ -8,7 +8,21 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * CRITICAL: Maintains data integrity during schema changes
  */
 object DatabaseMigrations {
-    
+
+    /**
+     * Migration from version 1 to 2
+     * ISSUE #3 FIX: Adds customCategoryName field to places table
+     * to support custom category names when user selects CUSTOM category
+     */
+    val MIGRATION_1_2 = object : Migration(1, 2) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // Add customCategoryName column to places table
+            database.execSQL(
+                "ALTER TABLE places ADD COLUMN customCategoryName TEXT"
+            )
+        }
+    }
+
     /**
      * Migration from version 2 to 3
      * Adds foreign key constraints and indexes to current_state table
@@ -75,6 +89,7 @@ object DatabaseMigrations {
      * All available migrations
      */
     val ALL_MIGRATIONS = arrayOf(
+        MIGRATION_1_2,
         MIGRATION_2_3
     )
 }

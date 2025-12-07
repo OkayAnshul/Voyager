@@ -45,4 +45,11 @@ interface PlaceRepository {
         name: String,
         category: PlaceCategory = PlaceCategory.UNKNOWN
     ): Place
+
+    // Phase 3: Manual place naming
+    suspend fun renamePlace(
+        placeId: Long,
+        newName: String,
+        newCategory: PlaceCategory? = null
+    )
 }

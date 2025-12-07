@@ -4,9 +4,14 @@ import android.content.Context
 import android.util.Log
 import androidx.work.*
 import com.cosmiclaboratory.voyager.VoyagerApplication
+import com.cosmiclaboratory.voyager.data.worker.DailySummaryWorker
+import com.cosmiclaboratory.voyager.data.worker.DailyReviewSummaryWorker
 import com.cosmiclaboratory.voyager.data.worker.PlaceDetectionWorker
 import com.cosmiclaboratory.voyager.data.worker.FallbackPlaceDetectionWorker
 import com.cosmiclaboratory.voyager.domain.model.UserPreferences
+import java.time.Duration
+import java.time.LocalDateTime
+import java.time.LocalTime
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
@@ -216,6 +221,163 @@ class WorkManagerHelper @Inject constructor(
     }
     
     /**
+     * Schedule daily summary notification
+     *
+     * @param hour Hour of day (0-23) to show notification, default 9 AM
+     */
+    suspend fun scheduleDailySummary(hour: Int = 9): Boolean {
+        return try {
+            val workManager = getWorkManagerSafely()
+            if (workManager == null) {
+                Log.e(TAG, "Cannot schedule daily summary - WorkManager not available")
+                return false
+            }
+
+            // Calculate initial delay to schedule for specific time
+            val now = LocalDateTime.now()
+            val targetTime = LocalTime.of(hour, 0) // e.g., 9:00 AM
+            var targetDateTime = now.with(targetTime)
+
+            // If target time already passed today, schedule for tomorrow
+            if (now.isAfter(targetDateTime)) {
+                targetDateTime = targetDateTime.plusDays(1)
+            }
+
+            val initialDelay = Duration.between(now, targetDateTime).toMinutes()
+
+            Log.d(TAG, "Scheduling daily summary for $targetTime (initial delay: $initialDelay minutes)")
+
+            // Create periodic work request (runs daily)
+            val dailySummaryWork = PeriodicWorkRequestBuilder<DailySummaryWorker>(
+                repeatInterval = 24, // Repeat every 24 hours
+                repeatIntervalTimeUnit = TimeUnit.HOURS
+            )
+                .setInitialDelay(initialDelay, TimeUnit.MINUTES)
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiresCharging(false)
+                        .setRequiresBatteryNotLow(false) // Allow on any battery level
+                        .build()
+                )
+                .addTag("daily_summary")
+                .build()
+
+            // Enqueue with unique work policy (replace existing)
+            workManager.enqueueUniquePeriodicWork(
+                DailySummaryWorker.WORK_NAME,
+                ExistingPeriodicWorkPolicy.UPDATE, // Update if already exists
+                dailySummaryWork
+            )
+
+            Log.d(TAG, "Daily summary scheduled successfully")
+            true
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to schedule daily summary", e)
+            false
+        }
+    }
+
+    /**
+     * Cancel daily summary notifications
+     */
+    suspend fun cancelDailySummary(): Boolean {
+        return try {
+            val workManager = getWorkManagerSafely()
+            if (workManager == null) {
+                Log.e(TAG, "Cannot cancel daily summary - WorkManager not available")
+                return false
+            }
+
+            workManager.cancelUniqueWork(DailySummaryWorker.WORK_NAME)
+            Log.d(TAG, "Daily summary cancelled")
+            true
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to cancel daily summary", e)
+            false
+        }
+    }
+
+    /**
+     * Schedule daily review summary notifications (Week 6)
+     * Shows pending place reviews that need user attention
+     */
+    suspend fun scheduleDailyReviewSummary(hour: Int = 19): Boolean {
+        return try {
+            val workManager = getWorkManagerSafely()
+            if (workManager == null) {
+                Log.e(TAG, "Cannot schedule daily review summary - WorkManager not available")
+                return false
+            }
+
+            // Calculate initial delay to schedule for specific time
+            val now = LocalDateTime.now()
+            val targetTime = LocalTime.of(hour, 0) // e.g., 7:00 PM
+            var targetDateTime = now.with(targetTime)
+
+            // If target time already passed today, schedule for tomorrow
+            if (now.isAfter(targetDateTime)) {
+                targetDateTime = targetDateTime.plusDays(1)
+            }
+
+            val initialDelay = Duration.between(now, targetDateTime).toMinutes()
+
+            Log.d(TAG, "Scheduling daily review summary for $targetTime (initial delay: $initialDelay minutes)")
+
+            // Create periodic work request (runs daily)
+            val dailyReviewWork = PeriodicWorkRequestBuilder<DailyReviewSummaryWorker>(
+                repeatInterval = 24, // Repeat every 24 hours
+                repeatIntervalTimeUnit = TimeUnit.HOURS
+            )
+                .setInitialDelay(initialDelay, TimeUnit.MINUTES)
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiresCharging(false)
+                        .setRequiresBatteryNotLow(false) // Allow on any battery level
+                        .build()
+                )
+                .addTag("daily_review_summary")
+                .build()
+
+            // Enqueue with unique work policy (replace existing)
+            workManager.enqueueUniquePeriodicWork(
+                DailyReviewSummaryWorker.WORK_NAME,
+                ExistingPeriodicWorkPolicy.UPDATE, // Update if already exists
+                dailyReviewWork
+            )
+
+            Log.d(TAG, "Daily review summary scheduled successfully")
+            true
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to schedule daily review summary", e)
+            false
+        }
+    }
+
+    /**
+     * Cancel daily review summary notifications (Week 6)
+     */
+    suspend fun cancelDailyReviewSummary(): Boolean {
+        return try {
+            val workManager = getWorkManagerSafely()
+            if (workManager == null) {
+                Log.e(TAG, "Cannot cancel daily review summary - WorkManager not available")
+                return false
+            }
+
+            workManager.cancelUniqueWork(DailyReviewSummaryWorker.WORK_NAME)
+            Log.d(TAG, "Daily review summary cancelled")
+            true
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to cancel daily review summary", e)
+            false
+        }
+    }
+
+    /**
      * Get work status for monitoring (checks both main and fallback workers)
      */
     suspend fun getWorkStatus(): WorkStatus {
@@ -264,7 +426,7 @@ class WorkManagerHelper @Inject constructor(
     
     /**
      * Monitor worker execution and automatically trigger fallback if main worker fails
-     * ENHANCED: Multiple rapid checks to catch immediate failures
+     * ENHANCED: Multiple rapid checks to catch immediate failures with configurable timeout
      */
     private fun monitorWorkerAndFallbackIfNeeded(
         workId: java.util.UUID,
@@ -280,9 +442,11 @@ class WorkManagerHelper @Inject constructor(
                     enqueueFallbackWorker(preferences, isOneTime)
                     return@launch
                 }
-                
+
                 // ENHANCED: Multiple rapid checks to catch immediate failures
-                val checkIntervals = listOf(500L, 1000L, 2000L, 5000L, 10000L) // 0.5s, 1s, 2s, 5s, 10s
+                // Use configurable timeout from user preferences (default 15s)
+                val maxTimeout = (preferences.workerEnqueueTimeoutSeconds * 1000L).coerceIn(5000L, 60000L)
+                val checkIntervals = listOf(500L, 1000L, 2000L, 5000L, 10000L, maxTimeout) // Progressive checks up to timeout
                 
                 for ((index, delayMs) in checkIntervals.withIndex()) {
                     delay(delayMs)
@@ -330,9 +494,16 @@ class WorkManagerHelper @Inject constructor(
                             }
                             
                             WorkInfo.State.ENQUEUED -> {
+                                // Log constraints status to understand why worker is waiting
+                                val constraints = workInfo.constraints
                                 Log.w(TAG, "⏳ PlaceDetectionWorker $workId still ENQUEUED after ${delayMs}ms")
+                                Log.d(TAG, "   Constraints: network=${constraints.requiredNetworkType}, " +
+                                          "battery=${constraints.requiresBatteryNotLow()}, " +
+                                          "charging=${constraints.requiresCharging()}")
+
                                 if (index == checkIntervals.size - 1) {
-                                    Log.e(TAG, "CRITICAL: Worker stuck in ENQUEUED state for too long - triggering fallback")
+                                    Log.e(TAG, "CRITICAL: Worker stuck in ENQUEUED state for ${delayMs}ms - triggering fallback")
+                                    Log.e(TAG, "   This is normal if battery is low or device is under heavy load")
                                     enqueueFallbackWorker(preferences, isOneTime)
                                     return@launch
                                 }
@@ -340,9 +511,17 @@ class WorkManagerHelper @Inject constructor(
                             }
                             
                             WorkInfo.State.BLOCKED -> {
+                                // Log which constraints are blocking
+                                val constraints = workInfo.constraints
                                 Log.w(TAG, "⚠️ PlaceDetectionWorker $workId is BLOCKED - constraints not met")
-                                if (index >= 2) { // After 2 seconds of being blocked, consider fallback
-                                    Log.e(TAG, "Worker blocked for too long - triggering fallback")
+                                Log.w(TAG, "   Network requirement: ${constraints.requiredNetworkType}")
+                                Log.w(TAG, "   Battery not low required: ${constraints.requiresBatteryNotLow()}")
+                                Log.w(TAG, "   Charging required: ${constraints.requiresCharging()}")
+
+                                // Increase patience for BLOCKED state from 2s to 5s
+                                if (index >= 3) { // After 5 seconds of being blocked, consider fallback
+                                    Log.e(TAG, "Worker blocked for ${delayMs}ms - triggering fallback")
+                                    Log.e(TAG, "   Consider adjusting constraints in Settings or charging device")
                                     enqueueFallbackWorker(preferences, isOneTime)
                                     return@launch
                                 }

@@ -47,9 +47,16 @@ class PlaceRepositoryImpl @Inject constructor(
         radiusKm: Double
     ): List<Place> {
         val bounds = LocationUtils.calculateBounds(latitude, longitude, radiusKm)
+        // FIX: Post-filter bounding box results with actual circular distance check
         return placeDao.getPlacesNearLocation(
             bounds.minLat, bounds.maxLat, bounds.minLng, bounds.maxLng
         ).toDomainModels()
+        .filter { place ->
+            LocationUtils.calculateDistance(
+                latitude, longitude,
+                place.latitude, place.longitude
+            ) <= radiusKm * 1000  // Convert km to meters
+        }
     }
     
     override suspend fun getPlaceById(id: Long): Place? {
@@ -168,5 +175,22 @@ class PlaceRepositoryImpl @Inject constructor(
             val id = insertPlace(newPlace)
             newPlace.copy(id = id)
         }
+    }
+
+    // Phase 3: Manual place renaming
+    override suspend fun renamePlace(
+        placeId: Long,
+        newName: String,
+        newCategory: PlaceCategory?
+    ) {
+        val place = getPlaceById(placeId) ?: return
+
+        val updatedPlace = place.copy(
+            name = newName,
+            category = newCategory ?: place.category,
+            isUserRenamed = true
+        )
+
+        updatePlace(updatedPlace)
     }
 }

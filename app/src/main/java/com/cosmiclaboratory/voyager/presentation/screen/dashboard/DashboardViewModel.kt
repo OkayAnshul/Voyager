@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 
 data class DashboardUiState(
@@ -42,7 +43,10 @@ data class DashboardUiState(
     val currentPlace: com.cosmiclaboratory.voyager.domain.model.Place? = null,
     val isAtPlace: Boolean = false,
     val currentVisitDuration: Long = 0L,
-    val isLocationTrackingActive: Boolean = false
+    val isLocationTrackingActive: Boolean = false,
+    // Review System - Phase 1 UX Enhancement
+    val pendingReviewCount: Int = 0,
+    val reviewPriorityBreakdown: Map<com.cosmiclaboratory.voyager.domain.model.ReviewPriority, Int> = emptyMap()
 )
 
 private data class DashboardData(
@@ -62,6 +66,7 @@ class DashboardViewModel @Inject constructor(
     private val locationUseCases: LocationUseCases,
     private val placeDetectionUseCases: PlaceDetectionUseCases,
     private val preferencesRepository: PreferencesRepository,
+    private val placeReviewRepository: com.cosmiclaboratory.voyager.domain.repository.PlaceReviewRepository,
     private val logger: ProductionLogger,
     private val appStateManager: AppStateManager,
     private val eventDispatcher: StateEventDispatcher,
@@ -193,6 +198,18 @@ class DashboardViewModel @Inject constructor(
                     )
                 }
                 
+                // Get pending review count and priority breakdown (Phase 1 UX)
+                val (pendingCount, priorityBreakdown) = try {
+                    val reviews = placeReviewRepository.getPendingReviews().first()
+                    val count = reviews.size
+                    val breakdown = reviews.groupBy { it.priority }
+                        .mapValues { it.value.size }
+                    count to breakdown
+                } catch (e: Exception) {
+                    logger.e("DashboardViewModel", "Failed to get pending reviews", e)
+                    0 to emptyMap()
+                }
+
                 // Update UI state with batch operation for efficiency
                 _uiState.value = _uiState.value.copy(
                     totalLocations = dashboardData.locationCount,
@@ -201,7 +218,9 @@ class DashboardViewModel @Inject constructor(
                     isTracking = currentAppState.locationTracking.isActive,
                     isLocationTrackingActive = currentAppState.locationTracking.isActive,
                     isAtPlace = currentAppState.currentPlace != null,
-                    isLoading = false
+                    isLoading = false,
+                    pendingReviewCount = pendingCount,
+                    reviewPriorityBreakdown = priorityBreakdown
                 )
                 
                 // Load current place details if available
@@ -327,6 +346,10 @@ class DashboardViewModel @Inject constructor(
                 
                 // CRITICAL FIX: Use robust WorkManager enqueuing with verification
                 enqueueWorkWithRetry(preferences)
+            } catch (e: CancellationException) {
+                // Job was cancelled (normal during shutdown/navigation)
+                Log.d("DashboardViewModel", "Place detection cancelled (expected during shutdown)")
+                _uiState.value = _uiState.value.copy(isDetectingPlaces = false)
             } catch (e: Exception) {
                 Log.e("DashboardViewModel", "Failed to trigger place detection", e)
                 _uiState.value = _uiState.value.copy(

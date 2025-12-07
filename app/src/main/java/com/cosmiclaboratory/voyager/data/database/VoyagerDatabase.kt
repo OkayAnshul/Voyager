@@ -18,19 +18,32 @@ import net.sqlcipher.database.SupportFactory
         PlaceEntity::class,
         VisitEntity::class,
         GeofenceEntity::class,
-        CurrentStateEntity::class
+        CurrentStateEntity::class,
+        GeocodingCacheEntity::class,
+        // Week 2: Review system entities
+        PlaceReviewEntity::class,
+        VisitReviewEntity::class,
+        UserCorrectionEntity::class,
+        CategoryPreferenceEntity::class
     ],
-    version = 3, // CRITICAL: Incremented version for foreign key constraints
+    version = 2, // ISSUE #3: Incremented to 2 for customCategoryName field
     exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class VoyagerDatabase : RoomDatabase() {
-    
+
     abstract fun locationDao(): LocationDao
     abstract fun placeDao(): PlaceDao
     abstract fun visitDao(): VisitDao
     abstract fun geofenceDao(): GeofenceDao
     abstract fun currentStateDao(): CurrentStateDao
+    abstract fun geocodingCacheDao(): GeocodingCacheDao
+
+    // Week 2: Review system DAOs
+    abstract fun placeReviewDao(): PlaceReviewDao
+    abstract fun visitReviewDao(): VisitReviewDao
+    abstract fun userCorrectionDao(): UserCorrectionDao
+    abstract fun categoryPreferenceDao(): CategoryPreferenceDao
     
     companion object {
         private const val DATABASE_NAME = "voyager_database"

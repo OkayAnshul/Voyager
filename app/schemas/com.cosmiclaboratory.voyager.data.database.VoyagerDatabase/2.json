@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 2,
-    "identityHash": "7612d1135f4f0264e504ebb72ea4e1f7",
+    "identityHash": "f242d983979b7dabd911a4cf67790ce2",
     "entities": [
       {
         "tableName": "locations",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `timestamp` TEXT NOT NULL, `accuracy` REAL NOT NULL, `speed` REAL, `altitude` REAL, `bearing` REAL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `timestamp` TEXT NOT NULL, `accuracy` REAL NOT NULL, `speed` REAL, `altitude` REAL, `bearing` REAL, `userActivity` TEXT NOT NULL, `activityConfidence` REAL NOT NULL, `semanticContext` TEXT)",
         "fields": [
           {
             "fieldPath": "id",
@@ -55,6 +55,24 @@
             "columnName": "bearing",
             "affinity": "REAL",
             "notNull": false
+          },
+          {
+            "fieldPath": "userActivity",
+            "columnName": "userActivity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activityConfidence",
+            "columnName": "activityConfidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "semanticContext",
+            "columnName": "semanticContext",
+            "affinity": "TEXT",
+            "notNull": false
           }
         ],
         "primaryKey": {
@@ -82,13 +100,31 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_locations_latitude_longitude` ON `${TABLE_NAME}` (`latitude`, `longitude`)"
+          },
+          {
+            "name": "index_locations_userActivity",
+            "unique": false,
+            "columnNames": [
+              "userActivity"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_locations_userActivity` ON `${TABLE_NAME}` (`userActivity`)"
+          },
+          {
+            "name": "index_locations_semanticContext",
+            "unique": false,
+            "columnNames": [
+              "semanticContext"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_locations_semanticContext` ON `${TABLE_NAME}` (`semanticContext`)"
           }
         ],
         "foreignKeys": []
       },
       {
         "tableName": "places",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `category` TEXT NOT NULL, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `address` TEXT, `visitCount` INTEGER NOT NULL, `totalTimeSpent` INTEGER NOT NULL, `lastVisit` TEXT, `isCustom` INTEGER NOT NULL, `radius` REAL NOT NULL, `placeId` TEXT, `confidence` REAL NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `category` TEXT NOT NULL, `customCategoryName` TEXT, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `address` TEXT, `streetName` TEXT, `locality` TEXT, `subLocality` TEXT, `postalCode` TEXT, `countryCode` TEXT, `isUserRenamed` INTEGER NOT NULL, `needsUserNaming` INTEGER NOT NULL, `osmSuggestedName` TEXT, `osmSuggestedCategory` TEXT, `osmPlaceType` TEXT, `dominantActivity` TEXT, `activityDistributionJson` TEXT, `dominantSemanticContext` TEXT, `contextDistributionJson` TEXT, `visitCount` INTEGER NOT NULL, `totalTimeSpent` INTEGER NOT NULL, `lastVisit` TEXT, `isCustom` INTEGER NOT NULL, `radius` REAL NOT NULL, `placeId` TEXT, `confidence` REAL NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -109,6 +145,12 @@
             "notNull": true
           },
           {
+            "fieldPath": "customCategoryName",
+            "columnName": "customCategoryName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
             "fieldPath": "latitude",
             "columnName": "latitude",
             "affinity": "REAL",
@@ -123,6 +165,90 @@
           {
             "fieldPath": "address",
             "columnName": "address",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "streetName",
+            "columnName": "streetName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "locality",
+            "columnName": "locality",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "subLocality",
+            "columnName": "subLocality",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "postalCode",
+            "columnName": "postalCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "countryCode",
+            "columnName": "countryCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "isUserRenamed",
+            "columnName": "isUserRenamed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "needsUserNaming",
+            "columnName": "needsUserNaming",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "osmSuggestedName",
+            "columnName": "osmSuggestedName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "osmSuggestedCategory",
+            "columnName": "osmSuggestedCategory",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "osmPlaceType",
+            "columnName": "osmPlaceType",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dominantActivity",
+            "columnName": "dominantActivity",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "activityDistributionJson",
+            "columnName": "activityDistributionJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dominantSemanticContext",
+            "columnName": "dominantSemanticContext",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "contextDistributionJson",
+            "columnName": "contextDistributionJson",
             "affinity": "TEXT",
             "notNull": false
           },
@@ -212,6 +338,15 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_places_lastVisit` ON `${TABLE_NAME}` (`lastVisit`)"
+          },
+          {
+            "name": "index_places_locality",
+            "unique": false,
+            "columnNames": [
+              "locality"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_places_locality` ON `${TABLE_NAME}` (`locality`)"
           }
         ],
         "foreignKeys": []
@@ -426,7 +561,7 @@
       },
       {
         "tableName": "current_state",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `currentPlaceId` INTEGER, `currentVisitId` INTEGER, `lastLocationUpdate` TEXT NOT NULL, `isLocationTrackingActive` INTEGER NOT NULL, `trackingStartTime` TEXT, `currentSessionStartTime` TEXT, `currentPlaceEntryTime` TEXT, `totalLocationsToday` INTEGER NOT NULL, `totalPlacesVisitedToday` INTEGER NOT NULL, `totalTimeTrackedToday` INTEGER NOT NULL, `lastUpdated` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `currentPlaceId` INTEGER, `currentVisitId` INTEGER, `lastLocationUpdate` TEXT NOT NULL, `isLocationTrackingActive` INTEGER NOT NULL, `trackingStartTime` TEXT, `currentSessionStartTime` TEXT, `currentPlaceEntryTime` TEXT, `totalLocationsToday` INTEGER NOT NULL, `totalPlacesVisitedToday` INTEGER NOT NULL, `totalTimeTrackedToday` INTEGER NOT NULL, `lastUpdated` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`currentPlaceId`) REFERENCES `places`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`currentVisitId`) REFERENCES `visits`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
         "fields": [
           {
             "fieldPath": "id",
@@ -507,14 +642,782 @@
             "id"
           ]
         },
-        "indices": [],
+        "indices": [
+          {
+            "name": "index_current_state_currentPlaceId",
+            "unique": false,
+            "columnNames": [
+              "currentPlaceId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_current_state_currentPlaceId` ON `${TABLE_NAME}` (`currentPlaceId`)"
+          },
+          {
+            "name": "index_current_state_currentVisitId",
+            "unique": false,
+            "columnNames": [
+              "currentVisitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_current_state_currentVisitId` ON `${TABLE_NAME}` (`currentVisitId`)"
+          },
+          {
+            "name": "index_current_state_isLocationTrackingActive",
+            "unique": false,
+            "columnNames": [
+              "isLocationTrackingActive"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_current_state_isLocationTrackingActive` ON `${TABLE_NAME}` (`isLocationTrackingActive`)"
+          },
+          {
+            "name": "index_current_state_lastUpdated",
+            "unique": false,
+            "columnNames": [
+              "lastUpdated"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_current_state_lastUpdated` ON `${TABLE_NAME}` (`lastUpdated`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "places",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "currentPlaceId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "visits",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "currentVisitId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "geocoding_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `formattedAddress` TEXT NOT NULL, `streetName` TEXT, `locality` TEXT, `subLocality` TEXT, `postalCode` TEXT, `countryCode` TEXT, `cachedAt` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "latitude",
+            "columnName": "latitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "longitude",
+            "columnName": "longitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "formattedAddress",
+            "columnName": "formattedAddress",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "streetName",
+            "columnName": "streetName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "locality",
+            "columnName": "locality",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "subLocality",
+            "columnName": "subLocality",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "postalCode",
+            "columnName": "postalCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "countryCode",
+            "columnName": "countryCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "cachedAt",
+            "columnName": "cachedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_geocoding_cache_latitude_longitude",
+            "unique": true,
+            "columnNames": [
+              "latitude",
+              "longitude"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_geocoding_cache_latitude_longitude` ON `${TABLE_NAME}` (`latitude`, `longitude`)"
+          },
+          {
+            "name": "index_geocoding_cache_cachedAt",
+            "unique": false,
+            "columnNames": [
+              "cachedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_geocoding_cache_cachedAt` ON `${TABLE_NAME}` (`cachedAt`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "place_reviews",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `placeId` INTEGER NOT NULL, `detectedName` TEXT NOT NULL, `detectedCategory` TEXT NOT NULL, `confidence` REAL NOT NULL, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `detectionTime` TEXT NOT NULL, `status` TEXT NOT NULL, `priority` TEXT NOT NULL, `reviewType` TEXT NOT NULL, `osmSuggestedName` TEXT, `osmSuggestedCategory` TEXT, `osmPlaceType` TEXT, `userApprovedName` TEXT, `userApprovedCategory` TEXT, `reviewedAt` TEXT, `locationCount` INTEGER NOT NULL, `visitCount` INTEGER NOT NULL, `notes` TEXT, `confidenceBreakdown` TEXT, FOREIGN KEY(`placeId`) REFERENCES `places`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placeId",
+            "columnName": "placeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detectedName",
+            "columnName": "detectedName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detectedCategory",
+            "columnName": "detectedCategory",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "latitude",
+            "columnName": "latitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "longitude",
+            "columnName": "longitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detectionTime",
+            "columnName": "detectionTime",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priority",
+            "columnName": "priority",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reviewType",
+            "columnName": "reviewType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "osmSuggestedName",
+            "columnName": "osmSuggestedName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "osmSuggestedCategory",
+            "columnName": "osmSuggestedCategory",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "osmPlaceType",
+            "columnName": "osmPlaceType",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "userApprovedName",
+            "columnName": "userApprovedName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "userApprovedCategory",
+            "columnName": "userApprovedCategory",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "reviewedAt",
+            "columnName": "reviewedAt",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "locationCount",
+            "columnName": "locationCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visitCount",
+            "columnName": "visitCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "confidenceBreakdown",
+            "columnName": "confidenceBreakdown",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_place_reviews_placeId",
+            "unique": false,
+            "columnNames": [
+              "placeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_place_reviews_placeId` ON `${TABLE_NAME}` (`placeId`)"
+          },
+          {
+            "name": "index_place_reviews_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_place_reviews_status` ON `${TABLE_NAME}` (`status`)"
+          },
+          {
+            "name": "index_place_reviews_priority",
+            "unique": false,
+            "columnNames": [
+              "priority"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_place_reviews_priority` ON `${TABLE_NAME}` (`priority`)"
+          },
+          {
+            "name": "index_place_reviews_detectionTime",
+            "unique": false,
+            "columnNames": [
+              "detectionTime"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_place_reviews_detectionTime` ON `${TABLE_NAME}` (`detectionTime`)"
+          },
+          {
+            "name": "index_place_reviews_reviewType",
+            "unique": false,
+            "columnNames": [
+              "reviewType"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_place_reviews_reviewType` ON `${TABLE_NAME}` (`reviewType`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "places",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "placeId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "visit_reviews",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `visitId` INTEGER NOT NULL, `placeId` INTEGER NOT NULL, `placeName` TEXT NOT NULL, `entryTime` TEXT NOT NULL, `exitTime` TEXT, `duration` INTEGER NOT NULL, `confidence` REAL NOT NULL, `reviewReason` TEXT NOT NULL, `status` TEXT NOT NULL, `alternativePlaceId` INTEGER, `alternativePlaceName` TEXT, `userConfirmedPlaceId` INTEGER, `reviewedAt` TEXT, `notes` TEXT, FOREIGN KEY(`visitId`) REFERENCES `visits`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`placeId`) REFERENCES `places`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visitId",
+            "columnName": "visitId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placeId",
+            "columnName": "placeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placeName",
+            "columnName": "placeName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entryTime",
+            "columnName": "entryTime",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exitTime",
+            "columnName": "exitTime",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "duration",
+            "columnName": "duration",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reviewReason",
+            "columnName": "reviewReason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alternativePlaceId",
+            "columnName": "alternativePlaceId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "alternativePlaceName",
+            "columnName": "alternativePlaceName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "userConfirmedPlaceId",
+            "columnName": "userConfirmedPlaceId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "reviewedAt",
+            "columnName": "reviewedAt",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_visit_reviews_visitId",
+            "unique": false,
+            "columnNames": [
+              "visitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_visit_reviews_visitId` ON `${TABLE_NAME}` (`visitId`)"
+          },
+          {
+            "name": "index_visit_reviews_placeId",
+            "unique": false,
+            "columnNames": [
+              "placeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_visit_reviews_placeId` ON `${TABLE_NAME}` (`placeId`)"
+          },
+          {
+            "name": "index_visit_reviews_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_visit_reviews_status` ON `${TABLE_NAME}` (`status`)"
+          },
+          {
+            "name": "index_visit_reviews_reviewReason",
+            "unique": false,
+            "columnNames": [
+              "reviewReason"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_visit_reviews_reviewReason` ON `${TABLE_NAME}` (`reviewReason`)"
+          },
+          {
+            "name": "index_visit_reviews_entryTime",
+            "unique": false,
+            "columnNames": [
+              "entryTime"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_visit_reviews_entryTime` ON `${TABLE_NAME}` (`entryTime`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "visits",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "visitId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "places",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "placeId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "user_corrections",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `placeId` INTEGER NOT NULL, `correctionTime` TEXT NOT NULL, `correctionType` TEXT NOT NULL, `oldValue` TEXT NOT NULL, `newValue` TEXT NOT NULL, `confidence` REAL NOT NULL, `locationCount` INTEGER NOT NULL, `visitCount` INTEGER NOT NULL, `wasAppliedToLearning` INTEGER NOT NULL, `similarCorrectionCount` INTEGER NOT NULL, FOREIGN KEY(`placeId`) REFERENCES `places`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placeId",
+            "columnName": "placeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctionTime",
+            "columnName": "correctionTime",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctionType",
+            "columnName": "correctionType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "oldValue",
+            "columnName": "oldValue",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "newValue",
+            "columnName": "newValue",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "locationCount",
+            "columnName": "locationCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visitCount",
+            "columnName": "visitCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wasAppliedToLearning",
+            "columnName": "wasAppliedToLearning",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "similarCorrectionCount",
+            "columnName": "similarCorrectionCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_user_corrections_placeId",
+            "unique": false,
+            "columnNames": [
+              "placeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_user_corrections_placeId` ON `${TABLE_NAME}` (`placeId`)"
+          },
+          {
+            "name": "index_user_corrections_correctionTime",
+            "unique": false,
+            "columnNames": [
+              "correctionTime"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_user_corrections_correctionTime` ON `${TABLE_NAME}` (`correctionTime`)"
+          },
+          {
+            "name": "index_user_corrections_correctionType",
+            "unique": false,
+            "columnNames": [
+              "correctionType"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_user_corrections_correctionType` ON `${TABLE_NAME}` (`correctionType`)"
+          },
+          {
+            "name": "index_user_corrections_wasAppliedToLearning",
+            "unique": false,
+            "columnNames": [
+              "wasAppliedToLearning"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_user_corrections_wasAppliedToLearning` ON `${TABLE_NAME}` (`wasAppliedToLearning`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "places",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "placeId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "category_preferences",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `category` TEXT NOT NULL, `preferenceScore` REAL NOT NULL, `correctionCount` INTEGER NOT NULL, `acceptanceCount` INTEGER NOT NULL, `rejectionCount` INTEGER NOT NULL, `isDisabled` INTEGER NOT NULL, `lastUpdated` TEXT NOT NULL, `timePatternWeight` REAL NOT NULL, `durationPatternWeight` REAL NOT NULL, `frequencyPatternWeight` REAL NOT NULL, `notes` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "preferenceScore",
+            "columnName": "preferenceScore",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctionCount",
+            "columnName": "correctionCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "acceptanceCount",
+            "columnName": "acceptanceCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rejectionCount",
+            "columnName": "rejectionCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isDisabled",
+            "columnName": "isDisabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timePatternWeight",
+            "columnName": "timePatternWeight",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "durationPatternWeight",
+            "columnName": "durationPatternWeight",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "frequencyPatternWeight",
+            "columnName": "frequencyPatternWeight",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_category_preferences_category",
+            "unique": true,
+            "columnNames": [
+              "category"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_category_preferences_category` ON `${TABLE_NAME}` (`category`)"
+          },
+          {
+            "name": "index_category_preferences_isDisabled",
+            "unique": false,
+            "columnNames": [
+              "isDisabled"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_category_preferences_isDisabled` ON `${TABLE_NAME}` (`isDisabled`)"
+          },
+          {
+            "name": "index_category_preferences_lastUpdated",
+            "unique": false,
+            "columnNames": [
+              "lastUpdated"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_category_preferences_lastUpdated` ON `${TABLE_NAME}` (`lastUpdated`)"
+          }
+        ],
         "foreignKeys": []
       }
     ],
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7612d1135f4f0264e504ebb72ea4e1f7')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f242d983979b7dabd911a4cf67790ce2')"
     ]
   }
 }

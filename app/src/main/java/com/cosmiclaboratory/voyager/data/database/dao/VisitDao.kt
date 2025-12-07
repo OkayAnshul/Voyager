@@ -1,5 +1,6 @@
 package com.cosmiclaboratory.voyager.data.database.dao
 
+import androidx.paging.PagingSource
 import androidx.room.*
 import com.cosmiclaboratory.voyager.data.database.entity.VisitEntity
 import kotlinx.coroutines.flow.Flow
@@ -7,9 +8,22 @@ import java.time.LocalDateTime
 
 @Dao
 interface VisitDao {
-    
+
     @Query("SELECT * FROM visits ORDER BY entryTime DESC")
     fun getAllVisits(): Flow<List<VisitEntity>>
+
+    /**
+     * Paginated version for large datasets
+     * Most recent visits first
+     */
+    @Query("SELECT * FROM visits ORDER BY entryTime DESC")
+    fun getAllVisitsPaged(): PagingSource<Int, VisitEntity>
+
+    /**
+     * Paginated visits for a specific place
+     */
+    @Query("SELECT * FROM visits WHERE placeId = :placeId ORDER BY entryTime DESC")
+    fun getVisitsForPlacePaged(placeId: Long): PagingSource<Int, VisitEntity>
     
     @Query("SELECT * FROM visits WHERE placeId = :placeId ORDER BY entryTime DESC")
     fun getVisitsForPlace(placeId: Long): Flow<List<VisitEntity>>

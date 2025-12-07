@@ -79,12 +79,18 @@ dependencies {
     // Room with SQLCipher
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
+    implementation(libs.room.paging)
     implementation(libs.sqlcipher)
     ksp(libs.room.compiler)
+
+    // Paging
+    implementation(libs.paging.runtime)
+    implementation(libs.paging.compose)
 
     // Google Play Services
     implementation(libs.play.services.location)
     implementation(libs.play.services.maps)
+    implementation(libs.play.services.activity.recognition)
     implementation(libs.places)
 
     // Navigation
@@ -116,6 +122,10 @@ dependencies {
     implementation(libs.retrofit)
     implementation(libs.okhttp)
     implementation(libs.retrofit.converter.gson)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
 
     // JSON
     implementation(libs.kotlinx.serialization.json)

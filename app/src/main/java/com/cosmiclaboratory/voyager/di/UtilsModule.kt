@@ -33,7 +33,13 @@ object UtilsModule {
     
     // ErrorHandler is automatically provided by @Inject constructor
     // No explicit provider needed due to @Singleton annotation
-    
-    // WorkManagerHelper is automatically provided by @Inject constructor  
+
+    // WorkManagerHelper is automatically provided by @Inject constructor
+    // No explicit provider needed due to @Singleton annotation
+
+    // SleepScheduleManager is automatically provided by @Inject constructor (Phase 8.1)
+    // No explicit provider needed due to @Singleton annotation
+
+    // MotionDetectionManager is automatically provided by @Inject constructor (Phase 8.4)
     // No explicit provider needed due to @Singleton annotation
 }

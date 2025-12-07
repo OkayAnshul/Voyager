@@ -1,6 +1,8 @@
 package com.cosmiclaboratory.voyager.presentation.screen.timeline
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,11 +17,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.cosmiclaboratory.voyager.domain.model.DayAnalytics
+import com.cosmiclaboratory.voyager.domain.model.Place
+import com.cosmiclaboratory.voyager.domain.model.TimelineSegment
+import com.cosmiclaboratory.voyager.presentation.components.RenamePlaceDialog
+import com.cosmiclaboratory.voyager.presentation.theme.GlassCard
 import com.cosmiclaboratory.voyager.utils.PermissionStatus
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun TimelineScreen(
@@ -27,7 +35,22 @@ fun TimelineScreen(
     viewModel: TimelineViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    
+    var placeToRename by remember { mutableStateOf<Place?>(null) }
+
+    // Show rename dialog if place is selected
+    placeToRename?.let { place ->
+        RenamePlaceDialog(
+            place = place,
+            onDismiss = { placeToRename = null },
+            onRename = { customName ->
+                viewModel.renamePlace(place.id, customName)
+            },
+            onRevertToAutomatic = {
+                viewModel.revertPlaceToAutomatic(place.id)
+            }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -70,24 +93,17 @@ fun TimelineScreen(
             }
             
             uiState.errorMessage != null -> {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = uiState.errorMessage!!,
                         modifier = Modifier.padding(16.dp),
-                        color = MaterialTheme.colorScheme.onErrorContainer
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
             }
-            
+
             uiState.timelineEntries.isEmpty() -> {
-                Card(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -114,6 +130,18 @@ fun TimelineScreen(
             
             else -> {
                 LazyColumn {
+                    // Current Location Card (Real-time) - Show only for today
+                    if (uiState.selectedDate == LocalDate.now() && uiState.currentLocation != null) {
+                        item {
+                            CurrentLocationCard(
+                                currentPlace = uiState.currentPlace,
+                                currentVisitDuration = uiState.currentVisitDuration,
+                                isTracking = uiState.isTracking
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+                    }
+
                     // Day summary
                     uiState.dayAnalytics?.let { analytics ->
                         item {
@@ -121,11 +149,29 @@ fun TimelineScreen(
                             Spacer(modifier = Modifier.height(16.dp))
                         }
                     }
-                    
-                    // Timeline entries
-                    items(uiState.timelineEntries.filter { it.type != TimelineEntryType.DAY_SUMMARY }) { entry ->
-                        TimelineEntryCard(entry)
-                        Spacer(modifier = Modifier.height(8.dp))
+
+                    // Phase 2: Timeline Segments (if available and enabled)
+                    if (uiState.useSegmentView && uiState.timelineSegments.isNotEmpty()) {
+                        items(uiState.timelineSegments) { segment ->
+                            TimelineSegmentCard(
+                                segment = segment,
+                                onLongPress = { place ->
+                                    placeToRename = place
+                                }
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    } else {
+                        // Fallback: Legacy timeline entries
+                        items(uiState.timelineEntries.filter { it.type != TimelineEntryType.DAY_SUMMARY }) { entry ->
+                            TimelineEntryCard(
+                                entry = entry,
+                                onLongPress = { place ->
+                                    placeToRename = place
+                                }
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
                     }
                 }
             }
@@ -168,9 +214,7 @@ private fun DateSelector(
 
 @Composable
 private fun DaySummaryCard(analytics: DayAnalytics) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
@@ -210,10 +254,23 @@ private fun SummaryItem(label: String, value: String) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TimelineEntryCard(entry: TimelineEntry) {
+private fun TimelineEntryCard(
+    entry: TimelineEntry,
+    onLongPress: (Place) -> Unit = {}
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (entry.place != null) {
+                    Modifier.combinedClickable(
+                        onClick = {},
+                        onLongClick = { onLongPress(entry.place) }
+                    )
+                } else Modifier
+            ),
         verticalAlignment = Alignment.Top
     ) {
         // Timeline indicator
@@ -298,10 +355,201 @@ private fun getTimelineColor(type: TimelineEntryType): Color {
     }
 }
 
+@Composable
+private fun CurrentLocationCard(
+    currentPlace: Place?,
+    currentVisitDuration: Long,
+    isTracking: Boolean
+) {
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = {}
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Pulsing location indicator
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                        shape = androidx.compose.foundation.shape.CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.LocationOn,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(
+                                color = Color.Green,
+                                shape = androidx.compose.foundation.shape.CircleShape
+                            )
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Current Location",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = currentPlace?.osmSuggestedName ?: currentPlace?.name ?: "Tracking...",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+
+                currentPlace?.address?.let { address ->
+                    Text(
+                        text = address.split(",").firstOrNull() ?: address,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (currentVisitDuration > 0) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Duration: ${formatDuration(currentVisitDuration)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TimelineSegmentCard(
+    segment: TimelineSegment,
+    onLongPress: (Place) -> Unit
+) {
+    GlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = {},
+                onLongClick = { onLongPress(segment.place) }
+            )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Place name
+            Text(
+                text = segment.place.osmSuggestedName ?: segment.place.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            // ISSUE #1: Display full address (not truncated)
+            segment.place.address?.let { address ->
+                Text(
+                    text = address,  // Show complete address
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,  // Allow wrapping for long addresses
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Time range
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.DateRange,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = segment.timeRange.formatTimeRange(),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
+                Text(
+                    text = segment.timeRange.formatDuration(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            // ISSUE #1: Individual visit details when multiple visits grouped
+            if (segment.visits.size > 1) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Individual Visits:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                segment.visits.forEach { visit ->
+                    val visitDuration = formatDuration(visit.duration)
+                    val entryTime = visit.entryTime.format(DateTimeFormatter.ofPattern("h:mm a"))
+                    val exitTime = visit.exitTime?.format(DateTimeFormatter.ofPattern("h:mm a")) ?: "ongoing"
+                    Text(
+                        text = "• $entryTime - $exitTime ($visitDuration)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Travel info to next place
+            if (segment.distanceToNext != null && segment.travelTimeToNext != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        Icons.Default.Place,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "${segment.formatDistanceToNext()} • ${segment.formatTravelTimeToNext()} to next",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
 private fun formatDuration(milliseconds: Long): String {
     val hours = milliseconds / (1000 * 60 * 60)
     val minutes = (milliseconds % (1000 * 60 * 60)) / (1000 * 60)
-    
+
     return when {
         hours > 0 -> "${hours}h ${minutes}m"
         minutes > 0 -> "${minutes}m"
