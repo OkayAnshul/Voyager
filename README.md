@@ -29,6 +29,31 @@ Voyager is a sophisticated Android location analytics application that tracks us
 - **Statistical Insights**: Time spent analysis and movement trends
 - **Export Capabilities**: JSON, CSV data export with privacy controls
 
+## 📚 Documentation
+
+### Primary Documentation
+- **[Voyager Complete Guide](docs/VOYAGER_COMPLETE_GUIDE.md)** - Comprehensive technical documentation (15,000+ words)
+- **[Architecture Guide](VOYAGER_ARCHITECTURE_GUIDE.md)** - Clean Architecture implementation details
+- **[Project Summary](PROJECT_SUMMARY.md)** - ATS-optimized resume summary
+
+### Specialized Guides (Appendices)
+- **[API Reference](docs/appendices/API_REFERENCE.md)** - Complete function wiring map
+- **[Design Evolution](docs/appendices/DESIGN_EVOLUTION.md)** - Historical timeline and decisions
+- **[Unused Functions](docs/appendices/UNUSED_FUNCTIONS.md)** - Dead code analysis
+- **[Technology Stack](docs/appendices/TECHNOLOGY_STACK.md)** - Deep dive into tech choices
+- **[Flaws & Advances](docs/appendices/FLAWS_AND_ADVANCES.md)** - Honest technical assessment
+
+### Development Guides
+- **[UI Enhancement Roadmap](docs/UI_ENHANCEMENT_ROADMAP.md)** - Future UI/UX improvements
+- **[Manual Testing Guide](docs/MANUAL_TESTING_GUIDE.md)** - Testing procedures (40+ test cases)
+- **[Automated Testing Strategy](docs/AUTOMATED_TESTING_STRATEGY.md)** - Test implementation plan
+- **[Comprehensive Gap Analysis](docs/COMPREHENSIVE_GAP_ANALYSIS.md)** - Technical debt analysis
+
+### Historical Documentation
+See `/archive/README.md` for archived session logs, implementation plans, and project evolution history.
+
+---
+
 ## 🏗️ Architecture
 
 Voyager follows **Clean Architecture** principles with modern Android development practices:
