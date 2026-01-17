@@ -13,7 +13,11 @@
       "Bash(test:*)",
       "Bash(cat:*)",
       "Bash(git checkout:*)",
-      "Bash(tee:*)"
+      "Bash(tee:*)",
+      "Bash(git merge:*)",
+      "Bash(wget:*)",
+      "Bash(unzip:*)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": []

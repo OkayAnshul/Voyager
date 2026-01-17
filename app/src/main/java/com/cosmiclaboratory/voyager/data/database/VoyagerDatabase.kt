@@ -26,7 +26,7 @@ import net.sqlcipher.database.SupportFactory
         UserCorrectionEntity::class,
         CategoryPreferenceEntity::class
     ],
-    version = 2, // ISSUE #3: Incremented to 2 for customCategoryName field
+    version = 3, // Updated to 3 for current_state foreign key constraints
     exportSchema = true
 )
 @TypeConverters(Converters::class)

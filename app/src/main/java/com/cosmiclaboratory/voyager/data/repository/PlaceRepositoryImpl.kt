@@ -193,4 +193,19 @@ class PlaceRepositoryImpl @Inject constructor(
 
         updatePlace(updatedPlace)
     }
+
+    /**
+     * Get places visited on a specific date
+     * Converts LocalDateTime to string format for database query
+     */
+    override suspend fun getPlacesVisitedOnDate(
+        startOfDay: java.time.LocalDateTime,
+        endOfDay: java.time.LocalDateTime
+    ): List<Place> {
+        val formatter = java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME
+        val startString = startOfDay.format(formatter)
+        val endString = endOfDay.format(formatter)
+
+        return placeDao.getPlacesVisitedOnDate(startString, endString).toDomainModels()
+    }
 }

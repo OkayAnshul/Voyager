@@ -131,44 +131,54 @@ fun PermissionRequestCard(
                 PermissionStatus.LOCATION_DENIED -> {
                     Text(
                         text = "Location Access Required",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onErrorContainer
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        textAlign = TextAlign.Center
                     )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     Text(
-                        text = "Voyager needs location access to track your movements and detect places. Your data stays private and secure on your device.",
+                        text = "Voyager needs location access to track your movements and detect places.",
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.padding(top = 8.dp)
+                        color = MaterialTheme.colorScheme.onErrorContainer
                     )
-                    
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "Your data stays private and secure on your device.",
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                    )
+
                     Spacer(modifier = Modifier.height(16.dp))
-                    
+
                     // Check if permissions are permanently denied
                     val nextPermission = PermissionManager.getNextPermissionToRequest(context)
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+
+                    Button(
+                        onClick = onRequestPermissions,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        OutlinedButton(
-                            onClick = onOpenSettings,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Settings, contentDescription = null)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Settings")
-                        }
-                        
-                        Button(
-                            onClick = onRequestPermissions,
-                            modifier = Modifier.weight(2f)
-                        ) {
-                            Icon(Icons.Default.LocationOn, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Grant Permission")
-                        }
+                        Icon(Icons.Default.LocationOn, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Grant Permission")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = null,
+                            modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Settings")
                     }
                 }
                 

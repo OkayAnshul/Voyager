@@ -640,6 +640,28 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    // Tracking Quality Settings (Session #7 - User configurable)
+    fun updateActivityRecognitionConfidence(confidence: Float) {
+        viewModelScope.launch {
+            preferencesRepository.updateActivityRecognitionConfidence(confidence)
+            markProfileAsCustom()
+        }
+    }
+
+    fun updateStationaryModeMultiplier(multiplier: Float) {
+        viewModelScope.launch {
+            preferencesRepository.updateStationaryModeMultiplier(multiplier)
+            markProfileAsCustom()
+        }
+    }
+
+    fun updateMaxTrackingGapSeconds(seconds: Int) {
+        viewModelScope.launch {
+            preferencesRepository.updateMaxTrackingGapSeconds(seconds)
+            markProfileAsCustom()
+        }
+    }
+
     // ISSUE #5: All update methods already exist above
 
     /**

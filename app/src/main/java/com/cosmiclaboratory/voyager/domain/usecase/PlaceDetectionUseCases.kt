@@ -370,33 +370,42 @@ class PlaceDetectionUseCases @Inject constructor(
         return newPlaces
     }
     
+    /**
+     * DISABLED: Automatic place improvement removed to prevent unwanted category changes
+     * Categories must be manually assigned by user - no automatic updates
+     */
     suspend fun improveExistingPlaces() {
-        val preferences = preferencesRepository.getCurrentPreferences()
-        val allPlaces = placeRepository.getAllPlaces().first()
-        
-        allPlaces.forEach { place ->
-            if (place.confidence < preferences.autoConfidenceThreshold) {
-                val recentLocations = locationRepository.getLocationsInBounds(
-                    place.latitude - 0.002, place.latitude + 0.002,
-                    place.longitude - 0.002, place.longitude + 0.002
-                )
-                
-                if (recentLocations.isNotEmpty()) {
-                    val improvedCategory = categorizePlace(recentLocations, preferences)
-                    val improvedConfidence = calculateConfidence(recentLocations, improvedCategory, preferences)
-                    
-                    if (improvedConfidence > place.confidence) {
-                        placeRepository.updatePlace(
-                            place.copy(
-                                category = improvedCategory,
-                                confidence = improvedConfidence,
-                                name = if (place.isCustom) place.name else generatePlaceName(improvedCategory, place.latitude, place.longitude)
-                            )
-                        )
-                    }
-                }
-            }
-        }
+        // CRITICAL FIX: Do NOT automatically update place categories
+        // All category assignments must be user-driven
+        Log.i(TAG, "improveExistingPlaces() called but disabled - no automatic categorization allowed")
+
+        // OLD CODE (disabled to prevent automatic categorization):
+        // val preferences = preferencesRepository.getCurrentPreferences()
+        // val allPlaces = placeRepository.getAllPlaces().first()
+        //
+        // allPlaces.forEach { place ->
+        //     if (place.confidence < preferences.autoConfidenceThreshold) {
+        //         val recentLocations = locationRepository.getLocationsInBounds(
+        //             place.latitude - 0.002, place.latitude + 0.002,
+        //             place.longitude - 0.002, place.longitude + 0.002
+        //         )
+        //
+        //         if (recentLocations.isNotEmpty()) {
+        //             val improvedCategory = categorizePlace(recentLocations, preferences)
+        //             val improvedConfidence = calculateConfidence(recentLocations, improvedCategory, preferences)
+        //
+        //             if (improvedConfidence > place.confidence) {
+        //                 placeRepository.updatePlace(
+        //                     place.copy(
+        //                         category = improvedCategory,
+        //                         confidence = improvedConfidence,
+        //                         name = if (place.isCustom) place.name else generatePlaceName(improvedCategory, place.latitude, place.longitude)
+        //                     )
+        //                 )
+        //             }
+        //         }
+        //     }
+        // }
     }
     
     /**

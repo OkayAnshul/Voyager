@@ -52,4 +52,14 @@ interface PlaceRepository {
         newName: String,
         newCategory: PlaceCategory? = null
     )
+
+    /**
+     * Get places visited on a specific date
+     * Returns only places that have visits on the given date
+     * CRITICAL: Fixes map showing all places instead of date-specific places
+     */
+    suspend fun getPlacesVisitedOnDate(
+        startOfDay: java.time.LocalDateTime,
+        endOfDay: java.time.LocalDateTime
+    ): List<Place>
 }

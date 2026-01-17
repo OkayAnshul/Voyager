@@ -59,36 +59,22 @@ class EnrichPlaceWithDetailsUseCase @Inject constructor(
                 place.longitude
             )
 
-            // Week 4: Map OSM type to category
+            // Week 4: Map OSM type to category (store as SUGGESTION only - don't auto-apply)
             val osmSuggestedCategory = OsmTypeMapper.mapOsmToCategory(
                 placeDetails?.osmType,
                 placeDetails?.osmValue
             )
 
-            // OSM Category Override Logic (Fix for college → work misclassification)
-            // If OSM strongly suggests EDUCATION but ML detected WORK, override to EDUCATION
-            val finalCategory = if (osmSuggestedCategory == PlaceCategory.EDUCATION &&
-                place.category == PlaceCategory.WORK &&
-                placeDetails?.osmType in listOf("amenity") &&
-                placeDetails?.osmValue in listOf("school", "university", "college", "kindergarten", "library")) {
-                Log.i(TAG, "OSM override: WORK → EDUCATION (OSM type: ${placeDetails?.osmType}=${placeDetails?.osmValue})")
-                PlaceCategory.EDUCATION
-            } else if (osmSuggestedCategory == PlaceCategory.EDUCATION &&
-                place.category == PlaceCategory.WORK &&
-                placeDetails?.osmType in listOf("building") &&
-                placeDetails?.osmValue in listOf("school", "university", "college")) {
-                Log.i(TAG, "OSM override: WORK → EDUCATION (OSM building: ${placeDetails?.osmValue})")
-                PlaceCategory.EDUCATION
-            } else {
-                place.category  // Keep original ML-detected category
-            }
+            // CRITICAL: Do NOT override category - let user confirm OSM suggestion
+            // OSM suggestion is stored separately in osmSuggestedCategory field
+            // Category remains unchanged until user explicitly confirms
 
             // Generate smart name
-            val smartName = generateSmartName(place.copy(category = finalCategory), address, placeDetails)
+            val smartName = generateSmartName(place, address, placeDetails)
 
             // Return enriched place
             return place.copy(
-                category = finalCategory,
+                // category = place.category,  // Keep original category unchanged
                 name = smartName,
                 address = address?.formattedAddress,
                 streetName = address?.streetName,

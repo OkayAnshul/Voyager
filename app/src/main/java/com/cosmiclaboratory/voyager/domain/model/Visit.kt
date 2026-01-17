@@ -10,12 +10,16 @@ data class Visit(
     val _duration: Long = 0L, // stored duration - made public for mapper access
     val confidence: Float = 1.0f
 ) {
-    // CRITICAL FIX: Simplified duration calculation prioritizing stored value
-    val duration: Long 
+    // Check if this is an ongoing visit (no exit time yet)
+    val isOngoing: Boolean
+        get() = exitTime == null && _duration == 0L
+
+    // CRITICAL FIX: Duration calculation supports ongoing visits
+    val duration: Long
         get() = when {
             _duration > 0L -> _duration // Use stored duration if available
             exitTime != null -> java.time.Duration.between(entryTime, exitTime!!).toMillis() // Calculate if completed
-            else -> 0L // Active visit, no duration yet
+            else -> java.time.Duration.between(entryTime, LocalDateTime.now()).toMillis() // Calculate ongoing duration in real-time
         }
     
     companion object {

@@ -85,7 +85,8 @@ class DashboardViewModel @Inject constructor(
         loadDashboardData()
         observeAppState()
         observeServiceStatus()
-        startPeriodicRefresh()
+        // REMOVED: startPeriodicRefresh() - replaced with event-driven updates
+        // See onStateEvent() for reactive updates when data actually changes
         registerForEvents()
     }
     
@@ -278,35 +279,14 @@ class DashboardViewModel @Inject constructor(
         }
     }
     
-    private fun startPeriodicRefresh() {
-        viewModelScope.launch {
-            while (true) {
-                // Get current app state for accurate timing decisions
-                val currentAppState = appStateManager.getCurrentState()
-                
-                // Dynamic refresh interval based on centralized state
-                val refreshInterval = if (currentAppState.currentPlace != null) {
-                    30000L // 30 seconds when user is at a place (active visit)
-                } else if (currentAppState.locationTracking.isActive) {
-                    60000L // 60 seconds when tracking but not at a place
-                } else {
-                    120000L // 2 minutes when not tracking
-                }
-                
-                kotlinx.coroutines.delay(refreshInterval)
-                
-                // Only refresh if tracking is active or cache is expired
-                if (currentAppState.locationTracking.isActive) {
-                    val currentTime = System.currentTimeMillis()
-                    if (currentAppState.currentPlace != null || cachedAnalytics == null || 
-                        (currentTime - lastAnalyticsUpdate) > analyticsCache_TimeoutMs) {
-                        logger.d("DashboardViewModel", "Periodic refresh triggered (interval: ${refreshInterval}ms, state: tracking=${currentAppState.locationTracking.isActive})")
-                        loadDashboardData()
-                    }
-                }
-            }
-        }
-    }
+    // REMOVED: startPeriodicRefresh() function
+    // Periodic refresh caused unnecessary battery drain and recompositions.
+    // Now using pure event-driven updates via onStateEvent() and observeAppState().
+    // UI updates automatically when:
+    // - AppStateManager state changes (observeAppState)
+    // - StateEventDispatcher events (onStateEvent)
+    // - Service status changes (observeServiceStatus)
+    // No polling needed - all updates are reactive and efficient.
     
     fun refreshData() {
         loadDashboardData()
@@ -600,30 +580,55 @@ class DashboardViewModel @Inject constructor(
     }
     
     /**
-     * Handle incoming state events
+     * Handle incoming state events - ENHANCED for efficiency
+     *
+     * Granular updates: Only refresh what changed, not the entire state.
+     * This eliminates unnecessary recompositions and improves performance.
      */
     override suspend fun onStateEvent(event: StateEvent) {
         try {
-            logger.d("DashboardViewModel", "State event received: ${event.type}")
-            
+            logger.d("DashboardViewModel", "State event: ${event.type}")
+
             when (event.type) {
                 EventTypes.LOCATION_UPDATE -> {
-                    // Refresh statistics when new location is processed
+                    // Only update visit duration if at a place, NOT full refresh
                     if (_uiState.value.isAtPlace) {
-                        loadDashboardData() // More frequent updates when at a place
+                        _uiState.value = _uiState.value.copy(
+                            currentVisitDuration = calculateCurrentVisitDuration()
+                        )
                     }
                 }
+
                 EventTypes.PLACE_DETECTED -> {
-                    // Refresh place count when new place is detected
+                    // Full refresh: New place means place count changed
                     loadDashboardData()
                 }
-                EventTypes.VISIT_STARTED, EventTypes.VISIT_ENDED -> {
-                    // Refresh visit duration and statistics
+
+                EventTypes.PLACE_ENTERED, EventTypes.PLACE_EXITED -> {
+                    // Full refresh: Significant state change
                     loadDashboardData()
+                }
+
+                EventTypes.VISIT_STARTED, EventTypes.VISIT_ENDED -> {
+                    // Full refresh: Visit stats changed
+                    loadDashboardData()
+                }
+
+                EventTypes.TRACKING_STARTED, EventTypes.TRACKING_STOPPED -> {
+                    // Update tracking status only, NOT full refresh
+                    _uiState.value = _uiState.value.copy(
+                        isTracking = event.type == EventTypes.TRACKING_STARTED,
+                        isLocationTrackingActive = event.type == EventTypes.TRACKING_STARTED
+                    )
+                }
+
+                else -> {
+                    // Unknown event type - log for debugging
+                    logger.d("DashboardViewModel", "Unhandled event type: ${event.type}")
                 }
             }
         } catch (e: Exception) {
-            logger.e("DashboardViewModel", "Error handling state event: ${event.type}", e)
+            logger.e("DashboardViewModel", "Error handling event: ${event.type}", e)
         }
     }
     

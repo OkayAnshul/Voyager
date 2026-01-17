@@ -9,13 +9,23 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.ui.text.font.FontWeight
+import com.exyte.animatednavbar.AnimatedNavigationBar
+import com.exyte.animatednavbar.animation.balltrajectory.Parabolic
+import com.exyte.animatednavbar.animation.indendshape.Height
+import com.exyte.animatednavbar.animation.indendshape.shapeCornerRadius
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,18 +34,40 @@ import kotlinx.coroutines.launch
 import com.cosmiclaboratory.voyager.presentation.navigation.VoyagerDestination
 import com.cosmiclaboratory.voyager.presentation.navigation.VoyagerNavHost
 import com.cosmiclaboratory.voyager.ui.theme.VoyagerTheme
+import com.cosmiclaboratory.voyager.ui.theme.GreatVibesFontFamily
+import com.cosmiclaboratory.voyager.ui.theme.Teal
 import com.cosmiclaboratory.voyager.utils.PermissionManager
 import com.cosmiclaboratory.voyager.utils.PermissionStatus
 import com.cosmiclaboratory.voyager.domain.usecase.WorkerManagementUseCases
+import androidx.compose.animation.core.*
+import androidx.compose.animation.animateColor
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.ui.text.AnnotatedString
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
+// Extension function for clickable without ripple effect
+@Composable
+fun Modifier.noRippleClickable(onClick: () -> Unit): Modifier = this.clickable(
+    indication = null,
+    interactionSource = remember { MutableInteractionSource() }
+) {
+    onClick()
+}
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    
+
     @Inject
     lateinit var workerManagementUseCases: WorkerManagementUseCases
-    
+
+    @Inject
+    lateinit var locationUseCases: com.cosmiclaboratory.voyager.domain.usecase.LocationUseCases
+
     // State for permission management using proper flow for Activity context
     private val _permissionStatus = MutableStateFlow(PermissionStatus.LOCATION_DENIED)
     private val permissionStatus = _permissionStatus.asStateFlow()
@@ -176,7 +208,21 @@ class MainActivity : ComponentActivity() {
     private fun updatePermissionStatus() {
         val newStatus = PermissionManager.getPermissionStatus(this)
         Log.d("MainActivity", "Permission status updated: $newStatus")
+        val previousStatus = _permissionStatus.value
         _permissionStatus.value = newStatus
+
+        // Auto-start tracking when all permissions are granted
+        if (newStatus == PermissionStatus.ALL_GRANTED && previousStatus != PermissionStatus.ALL_GRANTED) {
+            Log.d("MainActivity", "All permissions granted - starting location tracking automatically")
+            lifecycleScope.launch {
+                try {
+                    locationUseCases.startLocationTracking()
+                    Log.d("MainActivity", "Location tracking started successfully")
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Failed to start location tracking", e)
+                }
+            }
+        }
     }
     
     private fun requestLocationPermissions() {
@@ -277,6 +323,110 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Animated Voyager Title for Top App Bar
+ *
+ * Displays "Voyager - CosmicLabs by Anshul" with:
+ * - "Voyager" in elegant Great Vibes font with animated color
+ * - " - CosmicLabs by " in regular font
+ * - "Anshul" clickable to navigate to developer profile
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AnimatedVoyagerTitle(
+    onDeveloperProfileClick: () -> Unit = {}
+) {
+    // Animate color between Teal and Purple/Gold
+    val infiniteTransition = rememberInfiniteTransition(label = "titleColorAnimation")
+
+    val animatedColor by infiniteTransition.animateColor(
+        initialValue = Teal,
+        targetValue = Color(0xFFC0C0C0), // Silver color
+        animationSpec = infiniteRepeatable<Color>(
+            animation = tween(durationMillis = 3000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "titleColor"
+    )
+
+    TopAppBar(
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val annotatedString = buildAnnotatedString {
+                    // "Voyager" in signature font with animated color
+                    pushStringAnnotation(tag = "VOYAGER", annotation = "voyager")
+                    withStyle(
+                        style = SpanStyle(
+                            color = animatedColor,
+                            fontFamily = GreatVibesFontFamily,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    ) {
+                        append("Voyager")
+                    }
+                    pop()
+
+                    // " - CosmicLabs by " in regular font
+                    withStyle(
+                        style = SpanStyle(
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    ) {
+                        append(" - CosmicLabs by ")
+                    }
+
+                    // "Anshul" in regular font with animated color - CLICKABLE
+                    val anshulStart = length
+                    pushStringAnnotation(tag = "ANSHUL", annotation = "developer")
+                    withStyle(
+                        style = SpanStyle(
+                            color = animatedColor,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    ) {
+                        append("Anshul")
+                    }
+                    pop()
+                }
+
+                ClickableText(
+                    text = annotatedString,
+                    onClick = { offset ->
+                        annotatedString.getStringAnnotations(
+                            tag = "ANSHUL",
+                            start = offset,
+                            end = offset
+                        ).firstOrNull()?.let {
+                            onDeveloperProfileClick()
+                        }
+                    }
+                )
+            }
+        },
+        actions = {
+            IconButton(onClick = onDeveloperProfileClick) {
+                Icon(
+                    imageVector = Icons.Filled.ode,
+                    contentDescription = "Developer Profile",
+                    tint = Teal
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface
+        )
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VoyagerApp(
@@ -288,6 +438,21 @@ fun VoyagerApp(
 ) {
     val navController = rememberNavController()
     var selectedDestination by remember { mutableStateOf(VoyagerDestination.Dashboard.route) }
+
+    // Track selected index for AnimatedNavigationBar
+    val bottomNavItems = VoyagerDestination.bottomNavItems.filterNotNull()
+    val selectedIndex = bottomNavItems.indexOfFirst { it.route == selectedDestination }.takeIf { it >= 0 } ?: 0
+
+    // Update selected destination when navigation happens (e.g., via "View on Map" button)
+    LaunchedEffect(navController) {
+        navController.currentBackStackEntryFlow.collect { backStackEntry ->
+            val route = backStackEntry.destination.route
+            // Only update if it's a bottom nav item
+            if (route != null && bottomNavItems.any { it.route == route }) {
+                selectedDestination = route
+            }
+        }
+    }
 
     // Phase 1 UX: Handle deep link navigation from notifications
     LaunchedEffect(initialDestination) {
@@ -323,36 +488,64 @@ fun VoyagerApp(
         else -> {
         // Show main app when permissions are granted
         Scaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(), // FIX: Prevent screen shortening when keyboard appears
+            topBar = {
+                AnimatedVoyagerTitle(
+                    onDeveloperProfileClick = {
+                        navController.navigate(VoyagerDestination.DeveloperProfile.route)
+                    }
+                )
+            },
             bottomBar = {
-                NavigationBar {
-                    VoyagerDestination.bottomNavItems.filterNotNull().forEach { destination ->
-                        NavigationBarItem(
-                            icon = {
-                                Icon(
-                                    imageVector = destination.icon,
-                                    contentDescription = destination.title
-                                )
-                            },
-                            label = { Text(destination.title) },
-                            selected = selectedDestination == destination.route,
-                            onClick = {
-                                selectedDestination = destination.route
-                                navController.navigate(destination.route) {
-                                    // Clear back stack to avoid building up a large stack
-                                    popUpTo(navController.graph.startDestinationId) {
-                                        saveState = true
+                AnimatedNavigationBar(
+                    selectedIndex = selectedIndex,
+                    modifier = Modifier.height(64.dp),
+                    cornerRadius = shapeCornerRadius(cornerRadius = 34.dp),
+                    ballAnimation = Parabolic(tween(300)),
+                    indentAnimation = Height(tween(300)),
+                    barColor = MaterialTheme.colorScheme.surfaceContainer,
+                    ballColor = MaterialTheme.colorScheme.primary
+                ) {
+                    bottomNavItems.forEachIndexed { index, destination ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .noRippleClickable {
+                                    selectedDestination = destination.route
+                                    navController.navigate(destination.route) {
+                                        // Clear back stack to avoid building up a large stack
+                                        popUpTo(navController.graph.startDestinationId) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        )
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = destination.icon,
+                                contentDescription = destination.title,
+                                tint = if (selectedIndex == index)
+                                    MaterialTheme.colorScheme.onPrimary
+                                else
+                                    MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }
         ) { paddingValues ->
-            Column(modifier = Modifier.padding(paddingValues)) {
+            // FIX: Use Box with consumeWindowInsets to prevent layout shifts
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .consumeWindowInsets(paddingValues)
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
                 // Show permission upgrade banner for required and enhanced functionality
                 when (permissionStatus) {
                     PermissionStatus.LOCATION_BASIC_ONLY -> {
@@ -379,9 +572,10 @@ fun VoyagerApp(
                     onRequestNotificationPermission = onRequestNotificationPermission,
                     modifier = Modifier.weight(1f)
                 )
-            }
-        }
-        }
+            } // End Column
+        } // End Box (consumeWindowInsets)
+        } // End Scaffold
+        } // End when else
     }
 }
 
@@ -402,34 +596,48 @@ private fun BackgroundLocationEducationDialog(
         text = {
             Column {
                 Text(
-                    text = "Voyager requires background location access for core functionality:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
+                    text = "Core Features Require Background Location:",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
                 )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 Text(
-                    text = "✅ Automatic place detection (home, work, etc.)\n" +
-                           "✅ Continuous visit tracking and timeline creation\n" +
-                           "✅ Movement pattern analysis\n" +
-                           "✅ Background location recording",
+                    text = "• Automatic place detection\n" +
+                           "• Continuous visit tracking\n" +
+                           "• Timeline creation\n" +
+                           "• Movement pattern analysis",
                     style = MaterialTheme.typography.bodyMedium
                 )
-                
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "📍 IMPORTANT: Choose 'Allow all the time'",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "On the next screen, select 'Allow all the time' for full functionality.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(12.dp))
-                
+
                 Text(
-                    text = "⚠️ Without background location, core features will not work properly.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    fontWeight = FontWeight.Medium
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    text = "Your location data is stored securely on your device and never shared.",
+                    text = "🔒 Your data stays private and secure on your device, never shared.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

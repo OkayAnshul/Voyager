@@ -63,4 +63,20 @@ interface PlaceDao {
     
     @Query("SELECT COUNT(*) FROM places WHERE category = :category")
     suspend fun getPlaceCountByCategory(category: PlaceCategory): Int
+
+    /**
+     * Get places visited on a specific date
+     * Filters places by JOIN with visits table to show only places visited on the selected date
+     * CRITICAL: Fixes map showing all places instead of date-specific places
+     */
+    @Query("""
+        SELECT DISTINCT p.* FROM places p
+        INNER JOIN visits v ON p.id = v.placeId
+        WHERE v.entryTime >= :startOfDay AND v.entryTime < :endOfDay
+        ORDER BY p.lastVisit DESC
+    """)
+    suspend fun getPlacesVisitedOnDate(
+        startOfDay: String,
+        endOfDay: String
+    ): List<PlaceEntity>
 }

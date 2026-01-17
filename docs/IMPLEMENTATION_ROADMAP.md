@@ -1657,8 +1657,11 @@ WorkManager.getInstance(context).enqueue(dailySummaryWork)
 | Phase 2 | Critical Fixes (Security, Performance) | 2-3h | High |
 | Phase 3 | UX Enhancements (Settings, Export) | 2-3h | Medium |
 | Phase 4 | Daily Usage Features (Widget, Notifications) | 2-4h | Medium |
+| Phase 5 | Location Quality Enhancements | 3-4h | High |
+| Phase 6 | Activity-First Enhancement (v2.0) | 12-16h | Medium (Future) |
 | Testing | Unit, Integration, Manual Testing | 2-4h | High |
-| **Total** | **End-to-End Implementation** | **12-20h** | - |
+| **Total (Production)** | **Phases 1-5 + Testing** | **15-24h** | - |
+| **Total (with v2.0)** | **All Phases** | **27-40h** | - |
 
 ---
 
@@ -1715,11 +1718,486 @@ WorkManager.getInstance(context).enqueue(dailySummaryWork)
 
 ---
 
+## PHASE 5: LOCATION QUALITY ENHANCEMENTS
+**Goal**: Improve GPS data collection reliability
+**Timeline**: 3-4 hours
+**Status**: 🔴 Not Started
+**Priority**: High (Affects core functionality)
+
+### Background
+Current strict GPS accuracy filtering (50-100m threshold) rejects most indoor/urban GPS readings, resulting in zero meaningful analytics data. This phase implements adaptive, context-aware filtering to improve data collection while maintaining quality.
+
+### 5.1 Implement Adaptive Accuracy Thresholds
+**File to Modify**: `app/src/main/java/com/cosmiclaboratory/voyager/data/location/LocationTrackingService.kt`
+
+**Current Issue**:
+```kotlin
+// Too strict - rejects most indoor readings
+val maxAccuracy = when (currentState) {
+    STATIONARY -> minOf(preferences.maxGpsAccuracyMeters, 50f)
+    else -> preferences.maxGpsAccuracyMeters
+}
+```
+
+**Improved Implementation**:
+```kotlin
+private fun getContextualAccuracyThreshold(
+    location: Location,
+    preferences: UserPreferences,
+    currentState: LocationState
+): Float {
+    val baseThreshold = preferences.maxGpsAccuracyMeters
+    val timeSinceLastGoodReading = getTimeSinceLastAcceptedLocation()
+
+    // Progressive relaxation when no good readings available
+    val timeMultiplier = when {
+        timeSinceLastGoodReading > 600_000L -> 2.0f  // 10+ min: 2x threshold
+        timeSinceLastGoodReading > 300_000L -> 1.5f  // 5+ min: 1.5x threshold
+        else -> 1.0f
+    }
+
+    // Environmental adaptation
+    val environmentMultiplier = when {
+        isIndoorEnvironment(location) -> 1.3f  // Relax 30% for indoor
+        isUrbanEnvironment(location) -> 1.2f   // Relax 20% for urban
+        else -> 1.0f
+    }
+
+    // Apply multipliers but respect user's maximum as ceiling
+    val adaptedThreshold = baseThreshold * maxOf(timeMultiplier, environmentMultiplier)
+    return minOf(adaptedThreshold, preferences.maxGpsAccuracyMeters * 2.5f) // Max 2.5x base
+}
+
+private fun isIndoorEnvironment(location: Location): Boolean {
+    // Heuristics for indoor detection
+    return location.accuracy > 80f && location.satelliteCount < 6
+}
+
+private fun isUrbanEnvironment(location: Location): Boolean {
+    // High accuracy variance indicates urban canyon effect
+    return location.accuracy in 40f..100f
+}
+```
+
+**Benefits**:
+- Accepts 80%+ of GPS readings in typical environments
+- Maintains data flow even in poor GPS conditions
+- Still respects user preferences as baseline
+- Self-correcting (returns to strict when good readings available)
+
+---
+
+### 5.2 Multiple Location Provider Fusion
+**File to Modify**: `LocationTrackingService.kt`
+
+**Add Network Location Fallback**:
+```kotlin
+private suspend fun getBestAvailableLocation(): Location? {
+    val gpsLocation = getGPSLocation()
+    val networkLocation = getNetworkLocation()
+
+    return when {
+        // Prefer GPS if available and accurate
+        gpsLocation != null && gpsLocation.accuracy < 100f -> gpsLocation
+
+        // Fallback to network if GPS poor
+        gpsLocation == null && networkLocation != null -> networkLocation
+
+        // Use best of both
+        else -> selectBestLocation(gpsLocation, networkLocation)
+    }
+}
+
+private fun selectBestLocation(loc1: Location?, loc2: Location?): Location? {
+    return when {
+        loc1 == null -> loc2
+        loc2 == null -> loc1
+        loc1.accuracy < loc2.accuracy -> loc1
+        else -> loc2
+    }
+}
+```
+
+---
+
+### 5.3 GPS Quality Monitoring & User Feedback
+**File to Create**: `app/src/main/java/com/cosmiclaboratory/voyager/presentation/screen/debug/GPSQualityScreen.kt`
+
+**Features**:
+- Real-time GPS accuracy display
+- Satellite count and signal strength
+- Location rejection statistics
+- Suggestions for improving GPS reception
+- Visual indicator of current GPS quality (Good/Fair/Poor)
+
+**Implementation** (abbreviated):
+```kotlin
+@Composable
+fun GPSQualityIndicator(quality: GPSQuality) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = when (quality) {
+                GPSQuality.EXCELLENT -> Icons.Default.SignalCellular4Bar
+                GPSQuality.GOOD -> Icons.Default.SignalCellular3Bar
+                GPSQuality.FAIR -> Icons.Default.SignalCellular2Bar
+                GPSQuality.POOR -> Icons.Default.SignalCellular1Bar
+            },
+            contentDescription = "GPS Quality",
+            tint = quality.color
+        )
+        Text("GPS: ${quality.displayName}")
+    }
+}
+
+enum class GPSQuality(val displayName: String, val color: Color) {
+    EXCELLENT("Excellent", Color.Green),
+    GOOD("Good", Color(0xFF8BC34A)),
+    FAIR("Fair", Color.Yellow),
+    POOR("Poor", Color.Red)
+}
+```
+
+---
+
+### 5.4 Settings UI for Location Quality
+**File to Modify**: `SettingsScreen.kt`
+
+**Add Location Quality Section**:
+```kotlin
+@Composable
+fun LocationQualitySection(
+    preferences: UserPreferences,
+    gpsStats: GPSStatistics,
+    onUpdatePreferences: (UserPreferences) -> Unit
+) {
+    ExpandableSection(title = "Location Quality") {
+        // Current GPS status
+        Card {
+            Column {
+                Text("Current GPS Quality: ${gpsStats.currentQuality}")
+                Text("Acceptance Rate: ${gpsStats.acceptanceRate}%")
+                Text("Avg Accuracy: ${gpsStats.avgAccuracy}m")
+            }
+        }
+
+        // Accuracy threshold slider
+        SettingSlider(
+            title = "Base Accuracy Threshold",
+            description = "${preferences.maxGpsAccuracyMeters.toInt()}m (adaptive: up to ${(preferences.maxGpsAccuracyMeters * 2.5).toInt()}m)",
+            value = preferences.maxGpsAccuracyMeters,
+            range = 50f..200f,
+            onValueChange = { value ->
+                onUpdatePreferences(preferences.copy(maxGpsAccuracyMeters = value))
+            }
+        )
+
+        // Adaptive filtering toggle
+        SettingSwitch(
+            title = "Adaptive Filtering",
+            description = "Automatically adjust thresholds based on GPS conditions",
+            checked = preferences.enableAdaptiveFiltering,
+            onCheckedChange = { enabled ->
+                onUpdatePreferences(preferences.copy(enableAdaptiveFiltering = enabled))
+            }
+        )
+    }
+}
+```
+
+---
+
+### 5.5 OSMDroid Performance Optimization
+**File to Modify**: Map-related components using OSMDroid
+
+**Tile Cache Optimization**:
+```kotlin
+// Configure OSMDroid for better performance
+Configuration.getInstance().apply {
+    tileFileSystemCacheMaxBytes = 50L * 1024 * 1024 // 50 MB
+    tileFileSystemCacheTrimBytes = 40L * 1024 * 1024 // Trim to 40 MB
+
+    // Use custom SQLite optimization
+    tileFileSystemCacheMaxBytes = 100L * 1024 * 1024
+
+    // Enable HTTP cache
+    httpHeaderDateTimeFormat = "EEE, dd MMM yyyy HH:mm:ss z"
+}
+
+// Background tile loading
+viewModelScope.launch(Dispatchers.IO) {
+    // Load tiles in background thread
+    mapView.tileProvider.ensureCapacity(100)
+}
+```
+
+---
+
+### Phase 5 Success Criteria ✅
+- [ ] Location acceptance rate improves to 80%+ in typical environments
+- [ ] Analytics show meaningful data even in indoor/urban scenarios
+- [ ] GPS quality indicator visible to users
+- [ ] Adaptive filtering reduces rejection without sacrificing too much quality
+- [ ] OSMDroid tile loading doesn't block UI
+- [ ] Users understand GPS quality status through clear UI feedback
+
+---
+
+## PHASE 6: ACTIVITY-FIRST ENHANCEMENT (FUTURE)
+**Goal**: Transform from location-first to activity-first analytics
+**Timeline**: 12-16 hours (4 sub-phases)
+**Status**: 🔵 Planned (Not Started)
+**Priority**: Medium (Major enhancement for v2.0)
+
+### Vision
+Transform Voyager from "where you were" to "what you were doing" by enriching location data with activity context (walking, driving, working out) and semantic meaning (commuting, eating, exercising).
+
+**Key Benefits**:
+- "You worked out for 45 min at Gold's Gym" vs "You were at (12.97, 77.59)"
+- "Morning commute: 35 min" vs generic location tracking
+- Better insights: workout sessions, meal times, work patterns
+- Real place names from OSM + user customization
+
+---
+
+### 6.1 Foundation: Store Activity Context (Week 1)
+**Goal**: Every GPS point knows what activity was happening
+
+#### Extend Location Model
+**Files to Modify**:
+- `domain/model/Location.kt`
+- `data/database/entity/LocationEntity.kt`
+
+**Add Fields**:
+```kotlin
+data class Location(
+    // ... existing fields
+
+    // NEW: Activity context
+    val userActivity: UserActivity = UserActivity.UNKNOWN,
+    val activityConfidence: Float = 0f,  // 0.0-1.0
+
+    // NEW: Semantic context (inferred from activity + time + patterns)
+    val semanticContext: SemanticContext? = null
+)
+
+enum class UserActivity {
+    STATIONARY, WALKING, RUNNING, CYCLING, DRIVING, UNKNOWN
+}
+
+enum class SemanticContext {
+    // Work
+    WORKING, COMMUTING, WORK_MEETING,
+
+    // Health
+    WORKING_OUT, OUTDOOR_EXERCISE,
+
+    // Daily
+    EATING, SHOPPING, RUNNING_ERRANDS,
+
+    // Leisure
+    SOCIALIZING, ENTERTAINMENT, RELAXING_HOME,
+
+    // Transit
+    IN_TRANSIT, TRAVELING,
+
+    UNKNOWN
+}
+```
+
+**Database Migration**:
+```kotlin
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE locations ADD COLUMN userActivity TEXT DEFAULT 'UNKNOWN'")
+        database.execSQL("ALTER TABLE locations ADD COLUMN activityConfidence REAL DEFAULT 0.0")
+        database.execSQL("ALTER TABLE locations ADD COLUMN semanticContext TEXT")
+        database.execSQL("CREATE INDEX index_locations_activity ON locations(userActivity)")
+        database.execSQL("CREATE INDEX index_locations_semantic ON locations(semanticContext)")
+    }
+}
+```
+
+---
+
+### 6.2 Integration: Activity-Aware Place Detection (Week 2)
+**Goal**: Use activity context in DBSCAN clustering
+
+**Current Issue**: DBSCAN clusters all coordinates equally, creating false places when stuck in traffic
+
+**Improved Logic**:
+```kotlin
+suspend fun detectNewPlaces(): List<Place> {
+    // Filter locations by activity - exclude transit
+    val stationaryLocations = locationRepository
+        .getRecentLocations(preferences.clusteringWindowDays)
+        .filter { location ->
+            location.userActivity in listOf(
+                UserActivity.STATIONARY,
+                UserActivity.WALKING  // Slow walking = exploring place
+            ) && location.speed < 5f  // < 5 m/s
+        }
+
+    // Run DBSCAN on filtered set
+    val clusters = dbscan.cluster(stationaryLocations)
+
+    // Create places with activity-enhanced categorization
+    clusters.map { cluster ->
+        val category = inferCategoryFromActivity(cluster)
+        createPlace(cluster, category)
+    }
+}
+
+private fun inferCategoryFromActivity(cluster: List<Location>): PlaceCategory {
+    val semanticContexts = cluster.mapNotNull { it.semanticContext }
+
+    return when {
+        semanticContexts.count { it == SemanticContext.WORKING } > cluster.size * 0.7 ->
+            PlaceCategory.WORK
+        semanticContexts.count { it == SemanticContext.WORKING_OUT } > cluster.size * 0.5 ->
+            PlaceCategory.GYM
+        semanticContexts.count { it == SemanticContext.EATING } > cluster.size * 0.6 ->
+            PlaceCategory.RESTAURANT
+        // ... more inference rules
+        else -> PlaceCategory.OTHER
+    }
+}
+```
+
+---
+
+### 6.3 Intelligence: Semantic Context Inference (Week 3)
+**Goal**: Infer what user was doing from activity + time + location
+
+**File to Create**: `domain/usecase/InferSemanticContextUseCase.kt`
+
+```kotlin
+@Singleton
+class InferSemanticContextUseCase @Inject constructor(
+    private val placeRepository: PlaceRepository,
+    private val timePatternAnalyzer: TimePatternAnalyzer
+) {
+    suspend operator fun invoke(location: Location): SemanticContext {
+        val nearbyPlace = findNearbyPlace(location)
+        val timeOfDay = location.timestamp.hour
+        val dayOfWeek = location.timestamp.dayOfWeek
+        val activity = location.userActivity
+
+        return when {
+            // Work patterns
+            nearbyPlace?.category == PlaceCategory.WORK &&
+            timeOfDay in 8..18 && dayOfWeek in DayOfWeek.MONDAY..DayOfWeek.FRIDAY ->
+                SemanticContext.WORKING
+
+            // Commute detection
+            activity == UserActivity.DRIVING &&
+            timeOfDay in listOf(7, 8, 9, 17, 18, 19) &&
+            isCommutePath(location) ->
+                SemanticContext.COMMUTING
+
+            // Workout detection
+            nearbyPlace?.category == PlaceCategory.GYM &&
+            activity in listOf(UserActivity.WALKING, UserActivity.RUNNING) ->
+                SemanticContext.WORKING_OUT
+
+            // Meal times
+            nearbyPlace?.category == PlaceCategory.RESTAURANT &&
+            activity == UserActivity.STATIONARY &&
+            timeOfDay in listOf(7, 8, 12, 13, 19, 20) ->
+                SemanticContext.EATING
+
+            // Default inference
+            else -> inferFromActivity(activity)
+        }
+    }
+}
+```
+
+---
+
+### 6.4 Insights: Activity-Based Analytics (Week 4)
+**Goal**: Provide meaningful activity insights
+
+**File to Create**: `domain/usecase/ActivityAnalyticsUseCases.kt`
+
+```kotlin
+@Singleton
+class GetActivityInsightsUseCase @Inject constructor(
+    private val locationRepository: LocationRepository,
+    private val visitRepository: VisitRepository
+) {
+    suspend operator fun invoke(dateRange: ClosedRange<LocalDate>): ActivityInsights {
+        val locations = locationRepository.getLocationsByDateRange(dateRange)
+
+        return ActivityInsights(
+            workoutSessions = detectWorkoutSessions(locations),
+            commuteStats = analyzeCommutes(locations),
+            mealTimes = detectMealPatterns(locations),
+            timeByActivity = groupByActivity(locations),
+            timeBySemanticContext = groupByContext(locations)
+        )
+    }
+
+    private fun detectWorkoutSessions(locations: List<Location>): List<WorkoutSession> {
+        // Group consecutive locations with WORKING_OUT context
+        return locations
+            .filter { it.semanticContext == SemanticContext.WORKING_OUT }
+            .groupByConsecutive { it.timestamp }
+            .map { session ->
+                WorkoutSession(
+                    startTime = session.first().timestamp,
+                    endTime = session.last().timestamp,
+                    duration = Duration.between(session.first().timestamp, session.last().timestamp),
+                    location = session.first().nearbyPlace,
+                    distanceCovered = calculateDistance(session)
+                )
+            }
+    }
+}
+
+data class ActivityInsights(
+    val workoutSessions: List<WorkoutSession>,
+    val commuteStats: CommuteStatistics,
+    val mealTimes: List<MealTime>,
+    val timeByActivity: Map<UserActivity, Duration>,
+    val timeBySemanticContext: Map<SemanticContext, Duration>
+)
+```
+
+---
+
+### Phase 6 Implementation Plan
+
+| Sub-Phase | Focus | Files | Effort |
+|-----------|-------|-------|--------|
+| 6.1 | Data Model + Storage | Location.kt, LocationEntity.kt, Migration | 3h |
+| 6.2 | Activity-Aware Detection | PlaceDetectionUseCases.kt | 4h |
+| 6.3 | Semantic Inference | InferSemanticContextUseCase.kt | 4h |
+| 6.4 | Activity Analytics | ActivityAnalyticsUseCases.kt, UI | 5h |
+
+**Total**: 16 hours
+
+### Phase 6 Success Criteria ✅
+- [ ] Activity data stored with every location point
+- [ ] DBSCAN filtering excludes transit locations
+- [ ] Semantic context inference 70%+ accurate
+- [ ] Activity-based insights visible in UI
+- [ ] "Workout sessions" screen shows duration, place, distance
+- [ ] "Commute analysis" shows average time, routes
+- [ ] User can query "show me all my workouts this month"
+
+**Note**: This is a v2.0 feature - prioritize after core stability and geocoding implementation.
+
+---
+
 ## CONCLUSION
 
-This roadmap provides a clear path from working prototype to production-ready application. **Priority is given to free geocoding implementation** (Phase 1) as it solves the primary user complaint about generic place names. Critical security and performance fixes (Phase 2) ensure the app is safe and responsive. UX enhancements (Phase 3) and daily usage features (Phase 4) make the app indispensable.
+This roadmap provides a clear path from working prototype to production-ready application. **Priority is given to free geocoding implementation** (Phase 1) as it solves the primary user complaint about generic place names. Critical security and performance fixes (Phase 2) ensure the app is safe and responsive. UX enhancements (Phase 3) and daily usage features (Phase 4) make the app indispensable. Location quality improvements (Phase 5) ensure reliable data collection. Activity-first enhancement (Phase 6) represents the future vision for v2.0.
 
-**Total estimated development time: 12-20 hours**
+**Total estimated development time**:
+- **Phases 1-4** (Production-ready): 12-20 hours
+- **Phase 5** (Quality improvements): 3-4 hours
+- **Phase 6** (Activity-first v2.0): 16 hours
+- **Grand Total**: 31-40 hours
 
 With this implementation, Voyager will transform from a technical demo to a practical, daily-use location analytics application that users will love.
 

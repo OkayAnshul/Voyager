@@ -91,6 +91,11 @@ interface PreferencesRepository {
     suspend fun updateForceSaveSettings(intervalMultiplier: Int, maxSeconds: Int)
     suspend fun updateMinimumMovementForTimeSave(meters: Float)
 
+    // Tracking quality parameters (Session #7 - User configurable)
+    suspend fun updateActivityRecognitionConfidence(confidence: Float)
+    suspend fun updateStationaryModeMultiplier(multiplier: Float)
+    suspend fun updateMaxTrackingGapSeconds(seconds: Int)
+
     // Daily summary
     suspend fun updateDailySummarySettings(enabled: Boolean, hour: Int)
 

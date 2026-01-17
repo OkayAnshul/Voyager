@@ -6,7 +6,7 @@
 [![Min SDK](https://img.shields.io/badge/min%20sdk-24-orange)]()
 [![Target SDK](https://img.shields.io/badge/target%20sdk-36-orange)]()
 
-Voyager is a sophisticated Android location analytics application that tracks user movements, detects significant places, and provides intelligent insights using GPS data, machine learning algorithms, and privacy-focused design.
+Voyager is a sophisticated Android location analytics application that tracks user movements, detects significant places, and provides intelligent insights using GPS data, (machine) learning algorithms, and privacy-focused design.
 
 ## ✨ Features
 

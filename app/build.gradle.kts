@@ -69,6 +69,9 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
 
+    // Material Icons Extended - 2000+ icons for Matrix UI
+    implementation("androidx.compose.material:material-icons-extended:1.7.6")
+
     // Hilt
     implementation(libs.hilt.android)
     implementation(libs.hilt.navigation.compose)
@@ -95,6 +98,7 @@ dependencies {
 
     // Navigation
     implementation(libs.navigation.compose)
+    implementation("com.exyte:animated-navigation-bar:1.0.0")
 
     // WorkManager
     implementation(libs.work.runtime.ktx)

@@ -9,6 +9,8 @@ import com.cosmiclaboratory.voyager.domain.repository.VisitRepository
 import com.cosmiclaboratory.voyager.domain.usecase.AnalyticsUseCases
 import com.cosmiclaboratory.voyager.domain.usecase.GenerateTimelineSegmentsUseCase
 import com.cosmiclaboratory.voyager.domain.usecase.RenamePlaceUseCase
+import com.cosmiclaboratory.voyager.presentation.screen.categories.CategoryVisibility
+import com.cosmiclaboratory.voyager.presentation.state.SharedUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -51,6 +53,7 @@ data class TimelineUiState(
     val selectedDate: LocalDate = LocalDate.now(),
     val timelineEntries: List<TimelineEntry> = emptyList(),
     val timelineSegments: List<TimelineSegment> = emptyList(), // Phase 2: New segment-based timeline
+    val visibleSegments: List<TimelineSegment> = emptyList(), // Filtered by category visibility
     val dayAnalytics: DayAnalytics? = null,
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
@@ -59,7 +62,8 @@ data class TimelineUiState(
     val currentLocation: Location? = null,
     val currentPlace: Place? = null,
     val currentVisitDuration: Long = 0L,
-    val isTracking: Boolean = false
+    val isTracking: Boolean = false,
+    val categorySettings: Map<PlaceCategory, CategoryVisibility> = emptyMap()
 )
 
 @HiltViewModel
@@ -69,24 +73,52 @@ class TimelineViewModel @Inject constructor(
     private val locationRepository: LocationRepository,
     private val analyticsUseCases: AnalyticsUseCases,
     private val generateTimelineSegmentsUseCase: GenerateTimelineSegmentsUseCase, // Phase 2
-    private val renamePlaceUseCase: RenamePlaceUseCase
+    private val renamePlaceUseCase: RenamePlaceUseCase,
+    private val sharedUiState: SharedUiState
 ) : ViewModel() {
-    
+
     private val _uiState = MutableStateFlow(TimelineUiState())
     val uiState: StateFlow<TimelineUiState> = _uiState.asStateFlow()
-    
+
     // Cache analytics by date to prevent excessive recalculation
     private val analyticsCache = mutableMapOf<LocalDate, com.cosmiclaboratory.voyager.domain.model.DayAnalytics>()
     private val cacheTimestamps = mutableMapOf<LocalDate, Long>()
     private val cacheTimeoutMs = 30_000L // 30 seconds cache
-    
+
     init {
         loadTimelineForDate(LocalDate.now())
+        observeSharedDate()
+    }
+
+    /**
+     * Observe shared date from Map/Timeline integration
+     */
+    private fun observeSharedDate() {
+        viewModelScope.launch {
+            sharedUiState.selectedDate.collect { date ->
+                if (date != _uiState.value.selectedDate) {
+                    _uiState.value = _uiState.value.copy(selectedDate = date)
+                    loadTimelineForDate(date)
+                }
+            }
+        }
+    }
+
+    /**
+     * Filter segments by category visibility
+     */
+    private fun filterSegmentsByCategory(
+        segments: List<TimelineSegment>,
+        categorySettings: Map<PlaceCategory, CategoryVisibility>
+    ): List<TimelineSegment> {
+        return segments.filter { segment ->
+            val visibility = categorySettings[segment.place.category] ?: CategoryVisibility()
+            visibility.showOnTimeline
+        }
     }
     
     fun selectDate(date: LocalDate) {
-        _uiState.value = _uiState.value.copy(selectedDate = date)
-        loadTimelineForDate(date)
+        sharedUiState.selectDate(date) // Update shared state
     }
     
     private fun loadTimelineForDate(date: LocalDate) {
@@ -146,9 +178,20 @@ class TimelineViewModel @Inject constructor(
                     )
                 }
 
+                // Load category settings
+                // TODO: Replace with actual persistence when implemented
+                val categorySettings = PlaceCategory.values().associateWith {
+                    CategoryVisibility(showOnMap = true, showOnTimeline = true)
+                }
+
+                // Filter segments by category visibility
+                val visibleSegments = filterSegmentsByCategory(timelineSegments, categorySettings)
+
                 _uiState.value = _uiState.value.copy(
                     timelineEntries = timelineEntries,
                     timelineSegments = timelineSegments,
+                    visibleSegments = visibleSegments,
+                    categorySettings = categorySettings,
                     dayAnalytics = dayAnalytics,
                     isLoading = false
                 )

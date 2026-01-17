@@ -339,6 +339,25 @@ class PreferencesRepositoryImpl @Inject constructor(
         updateUserPreferences(updated)
     }
 
+    // Tracking quality parameters (Session #7 - User configurable)
+    override suspend fun updateActivityRecognitionConfidence(confidence: Float) {
+        val current = _userPreferences.value
+        val updated = current.copy(activityRecognitionConfidence = confidence).validated()
+        updateUserPreferences(updated)
+    }
+
+    override suspend fun updateStationaryModeMultiplier(multiplier: Float) {
+        val current = _userPreferences.value
+        val updated = current.copy(stationaryModeMultiplier = multiplier).validated()
+        updateUserPreferences(updated)
+    }
+
+    override suspend fun updateMaxTrackingGapSeconds(seconds: Int) {
+        val current = _userPreferences.value
+        val updated = current.copy(maxTrackingGapSeconds = seconds).validated()
+        updateUserPreferences(updated)
+    }
+
     // Daily summary
     override suspend fun updateDailySummarySettings(enabled: Boolean, hour: Int) {
         val current = _userPreferences.value

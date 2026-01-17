@@ -7,8 +7,10 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.cosmiclaboratory.voyager.presentation.screen.analytics.StatisticsScreen
+import com.cosmiclaboratory.voyager.presentation.screen.categories.CategoriesScreen
 import com.cosmiclaboratory.voyager.presentation.screen.dashboard.DashboardScreen
 import com.cosmiclaboratory.voyager.presentation.screen.debug.DebugDataInsertionScreen
+import com.cosmiclaboratory.voyager.presentation.screen.developer.DeveloperProfileScreen
 import com.cosmiclaboratory.voyager.presentation.screen.insights.InsightsScreen
 import com.cosmiclaboratory.voyager.presentation.screen.insights.PlacePatternsScreen
 import com.cosmiclaboratory.voyager.presentation.screen.map.MapScreen
@@ -35,18 +37,31 @@ fun VoyagerNavHost(
                 permissionStatus = permissionStatus,
                 onNavigateToReview = {
                     navController.navigate(VoyagerDestination.PlaceReview.route)
+                },
+                onNavigateToCategories = {
+                    navController.navigate(VoyagerDestination.Categories.route)
                 }
             )
         }
         
         composable(VoyagerDestination.Map.route) {
-            MapScreen(permissionStatus = permissionStatus)
+            MapScreen(
+                permissionStatus = permissionStatus,
+                navController = navController
+            )
         }
         
         composable(VoyagerDestination.Timeline.route) {
-            TimelineScreen(permissionStatus = permissionStatus)
+            TimelineScreen(
+                permissionStatus = permissionStatus,
+                navController = navController
+            )
         }
-        
+
+        composable(VoyagerDestination.Categories.route) {
+            CategoriesScreen()
+        }
+
         composable(VoyagerDestination.Insights.route) {
             InsightsScreen(
                 permissionStatus = permissionStatus,
@@ -86,6 +101,9 @@ fun VoyagerNavHost(
                 },
                 onNavigateToAdvancedSettings = {
                     navController.navigate(VoyagerDestination.EnhancedSettings.route)
+                },
+                onNavigateToDeveloperProfile = {
+                    navController.navigate(VoyagerDestination.DeveloperProfile.route)
                 }
             )
         }
@@ -122,6 +140,12 @@ fun VoyagerNavHost(
 
         composable(VoyagerDestination.PlaceReview.route) {
             PlaceReviewScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(VoyagerDestination.DeveloperProfile.route) {
+            DeveloperProfileScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }

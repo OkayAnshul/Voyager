@@ -82,6 +82,11 @@ data class UserPreferences(
 
     // Activity Recognition Settings (Phase 2)
     val useActivityRecognition: Boolean = true,  // Use hybrid activity recognition to prevent false detections while driving
+    val activityRecognitionConfidence: Float = 0.90f,  // Confidence threshold to skip locations when driving (0.75-0.95) - higher = more certain
+
+    // Tracking Quality Settings (User-configurable to prevent missing segments)
+    val stationaryModeMultiplier: Float = 1.5f,  // Multiplier for update interval when stationary (1.0-2.0) - 1.0 = no change, 2.0 = double
+    val maxTrackingGapSeconds: Int = 300,  // Max seconds without location save before forcing save (180-600) - prevents data gaps
 
     // Advanced Place Detection Parameters (Previously Hardcoded)
     val minimumDistanceBetweenPlaces: Float = 50f, // Minimum meters between distinct places (increased from 25m to 50m for better duplicate prevention)
@@ -132,7 +137,8 @@ data class UserPreferences(
     val currentProfile: String = "DAILY_COMMUTER", // Active settings profile (BATTERY_SAVER, DAILY_COMMUTER, TRAVELER, CUSTOM)
 
     // Auto-Accept Review System (Week 2)
-    val autoAcceptStrategy: AutoAcceptStrategy = AutoAcceptStrategy.HIGH_CONFIDENCE_ONLY,
+    // CRITICAL: Set to NEVER to force all places to require user confirmation
+    val autoAcceptStrategy: AutoAcceptStrategy = AutoAcceptStrategy.NEVER,
     val autoAcceptConfidenceThreshold: Float = 0.75f, // Threshold for high-confidence auto-accept (0.5-0.95)
     val threeVisitAutoAcceptVisitCount: Int = 3, // Number of visits before auto-accept in AFTER_N_VISITS mode (2-10)
     val reviewPromptMode: ReviewPromptMode = ReviewPromptMode.NOTIFICATION_ONLY,
@@ -229,6 +235,9 @@ fun UserPreferences.validated(): UserPreferences {
         sleepStartHour = sleepStartHour.coerceIn(0, 23), // 0 to 23 hours
         sleepEndHour = sleepEndHour.coerceIn(0, 23), // 0 to 23 hours
         motionSensitivityThreshold = motionSensitivityThreshold.coerceIn(0.0f, 1.0f), // 0.0 (high) to 1.0 (low)
+        activityRecognitionConfidence = activityRecognitionConfidence.coerceIn(0.75f, 0.95f), // 0.75 to 0.95
+        stationaryModeMultiplier = stationaryModeMultiplier.coerceIn(1.0f, 2.0f), // 1.0 to 2.0x
+        maxTrackingGapSeconds = maxTrackingGapSeconds.coerceIn(180, 600), // 3 to 10 minutes
 
         // Advanced Parameters Validation
         minimumDistanceBetweenPlaces = minimumDistanceBetweenPlaces.coerceIn(10f, 100f),

@@ -6,38 +6,71 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavController
 import com.cosmiclaboratory.voyager.domain.model.DayAnalytics
 import com.cosmiclaboratory.voyager.domain.model.Place
 import com.cosmiclaboratory.voyager.domain.model.TimelineSegment
 import com.cosmiclaboratory.voyager.presentation.components.RenamePlaceDialog
-import com.cosmiclaboratory.voyager.presentation.theme.GlassCard
+import com.cosmiclaboratory.voyager.presentation.navigation.VoyagerDestination
+import com.cosmiclaboratory.voyager.presentation.state.SharedUiState
+import com.cosmiclaboratory.voyager.presentation.theme.*
+import com.cosmiclaboratory.voyager.ui.theme.Teal
+import com.cosmiclaboratory.voyager.ui.theme.TealDim
 import com.cosmiclaboratory.voyager.utils.PermissionStatus
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
+/**
+ * EntryPoint for accessing SharedUiState from Composables
+ */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface SharedUiStateEntryPoint {
+    fun sharedUiState(): SharedUiState
+}
+
+/**
+ * Timeline Screen - Matrix UI
+ *
+ * Enhanced with:
+ * - Date selector synced with Map
+ * - Category visibility filtering
+ * - "View on Map" for each segment
+ * - Inline place reviews
+ * - Matrix theme styling
+ */
 @Composable
 fun TimelineScreen(
     permissionStatus: PermissionStatus = PermissionStatus.ALL_GRANTED,
-    viewModel: TimelineViewModel = hiltViewModel()
+    viewModel: TimelineViewModel = hiltViewModel(),
+    navController: NavController? = null
 ) {
+    val context = LocalContext.current
+    val sharedUiState = remember {
+        EntryPointAccessors.fromApplication<SharedUiStateEntryPoint>(
+            context.applicationContext
+        ).sharedUiState()
+    }
+
     val uiState by viewModel.uiState.collectAsState()
+    val selectedDate by sharedUiState.selectedDate.collectAsState()
     var placeToRename by remember { mutableStateOf<Place?>(null) }
 
-    // Show rename dialog if place is selected
+    // Rename dialog
     placeToRename?.let { place ->
         RenamePlaceDialog(
             place = place,
@@ -54,91 +87,113 @@ fun TimelineScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Timeline",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-            
-            IconButton(onClick = { viewModel.refreshTimeline() }) {
-                Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+        // Date Selector Bar (synced with Map)
+        DateSelectorBar(
+            selectedDate = selectedDate,
+            onDateSelected = { date ->
+                sharedUiState.selectDate(date)
+            },
+            onJumpToMap = {
+                navController?.navigate(VoyagerDestination.Map.route)
+            },
+            onRefresh = {
+                viewModel.refreshTimeline()
             }
-        }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        // Date selector
-        DateSelector(
-            selectedDate = uiState.selectedDate,
-            onDateSelected = { viewModel.selectDate(it) }
         )
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
+
         when {
             uiState.isLoading -> {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator()
-                }
-            }
-            
-            uiState.errorMessage != null -> {
-                GlassCard(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = uiState.errorMessage!!,
-                        modifier = Modifier.padding(16.dp),
-                        color = MaterialTheme.colorScheme.error
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        LoadingDots()
+                        Text(
+                            text = "LOADING TIMELINE...",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
-            uiState.timelineEntries.isEmpty() -> {
-                GlassCard(modifier = Modifier.fillMaxWidth()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            uiState.errorMessage != null -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    MatrixCard {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Icon(
-                                Icons.Default.Warning,
+                                imageVector = Icons.Default.Warning,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(48.dp)
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(24.dp)
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "No activity for this day",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = uiState.errorMessage!!,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error
                             )
                         }
                     }
                 }
             }
-            
+
+            uiState.visibleSegments.isEmpty() -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    EmptyStateMessage(
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.Timeline,
+                                contentDescription = null,
+                                tint = Teal,
+                                modifier = Modifier.size(64.dp)
+                            )
+                        },
+                        title = "NO ACTIVITY FOR THIS DAY",
+                        message = "No timeline data available for ${selectedDate.format(DateTimeFormatter.ofPattern("MMM dd, yyyy"))}",
+                        actionButton = if (selectedDate == LocalDate.now()) {
+                            {
+                                MatrixButton(onClick = { /* Toggle tracking */ }) {
+                                    Text("START TRACKING")
+                                }
+                            }
+                        } else null
+                    )
+                }
+            }
+
             else -> {
-                LazyColumn {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     // Current Location Card (Real-time) - Show only for today
-                    if (uiState.selectedDate == LocalDate.now() && uiState.currentLocation != null) {
+                    if (selectedDate == LocalDate.now() && uiState.currentPlace != null) {
                         item {
                             CurrentLocationCard(
                                 currentPlace = uiState.currentPlace,
                                 currentVisitDuration = uiState.currentVisitDuration,
                                 isTracking = uiState.isTracking
                             )
-                            Spacer(modifier = Modifier.height(16.dp))
                         }
                     }
 
@@ -146,31 +201,54 @@ fun TimelineScreen(
                     uiState.dayAnalytics?.let { analytics ->
                         item {
                             DaySummaryCard(analytics)
-                            Spacer(modifier = Modifier.height(16.dp))
                         }
                     }
 
-                    // Phase 2: Timeline Segments (if available and enabled)
-                    if (uiState.useSegmentView && uiState.timelineSegments.isNotEmpty()) {
-                        items(uiState.timelineSegments) { segment ->
-                            TimelineSegmentCard(
-                                segment = segment,
-                                onLongPress = { place ->
-                                    placeToRename = place
+                    // Timeline segments (filtered by category visibility)
+                    items(uiState.visibleSegments) { segment ->
+                        TimelineSegmentCard(
+                            segment = segment,
+                            onLongPress = { place ->
+                                placeToRename = place
+                            },
+                            onViewOnMap = {
+                                // Store place in SharedUiState for Map to consume
+                                sharedUiState.selectPlaceForMap(segment.place)
+                                // Navigate to Map (Map will auto-center on place)
+                                navController?.navigate(VoyagerDestination.Map.route)
+                            }
+                        )
+                    }
+
+                    // Category filter info (if some categories are hidden)
+                    if (uiState.visibleSegments.size != uiState.timelineSegments.size) {
+                        item {
+                            MatrixCard {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FilterList,
+                                        contentDescription = null,
+                                        tint = Teal,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "${uiState.visibleSegments.size}/${uiState.timelineSegments.size} VISITS VISIBLE",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Teal
+                                    )
+                                    Spacer(modifier = Modifier.weight(1f))
+                                    MatrixTextButton(
+                                        onClick = {
+                                            navController?.navigate(VoyagerDestination.Categories.route)
+                                        }
+                                    ) {
+                                        Text("MANAGE")
+                                    }
                                 }
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-                    } else {
-                        // Fallback: Legacy timeline entries
-                        items(uiState.timelineEntries.filter { it.type != TimelineEntryType.DAY_SUMMARY }) { entry ->
-                            TimelineEntryCard(
-                                entry = entry,
-                                onLongPress = { place ->
-                                    placeToRename = place
-                                }
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
+                            }
                         }
                     }
                 }
@@ -179,231 +257,199 @@ fun TimelineScreen(
     }
 }
 
+/**
+ * Date Selector Bar
+ *
+ * Synced date selection between Map and Timeline screens.
+ */
 @Composable
-private fun DateSelector(
+private fun DateSelectorBar(
     selectedDate: LocalDate,
-    onDateSelected: (LocalDate) -> Unit
+    onDateSelected: (LocalDate) -> Unit,
+    onJumpToMap: () -> Unit,
+    onRefresh: () -> Unit = {}
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+    MatrixCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
     ) {
-        IconButton(onClick = { onDateSelected(selectedDate.minusDays(1)) }) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous day")
-        }
-        
-        Text(
-            text = when {
-                selectedDate == LocalDate.now() -> "Today"
-                selectedDate == LocalDate.now().minusDays(1) -> "Yesterday"
-                else -> selectedDate.toString()
-            },
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Medium
-        )
-        
-        IconButton(
-            onClick = { onDateSelected(selectedDate.plusDays(1)) },
-            enabled = selectedDate.isBefore(LocalDate.now())
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next day")
-        }
-    }
-}
-
-@Composable
-private fun DaySummaryCard(analytics: DayAnalytics) {
-    GlassCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text(
-                text = "Day Summary",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
+            // Date navigation
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                SummaryItem("Places", "${analytics.placesVisited}")
-                SummaryItem("Distance", "${String.format("%.1f", analytics.distanceTraveled / 1000)} km")
-                SummaryItem("Time", formatDuration(analytics.totalTimeTracked))
+                IconButton(
+                    onClick = { onDateSelected(selectedDate.minusDays(1)) }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ChevronLeft,
+                        contentDescription = "Previous day",
+                        tint = Teal
+                    )
+                }
+
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = when {
+                            selectedDate == LocalDate.now() -> "TODAY"
+                            selectedDate == LocalDate.now().minusDays(1) -> "YESTERDAY"
+                            else -> selectedDate.format(DateTimeFormatter.ofPattern("MMM dd, yyyy")).uppercase()
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Teal
+                    )
+                    Text(
+                        text = selectedDate.dayOfWeek.toString().uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TealDim
+                    )
+                }
+
+                IconButton(
+                    onClick = {
+                        if (selectedDate.isBefore(LocalDate.now())) {
+                            onDateSelected(selectedDate.plusDays(1))
+                        }
+                    },
+                    enabled = selectedDate.isBefore(LocalDate.now())
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = "Next day",
+                        tint = if (selectedDate.isBefore(LocalDate.now())) Teal else TealDim
+                    )
+                }
+            }
+
+            // Quick actions
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Refresh button
+                MatrixIconButton(onClick = onRefresh) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Refresh"
+                    )
+                }
+
+                // Today button
+                if (selectedDate != LocalDate.now()) {
+                    MatrixTextButton(
+                        onClick = { onDateSelected(LocalDate.now()) }
+                    ) {
+                        Text("TODAY")
+                    }
+                }
+
+                // Jump to Map button
+                MatrixIconButton(onClick = onJumpToMap) {
+                    Icon(
+                        imageVector = Icons.Default.Map,
+                        contentDescription = "Jump to Map"
+                    )
+                }
             }
         }
     }
 }
 
+/**
+ * Day Summary Card - Matrix styled
+ */
+@Composable
+private fun DaySummaryCard(analytics: DayAnalytics) {
+    MatrixCard(modifier = Modifier.fillMaxWidth()) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "DAY SUMMARY",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Teal
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            MatrixDivider()
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                SummaryItem("PLACES", "${analytics.placesVisited}")
+                MatrixVerticalDivider(modifier = Modifier.height(48.dp))
+                SummaryItem("DISTANCE", "${String.format("%.1f", analytics.distanceTraveled / 1000)} km")
+                MatrixVerticalDivider(modifier = Modifier.height(48.dp))
+                SummaryItem("TIME", formatDuration(analytics.totalTimeTracked))
+            }
+        }
+    }
+}
+
+/**
+ * Summary Item
+ */
 @Composable
 private fun SummaryItem(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Bold
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = Teal
         )
         Text(
             text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            style = MaterialTheme.typography.labelSmall,
+            color = TealDim
         )
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun TimelineEntryCard(
-    entry: TimelineEntry,
-    onLongPress: (Place) -> Unit = {}
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(
-                if (entry.place != null) {
-                    Modifier.combinedClickable(
-                        onClick = {},
-                        onLongClick = { onLongPress(entry.place) }
-                    )
-                } else Modifier
-            ),
-        verticalAlignment = Alignment.Top
-    ) {
-        // Timeline indicator
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.width(40.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(12.dp)
-                    .clip(CircleShape)
-                    .background(getTimelineColor(entry.type)),
-                contentAlignment = Alignment.Center
-            ) {
-                when (entry.type) {
-                    TimelineEntryType.VISIT_START -> 
-                        Icon(
-                            Icons.Default.Place,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(8.dp)
-                        )
-                    TimelineEntryType.VISIT_END -> 
-                        Icon(
-                            Icons.AutoMirrored.Filled.ExitToApp,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(8.dp)
-                        )
-                    TimelineEntryType.MOVEMENT -> 
-                        Icon(
-                            Icons.Default.Star,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(8.dp)
-                        )
-                    else -> {}
-                }
-            }
-            
-            if (entry.type != TimelineEntryType.DAY_SUMMARY) {
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .height(32.dp)
-                        .background(MaterialTheme.colorScheme.outlineVariant)
-                )
-            }
-        }
-        
-        Spacer(modifier = Modifier.width(12.dp))
-        
-        // Content
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(
-                text = entry.title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
-            )
-            
-            entry.subtitle?.let { subtitle ->
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun getTimelineColor(type: TimelineEntryType): Color {
-    return when (type) {
-        TimelineEntryType.VISIT_START -> MaterialTheme.colorScheme.primary
-        TimelineEntryType.VISIT_END -> MaterialTheme.colorScheme.secondary
-        TimelineEntryType.MOVEMENT -> MaterialTheme.colorScheme.tertiary
-        TimelineEntryType.PLACE_DETECTED -> MaterialTheme.colorScheme.surface
-        TimelineEntryType.DAY_SUMMARY -> MaterialTheme.colorScheme.surfaceVariant
-    }
-}
-
+/**
+ * Current Location Card - Matrix styled
+ */
 @Composable
 private fun CurrentLocationCard(
     currentPlace: Place?,
     currentVisitDuration: Long,
     isTracking: Boolean
 ) {
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        onClick = {}
-    ) {
+    MatrixCard(modifier = Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Pulsing location indicator
             Box(
                 modifier = Modifier
                     .size(48.dp)
                     .background(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                        color = MaterialTheme.colorScheme.primaryContainer,
                         shape = androidx.compose.foundation.shape.CircleShape
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    Icons.Default.LocationOn,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
-                )
+                PulsingDot(size = 24.dp, color = Teal)
             }
-
-            Spacer(modifier = Modifier.width(16.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(
-                                color = Color.Green,
-                                shape = androidx.compose.foundation.shape.CircleShape
-                            )
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Current Location",
+                        text = "CURRENT LOCATION",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = Teal,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -411,9 +457,10 @@ private fun CurrentLocationCard(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = currentPlace?.osmSuggestedName ?: currentPlace?.name ?: "Tracking...",
+                    text = (currentPlace?.osmSuggestedName ?: currentPlace?.name ?: "Tracking...").uppercase(),
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = Teal
                 )
 
                 currentPlace?.address?.let { address ->
@@ -429,7 +476,7 @@ private fun CurrentLocationCard(
                     Text(
                         text = "Duration: ${formatDuration(currentVisitDuration)}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = Teal
                     )
                 }
             }
@@ -437,13 +484,17 @@ private fun CurrentLocationCard(
     }
 }
 
+/**
+ * Timeline Segment Card - Matrix styled with "View on Map" button
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TimelineSegmentCard(
     segment: TimelineSegment,
-    onLongPress: (Place) -> Unit
+    onLongPress: (Place) -> Unit,
+    onViewOnMap: () -> Unit
 ) {
-    GlassCard(
+    MatrixCard(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
@@ -451,72 +502,95 @@ private fun TimelineSegmentCard(
                 onLongClick = { onLongPress(segment.place) }
             )
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Place name
-            Text(
-                text = segment.place.osmSuggestedName ?: segment.place.name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            // ISSUE #1: Display full address (not truncated)
-            segment.place.address?.let { address ->
-                Text(
-                    text = address,  // Show complete address
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,  // Allow wrapping for long addresses
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Time range
+        Column {
+            // Place header
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.DateRange,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.primary
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = (segment.place.osmSuggestedName ?: segment.place.name).uppercase(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Teal,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
+
+                    segment.place.address?.let { address ->
+                        Text(
+                            text = address,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                // Category badge
+                MatrixBadge(count = segment.place.category.displayName.uppercase())
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            MatrixDivider()
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Time range and duration
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f, fill = false),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Schedule,
+                        contentDescription = null,
+                        tint = Teal,
+                        modifier = Modifier.size(16.dp)
+                    )
                     Text(
                         text = segment.timeRange.formatTimeRange(),
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 }
 
                 Text(
                     text = segment.timeRange.formatDuration(),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = Teal,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             }
 
-            // ISSUE #1: Individual visit details when multiple visits grouped
+            // Multiple visits indicator
             if (segment.visits.size > 1) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Individual Visits:",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                segment.visits.forEach { visit ->
-                    val visitDuration = formatDuration(visit.duration)
-                    val entryTime = visit.entryTime.format(DateTimeFormatter.ofPattern("h:mm a"))
-                    val exitTime = visit.exitTime?.format(DateTimeFormatter.ofPattern("h:mm a")) ?: "ongoing"
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Repeat,
+                        contentDescription = null,
+                        tint = Teal,
+                        modifier = Modifier.size(16.dp)
+                    )
                     Text(
-                        text = "• $entryTime - $exitTime ($visitDuration)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "${segment.visits.size} VISITS",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Teal
                     )
                 }
             }
@@ -525,27 +599,49 @@ private fun TimelineSegmentCard(
             if (segment.distanceToNext != null && segment.travelTimeToNext != null) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Icon(
-                        Icons.Default.Place,
+                        imageVector = Icons.Default.ArrowForward,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = TealDim,
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "${segment.formatDistanceToNext()} • ${segment.formatTravelTimeToNext()} to next",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                 }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // "View on Map" button
+            MatrixButton(
+                onClick = onViewOnMap,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Map,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("VIEW ON MAP")
             }
         }
     }
 }
 
+/**
+ * Format duration in milliseconds
+ */
 private fun formatDuration(milliseconds: Long): String {
     val hours = milliseconds / (1000 * 60 * 60)
     val minutes = (milliseconds % (1000 * 60 * 60)) / (1000 * 60)

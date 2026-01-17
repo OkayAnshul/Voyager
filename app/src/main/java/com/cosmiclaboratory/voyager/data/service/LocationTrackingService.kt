@@ -393,9 +393,10 @@ class LocationTrackingService : Service() {
         )
 
         // Phase 2: Skip location saves when user is driving (prevents false detections)
+        // Use user-configurable confidence threshold (default 0.90 for more accurate filtering)
         val prefs = currentPreferences
         if (prefs != null && prefs.useActivityRecognition) {
-            if (activityRecognitionManager.isUserMoving(confidenceThreshold = 0.75f)) {
+            if (activityRecognitionManager.isUserMoving(confidenceThreshold = prefs.activityRecognitionConfidence)) {
                 logger.d(TAG, "Location skipped - user is driving (activity: ${activityRecognitionManager.getCurrentActivity().activity})")
                 return
             }
@@ -546,7 +547,8 @@ class LocationTrackingService : Service() {
         // 6. Enhanced decision logic - MUCH more permissive for debugging
         return when {
             // Force save if it's been too long (prevents data gaps)
-            timeSinceLastSave > maxOf(minTimeBetweenSaves * 4, 600000L) -> {
+            // User-configurable max gap to prevent missing segments
+            timeSinceLastSave > (preferences.maxTrackingGapSeconds * 1000L) -> {
                 logger.d(TAG, "Location saved: long time gap (${timeSinceLastSave / 1000}s)")
                 true
             }
@@ -934,8 +936,8 @@ class LocationTrackingService : Service() {
     private fun createLocationRequest(preferences: UserPreferences): LocationRequest {
         // Adaptive configuration based on stationary mode
         val updateInterval = if (isInStationaryMode) {
-            // Longer intervals when stationary to save battery
-            maxOf(preferences.getEffectiveUpdateInterval() * 2, 60000L) // At least 1 minute
+            // Longer intervals when stationary to save battery (user-configurable multiplier)
+            maxOf((preferences.getEffectiveUpdateInterval() * preferences.stationaryModeMultiplier).toLong(), 60000L) // At least 1 minute
         } else {
             preferences.getEffectiveUpdateInterval()
         }
