@@ -1,417 +1,280 @@
-# 🧭 Voyager - Location Analytics Android App
+<div align="center">
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![Kotlin](https://img.shields.io/badge/kotlin-2.0.21-blue)]()
-[![License](https://img.shields.io/badge/license-MIT-green)]()
-[![Min SDK](https://img.shields.io/badge/min%20sdk-24-orange)]()
-[![Target SDK](https://img.shields.io/badge/target%20sdk-36-orange)]()
+<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="96" alt="Voyager Logo" />
 
-Voyager is a sophisticated Android location analytics application that tracks user movements, detects significant places, and provides intelligent insights using GPS data, machine learning algorithms, and privacy-focused design.
+# Voyager
 
-## ✨ Features
+**Privacy-first travel intelligence for Android**
 
-### 🗺️ **Core Functionality**
-- **Real-time Location Tracking**: Background GPS tracking with configurable accuracy modes
-- **Intelligent Place Detection**: DBSCAN clustering algorithm to identify meaningful locations
-- **Visit Analytics**: Automatic detection of arrival/departure times and visit durations
-- **Interactive Maps**: Free OpenStreetMap integration with route visualization
-- **Privacy-First**: Encrypted local database storage with SQLCipher
+Track everywhere you go. Own all your data. Understand your life's movement.
 
-### ⚙️ **User Configuration**
-- **Tracking Settings**: Adjustable update intervals, distance thresholds, and battery modes
-- **Place Detection**: Configurable clustering distance, minimum points, and session break times
-- **Smart Notifications**: Customizable arrival/departure alerts and pattern notifications
-- **Data Management**: Flexible retention periods and export options
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=flat&logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![Compose](https://img.shields.io/badge/Jetpack%20Compose-2024.09-4285F4?style=flat&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
+[![Min SDK](https://img.shields.io/badge/Min%20SDK-24%20(Android%207)-brightgreen)](https://developer.android.com/tools/releases/platforms)
+[![Target SDK](https://img.shields.io/badge/Target%20SDK-36%20(Android%2016)-blue)](https://developer.android.com/tools/releases/platforms)
+[![License](https://img.shields.io/badge/License-MIT-orange)](LICENSE)
 
-### 📊 **Analytics & Insights**
-- **Place Categorization**: Automatic classification (Home, Work, Gym, Shopping, Restaurant)
-- **Movement Patterns**: Timeline view with detailed visit history
-- **Statistical Insights**: Time spent analysis and movement trends
-- **Export Capabilities**: JSON, CSV data export with privacy controls
-
-## 📚 Documentation
-
-### Primary Documentation
-- **[Voyager Complete Guide](docs/VOYAGER_COMPLETE_GUIDE.md)** - Comprehensive technical documentation (15,000+ words)
-- **[Architecture Guide](VOYAGER_ARCHITECTURE_GUIDE.md)** - Clean Architecture implementation details
-- **[Project Summary](PROJECT_SUMMARY.md)** - ATS-optimized resume summary
-
-### Specialized Guides (Appendices)
-- **[API Reference](docs/appendices/API_REFERENCE.md)** - Complete function wiring map
-- **[Design Evolution](docs/appendices/DESIGN_EVOLUTION.md)** - Historical timeline and decisions
-- **[Unused Functions](docs/appendices/UNUSED_FUNCTIONS.md)** - Dead code analysis
-- **[Technology Stack](docs/appendices/TECHNOLOGY_STACK.md)** - Deep dive into tech choices
-- **[Flaws & Advances](docs/appendices/FLAWS_AND_ADVANCES.md)** - Honest technical assessment
-
-### Development Guides
-- **[UI Enhancement Roadmap](docs/UI_ENHANCEMENT_ROADMAP.md)** - Future UI/UX improvements
-- **[Manual Testing Guide](docs/MANUAL_TESTING_GUIDE.md)** - Testing procedures (40+ test cases)
-- **[Automated Testing Strategy](docs/AUTOMATED_TESTING_STRATEGY.md)** - Test implementation plan
-- **[Comprehensive Gap Analysis](docs/COMPREHENSIVE_GAP_ANALYSIS.md)** - Technical debt analysis
-
-### Historical Documentation
-See `/archive/README.md` for archived session logs, implementation plans, and project evolution history.
+</div>
 
 ---
 
-## 🏗️ Architecture
+## What is Voyager?
 
-Voyager follows **Clean Architecture** principles with modern Android development practices:
+Voyager is a local-first, privacy-first Android app that reconstructs your daily life as a meaningful timeline — where you went, how long you stayed, how you got there — without sending a single byte to the cloud.
+
+It runs an **8-stage real-time processing pipeline** entirely on-device: raw GPS samples flow through Kalman filtering, quality scoring, deduplication, activity fusion, visit detection, movement segmentation, and place linking — all in a single-threaded serial channel to prevent race conditions.
+
+**No Google Maps API. No cloud. No tracking by us.**
+
+---
+
+## Screenshots
+
+> **Note:** Replace placeholders below with actual screenshots. Recommended: 5–6 screenshots in portrait (1080×2340), hosted in `/docs/screenshots/`.
+
+<div align="center">
+
+| Dashboard | Timeline | Map |
+|:---------:|:--------:|:---:|
+| <img src="docs/screenshots/dashboard.png" width="200" alt="Dashboard" /> | <img src="docs/screenshots/timeline.png" width="200" alt="Timeline" /> | <img src="docs/screenshots/map.png" width="200" alt="Map" /> |
+| Live tracking stats, streak counter, activity rings | Day-by-day movement with segment cards | Interactive OSM map with route overlays |
+
+| Insights | Settings | Place Detail |
+|:--------:|:--------:|:------------:|
+| <img src="docs/screenshots/insights.png" width="200" alt="Insights" /> | <img src="docs/screenshots/settings.png" width="200" alt="Settings" /> | <img src="docs/screenshots/place_detail.png" width="200" alt="Place Detail" /> |
+| Weekly comparison, trends, anomaly detection | 4-tab deep-configuration panel | Visit history, rename, category correction |
+
+</div>
+
+---
+
+## Video Demo
+
+> **Note:** Add a demo GIF or link to a YouTube/Loom recording here.
 
 ```
-📦 Voyager
-├── 🎨 Presentation Layer (Jetpack Compose)
-│   ├── Screens (Dashboard, Map, Timeline, Settings, Insights)
-│   ├── ViewModels (MVVM pattern)
-│   └── Components (Reusable UI components)
-├── 💼 Domain Layer
-│   ├── Use Cases (Business logic)
-│   ├── Models (Data entities)
-│   └── Repositories (Abstract interfaces)
-├── 🗃️ Data Layer
-│   ├── Repositories (Concrete implementations)
-│   ├── Database (Room + SQLCipher)
-│   ├── Services (Location tracking, geofencing)
-│   └── Workers (Background tasks)
-└── 🔧 Utils & DI (Hilt dependency injection)
+[Demo video placeholder — record a 30–60 second screen recording showing:
+  1. App opening with animated splash
+  2. Live tracking active on dashboard
+  3. Timeline scrolling through a day's segments
+  4. Tapping a place to see visit history
+  5. Map view with route polylines
+]
 ```
 
-## 🚀 Getting Started
+<!--
+Once recorded, replace the block above with:
+[![Voyager Demo](docs/screenshots/demo_thumb.png)](https://youtu.be/YOUR_VIDEO_ID)
+-->
+
+---
+
+## Features
+
+### Real-Time Location Intelligence
+
+| Feature | Detail |
+|---------|--------|
+| **Adaptive GPS sampling** | 90s when still, 12s walking, 7s driving — auto-adjusts to motion state |
+| **Dormant mode** | GPS shuts off after 4.5 min stationary; wakes on significant motion sensor |
+| **Visit detection** | Dwell-based state machine (3-min threshold, hysteresis, return detection within 30 min) |
+| **Movement segmentation** | Classifies WALK / RUN / CYCLE / DRIVE / TRANSIT / GAP with speed thresholds |
+| **Activity fusion** | Merges Activity Recognition API, pedometer, and speed heuristics into a single motion state |
+| **WiFi fingerprinting** | Supplementary SSID/BSSID signal for indoor place matching |
+
+### Privacy & Security
+
+- **100% local** — no cloud sync, no analytics SDKs, no third-party data sharing
+- **SQLCipher encryption** on the Room database from day one
+- **Background location** used only for tracking; no silent location access
+- **No API keys required** — OpenStreetMap + Android Geocoder + Nominatim (all free)
+- **Correction system** — every inference is evidence-backed and user-correctable
+
+### Screens & UI
+
+- **Dashboard** — ActivityRings hero card, streak counter, top places, anomaly flags
+- **Timeline** — Day-navigable movement timeline with segment cards and gradient rail
+- **Map** — MapLibre OSM map, route overlays, geofence visualisation, place bottom sheet
+- **Insights** — Weekly comparison, visit frequency, distance trends, time-of-day patterns
+- **Settings** — 4-tab configuration: General, Detection, Privacy, Advanced (16 modular sections)
+- **Place review** — Workflow to rename, recategorize, and correct inferred places
+- **Export** — GPX, GeoJSON, CSV, and VoyagerJSON formats with share intent
+- **Onboarding** — 3-page animated feature walkthrough + permission flow
+
+---
+
+## Architecture
+
+Voyager uses **Clean Architecture** across 6 layers, with a stream-first processing pipeline as the core runtime:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Presentation Layer                    │
+│   Jetpack Compose · MVVM · SharedUiState · Navigation   │
+├─────────────────────────────────────────────────────────┤
+│                      Domain Layer                        │
+│   Use Cases · Repository Interfaces · Domain Models     │
+├──────────────────────┬──────────────────────────────────┤
+│      Data Layer      │         Platform Layer           │
+│  Repositories (15)   │  Foreground Service · Workers   │
+│  Geocoding (3 APIs)  │  Notifications · Receivers      │
+├──────────────────────┴──────────────────────────────────┤
+│                     Pipeline Layer                       │
+│                                                         │
+│  GPS/AR/Steps → [Normalize → Kalman → Quality →        │
+│                  Dedup → Fuse → VisitDetect →           │
+│                  Segment → Commit] → PlaceLink          │
+│                                                         │
+│              Single-threaded serial channel             │
+├─────────────────────────────────────────────────────────┤
+│                     Storage Layer                        │
+│     Room + SQLCipher · DataStore · TimelineStateStore   │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Single-threaded pipeline | Eliminates race conditions in visit/segment state machines |
+| SQLCipher from day 1 | Privacy-first — never store plaintext location history |
+| MapLibre over Google Maps | No API key, no cost, OSM-powered |
+| 3 geocoding providers | Android Geocoder (free/offline) → Photon → Nominatim fallback chain |
+| Evidence-backed inference | Every place/visit decision stores supporting evidence entities |
+| WorkManager for background | 9 typed workers for rollup, geocoding, integrity repair, export |
+
+---
+
+## Tech Stack
+
+| Category | Library / Tool | Version |
+|----------|---------------|---------|
+| Language | Kotlin | 2.0.21 |
+| UI | Jetpack Compose + Material 3 | BOM 2024.09 |
+| DI | Hilt | 2.51.1 |
+| Database | Room + SQLCipher | 2.6.1 / 4.5.4 |
+| Location | Google Play Services Location | 21.3.0 |
+| Activity | Google Activity Recognition | 21.1.0 |
+| Map | MapLibre Android | 11.8.0 |
+| Background | WorkManager | 2.9.0 |
+| Network | Retrofit + OkHttp + Ktor | 2.11 / 4.12 / 2.3.12 |
+| Serialization | Kotlinx Serialization | 1.7.1 |
+| Coroutines | Kotlin Coroutines | 1.8.1 |
+| Fonts | Inter · Great Vibes · JetBrains Mono | — |
+| Testing | JUnit 4 · MockK · Turbine · Truth | — |
+
+---
+
+## Getting Started
 
 ### Prerequisites
 
-- **Android Studio**: Hedgehog+ (2023.1.1 or later)
-- **Java**: JDK 11 or higher
-- **Kotlin**: 2.0.21 (included with AS)
-- **Min SDK**: Android 7.0 (API 24)
-- **Target SDK**: Android 14+ (API 36)
+- Android Studio Hedgehog+ (2023.1.1 or later)
+- JDK 11+
+- Android device / emulator running **Android 7.0+ (API 24)**
 
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/your-username/voyager.git
-   cd voyager
-   ```
-
-2. **Open in Android Studio**
-   ```bash
-   # Launch Android Studio and open the project folder
-   studio .
-   ```
-
-3. **Sync Project**
-   - Android Studio will automatically detect and sync Gradle files
-   - Wait for dependency downloads to complete
-
-4. **Build the project**
-   ```bash
-   ./gradlew assembleDebug
-   ```
-
-### Configuration
-
-#### Required Permissions
-
-The app requires several permissions that are automatically requested at runtime:
-
-```xml
-<!-- Core location permissions -->
-<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-
-<!-- Foreground service for location tracking -->
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-
-<!-- Additional permissions -->
-<uses-permission android:name="android.permission.INTERNET" />
-<uses-permission android:name="android.permission.VIBRATE" />
-<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-```
-
-#### No API Keys Required 🎉
-
-Voyager uses **free and open-source** services:
-- **OpenStreetMap**: Free alternative to Google Maps
-- **OSMDroid**: Open-source mapping library
-- **No Google API keys needed**
-
-## 📱 Usage
-
-### First Launch
-
-1. **Grant Permissions**: The app will request location permissions
-2. **Background Location**: Grant "Allow all the time" for continuous tracking
-3. **Start Tracking**: Toggle location tracking in Settings
-4. **Place Detection**: Places will be automatically detected after sufficient data
-
-### Key Screens
-
-#### 🏠 **Dashboard**
-- Overview of tracking status and recent activity
-- Quick stats on places and visits
-- Real-time location information
-
-#### 🗺️ **Map**
-- Interactive map showing tracked routes
-- Place markers with visit counts
-- Real-time location indicator
-
-#### 📅 **Timeline**
-- Chronological view of daily activities
-- Detailed visit information
-- Date navigation controls
-
-#### ⚙️ **Settings**
-- **Location Tracking**: Configure update intervals and accuracy
-- **Place Detection**: Adjust clustering parameters
-- **Notifications**: Customize arrival/departure alerts
-- **Data Management**: Export data and manage retention
-
-#### 📊 **Insights**
-- Statistical analysis of movement patterns
-- Place categorization insights
-- Time-based analytics
-
-## 🛠️ Development
-
-### Building
+### Build
 
 ```bash
+# Clone
+git clone https://github.com/OkayAnshul/Voyager.git
+cd Voyager
+
 # Debug build
 ./gradlew assembleDebug
 
-# Release build
-./gradlew assembleRelease
-
-# Run tests
-./gradlew test
-
-# Run on device/emulator
+# Install on connected device
 ./gradlew installDebug
-```
 
-### Dependencies
-
-**Core Android**
-- Jetpack Compose (UI framework)
-- Hilt (Dependency injection)
-- Room + SQLCipher (Encrypted database)
-- WorkManager (Background tasks)
-
-**Location & Maps**
-- Google Play Services Location
-- OSMDroid (OpenStreetMap)
-- Geofencing API
-
-**Testing**
-- JUnit 4
-- MockK
-- Turbine (Flow testing)
-
-### Code Style
-
-- **Kotlin**: Official Kotlin coding conventions
-- **Architecture**: Clean Architecture + MVVM
-- **DI**: Hilt dependency injection
-- **Async**: Kotlin Coroutines and Flow
-- **UI**: Jetpack Compose with Material Design 3
-
-## 🔒 Privacy & Security
-
-Voyager is designed with **privacy-first** principles:
-
-- ✅ **Local Storage**: All data stored locally using SQLCipher encryption
-- ✅ **No Cloud Sync**: No data transmitted to external servers
-- ✅ **User Control**: Configurable data retention and export options
-- ✅ **Transparent**: Open-source codebase for full transparency
-- ✅ **Minimal Permissions**: Only essential permissions requested
-
-## 🆕 Recent Updates (October 2024)
-
-### Critical Bug Fixes ✅
-
-#### **App Startup Crashes Resolved**
-- ✅ **WorkManager Initialization**: Fixed app crashes on startup due to WorkManager conflicts
-- ✅ **MainActivity Compose State**: Resolved `mutableStateOf` crashes in Activity lifecycle
-- ✅ **Permission Handling**: Stable permission request flow implementation
-
-#### **Analytics Pipeline Fixes**
-- ✅ **Infinite Map Loading**: Fixed Flow collection bugs causing endless loading states
-- ✅ **Zero Analytics Data**: Resolved issue where dashboard showed 0 values despite 814 locations
-- ✅ **Place Detection**: Fixed pipeline that prevented location data from being processed into places
-
-#### **Location Tracking Improvements**
-- ✅ **GPS Spam Prevention**: Implemented smart filtering to prevent location spam when stationary
-- ✅ **Stationary Detection**: Adaptive GPS behavior that reduces frequency when device isn't moving
-- ✅ **Movement Validation**: Intelligent algorithms to distinguish real movement from GPS drift
-
-### Major Enhancements 🚀
-
-#### **User-Configurable Settings System**
-- 🆕 **Location Quality Settings**: Configurable GPS accuracy thresholds, speed filters, and timing
-- 🆕 **Place Detection Automation**: User-controlled detection frequency and battery requirements
-- 🆕 **Analytics Configuration**: Customizable activity time ranges and processing batch sizes
-
-#### **Enhanced Place Detection**
-- 🆕 **Manual Detection Trigger**: "Detect Places Now" button for immediate processing
-- 🆕 **Comprehensive Logging**: Detailed debug information throughout the detection pipeline
-- 🆕 **Preference Integration**: All algorithms now respect user-configured parameters
-
-#### **Smart Background Processing**
-- 🆕 **Adaptive Worker Scheduling**: WorkManager respects user preferences for frequency and battery
-- 🆕 **Immediate Processing**: App startup triggers place detection for existing location data
-- 🆕 **Battery-Aware Operations**: User-configurable battery requirements for background tasks
-
-### Technical Improvements
-
-#### **Robust Error Handling**
-```kotlin
-// Analytics pipeline now includes comprehensive error handling
-suspend fun generateDayAnalytics(date: LocalDate): DayAnalytics {
-    return try {
-        // Individual error handling for each data source
-        val locations = try {
-            locationRepository.getLocationsSince(startTime)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get locations", e)
-            emptyList() // Graceful fallback
-        }
-        // Process and return analytics
-    } catch (e: Exception) {
-        // Return safe defaults instead of crashing
-        DayAnalytics(/* empty analytics with safe defaults */)
-    }
-}
-```
-
-#### **Smart Location Filtering**
-```kotlin
-private fun shouldSaveLocation(newLocation: AndroidLocation): Boolean {
-    // 1. User-configurable accuracy filtering
-    if (newLocation.accuracy > preferences.maxGpsAccuracyMeters) return false
-    
-    // 2. Adaptive movement thresholds
-    val minMovement = if (isInStationaryMode) 25.0 else preferences.getEffectiveMinDistance()
-    
-    // 3. User-configurable speed validation
-    if (speedKmh > preferences.maxSpeedKmh) return false
-    
-    // 4. Intelligent time-based filtering
-    val minTimeBetween = preferences.minTimeBetweenUpdatesSeconds * 1000L
-    
-    // Decision logic prevents GPS drift while capturing real movement
-}
-```
-
-#### **Preference-Driven Architecture**
-```kotlin
-data class UserPreferences(
-    // Location Quality Filtering (NEW)
-    val maxGpsAccuracyMeters: Float = 100f, // 50-500m range
-    val maxSpeedKmh: Double = 200.0, // 100-300 km/h range
-    val minTimeBetweenUpdatesSeconds: Int = 10, // 5-60s range
-    
-    // Place Detection Automation (NEW)
-    val placeDetectionFrequencyHours: Int = 6, // 1-24h range
-    val autoDetectTriggerCount: Int = 50, // 10-500 locations
-    val batteryRequirement: BatteryRequirement = BatteryRequirement.NOT_LOW,
-    
-    // Analytics Configuration (NEW)
-    val activityTimeRangeStart: Int = 6, // 0-23 hours
-    val activityTimeRangeEnd: Int = 23, // 0-23 hours
-    val dataProcessingBatchSize: Int = 1000, // 100-5000 items
-    
-    // Existing settings with validation...
-)
-```
-
-## 📋 Known Issues & Limitations
-
-### Current Limitations
-- **Battery Usage**: Continuous GPS tracking impacts battery life (mitigated by smart stationary detection)
-- **Indoor Accuracy**: GPS accuracy reduced in buildings/underground
-- **Place Detection**: Requires sufficient location data for accurate detection (now user-configurable)
-- **Settings UI**: Advanced settings UI for new preferences is in development
-
-### Recently Fixed Issues ✅
-- ✅ **App Startup Crashes**: WorkManager initialization conflicts resolved
-- ✅ **Infinite Loading States**: Flow collection bugs in analytics pipeline fixed
-- ✅ **Location Spam**: Smart filtering prevents GPS drift when stationary
-- ✅ **Zero Analytics**: Place detection pipeline now processes existing location data
-- ✅ **Permission Crashes**: Compose state management issues resolved
-
-### Migration Notes
-- **Breaking Change**: Place detection now requires explicit enabling in preferences
-- **Settings Reset**: Some users may need to reconfigure preferences after update
-- **Data Reprocessing**: Use "Detect Places Now" to reprocess existing location data with new algorithms
-
-## 🧪 Testing
-
-### Run Tests
-```bash
-# Unit tests
+# Run unit tests
 ./gradlew testDebugUnitTest
-
-# Instrumented tests
-./gradlew connectedDebugAndroidTest
-
-# All tests
-./gradlew check
 ```
 
-### Test Coverage
-- **Unit Tests**: Domain layer logic, ViewModels
-- **Integration Tests**: Database operations, repositories
-- **UI Tests**: Critical user flows (planned)
+> No API keys needed. The app uses only free, open-source services.
 
-## 🚀 Deployment
+### Permissions
 
-### Release Build
-```bash
-# Generate signed APK
-./gradlew assembleRelease
+Voyager requests these at runtime:
 
-# Generate AAB (recommended for Play Store)
-./gradlew bundleRelease
-```
+| Permission | Purpose |
+|-----------|---------|
+| `ACCESS_FINE_LOCATION` | GPS tracking |
+| `ACCESS_BACKGROUND_LOCATION` | Continuous background tracking |
+| `ACTIVITY_RECOGNITION` | Motion state detection |
+| `POST_NOTIFICATIONS` | Foreground service notification (Android 13+) |
 
-### Build Variants
-- **Debug**: Development builds with logging
-- **Release**: Optimized production builds
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
-
-### Development Setup
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Submit a pull request
-
-## 📞 Support
-
-For questions, issues, or feature requests:
-
-- **Issues**: [GitHub Issues](https://github.com/your-username/voyager/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-username/voyager/discussions)
-- **Documentation**: Check the `/docs` folder for detailed documentation
-
-## 🙏 Acknowledgments
-
-- **OpenStreetMap**: For providing free, open-source mapping data
-- **OSMDroid**: For the excellent Android mapping library
-- **Android Team**: For the robust development platform and libraries
-- **Kotlin Team**: For the amazing programming language
+Grant **"Allow all the time"** for background location to enable continuous tracking.
 
 ---
 
-**Built with ❤️ for privacy-conscious users who want to understand their movement patterns without compromising their data.**
+## Project Structure
+
+```
+app/src/main/java/com/cosmiclaboratory/voyager/
+├── capture/          # GPS, activity, steps, WiFi, geofence capture
+├── pipeline/         # 8-stage processing pipeline + place linking
+│   └── stage/        # Normalizer, Kalman, Quality, Dedup, Committer, Segmenter
+├── domain/
+│   ├── model/        # Domain entities + enums
+│   ├── repository/   # Repository interfaces (15)
+│   └── usecase/      # Business logic (DetectVisit, FuseActivity, MatchPlace…)
+├── data/
+│   ├── api/          # Geocoding services (Android, Nominatim, Photon, Overpass)
+│   ├── geocoding/    # Provider implementations + registry
+│   └── repository/   # Repository implementations (15)
+├── storage/
+│   ├── database/     # Room schema — 20 entities, 20 DAOs
+│   └── encryption/   # SQLCipher key management
+├── platform/
+│   ├── service/      # LocationCaptureService (foreground)
+│   ├── worker/       # 9 WorkManager workers
+│   ├── coordinator/  # TrackingRuntimeCoordinator, PermissionMonitor
+│   └── map/          # MapLibreMapEngine
+├── presentation/
+│   ├── screen/       # 18 screens with paired ViewModels
+│   ├── theme/        # VoyagerColors, VoyagerComponents, VoyagerGradients
+│   ├── components/   # Shared UI primitives
+│   └── state/        # SharedUiState, DayNavigationStateHolder
+└── di/               # 8 Hilt modules
+```
+
+---
+
+## Documentation
+
+| Document | Description |
+|---------|-------------|
+| [Architecture](docs/architecture/ARCHITECTURE.md) | Clean Architecture layers and data flow |
+| [Domain Models](docs/architecture/DOMAIN_MODELS.md) | All domain entities and enumerations |
+| [Stream-First vs Visit-First](docs/research/STREAM_FIRST_VS_VISIT_FIRST_ARCHITECTURE_FINDINGS.md) | Architecture research findings |
+| [Place Detection](docs/algorithms/PLACE_DETECTION.md) | Visit detection and place matching algorithms |
+| [Design Evolution](docs/appendices/DESIGN_EVOLUTION.md) | 1-year development history |
+| [Technology Stack](docs/appendices/TECHNOLOGY_STACK.md) | Tech choices and trade-offs |
+| [QA Guide](docs/resources/QA_GUIDE.md) | Manual testing procedures |
+
+---
+
+## Development History
+
+Voyager was built over ~1 year of continuous development with two major architectural versions:
+
+- **V1 (Aug–Feb 2025):** Visit-first architecture — AppStateManager, DBSCAN clustering, basic pipeline
+- **V2 (Mar 2026–present):** Stream-first architecture — 8-stage serial pipeline, Kalman filter, evidence layer, adaptive dormant mode
+
+See [`docs/appendices/DESIGN_EVOLUTION.md`](docs/appendices/DESIGN_EVOLUTION.md) for the full story, and [`docs/appendices/FLAWS_AND_ADVANCES.md`](docs/appendices/FLAWS_AND_ADVANCES.md) for an honest technical assessment.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE)
+
+---
+
+<div align="center">
+
+Built for people who want to understand where their life actually happens — without handing that data to anyone else.
+
+**[OkayAnshul](https://github.com/OkayAnshul)**
+
+</div>
