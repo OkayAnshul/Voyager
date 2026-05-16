@@ -22,6 +22,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 /**
@@ -37,6 +40,8 @@ class LocationCaptureService : Service() {
     @Inject lateinit var coordinator: TrackingRuntimeCoordinator
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val startMutex = Mutex()
+    private val capturesStarted = AtomicBoolean(false)
 
     override fun onCreate() {
         super.onCreate()
@@ -54,32 +59,37 @@ class LocationCaptureService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent == null) {
-            // Null intent = process died and system restarted service
-            serviceScope.launch {
-                coordinator.restoreFromCrash()
-                // Resume captures after crash restore so samples flow again
-                val sessionId = coordinator.runtimeState.value.activeSessionId
-                if (sessionId != null) {
-                    locationCapture.start(sessionId)
-                    activityCapture.start(sessionId)
-                    stepCapture.start(sessionId)
-                }
-            }
-        } else {
-            serviceScope.launch {
-                val sessionId = coordinator.runtimeState.value.activeSessionId
-                if (sessionId == null) {
-                    android.util.Log.w("LocationCaptureService", "No active session — stopping self")
-                    stopSelf()
-                    return@launch
-                }
-                locationCapture.start(sessionId)
-                activityCapture.start(sessionId)
-                stepCapture.start(sessionId)
-            }
+        val isCrashRestart = intent == null
+        serviceScope.launch {
+            ensureCapturesStarted(isCrashRestart)
         }
         return START_STICKY
+    }
+
+    /**
+     * Idempotent + serialized capture startup (H6 fix).
+     *
+     * Two onStartCommand paths can race: a null-intent crash restart from the system
+     * and a user-initiated explicit start. Without the mutex+flag both paths can call
+     * `locationCapture.start()` concurrently, producing duplicate FLP callbacks.
+     */
+    private suspend fun ensureCapturesStarted(isCrashRestart: Boolean) {
+        startMutex.withLock {
+            if (capturesStarted.get()) return@withLock
+            if (isCrashRestart) {
+                coordinator.restoreFromCrash()
+            }
+            val sessionId = coordinator.runtimeState.value.activeSessionId
+            if (sessionId == null) {
+                android.util.Log.w("LocationCaptureService", "No active session — stopping self")
+                stopSelf()
+                return@withLock
+            }
+            locationCapture.start(sessionId)
+            activityCapture.start(sessionId)
+            stepCapture.start(sessionId)
+            capturesStarted.set(true)
+        }
     }
 
     override fun onDestroy() {
@@ -88,6 +98,7 @@ class LocationCaptureService : Service() {
         locationCapture.stop()
         activityCapture.stop()
         stepCapture.stop()
+        capturesStarted.set(false)
         serviceScope.cancel()
         super.onDestroy()
     }

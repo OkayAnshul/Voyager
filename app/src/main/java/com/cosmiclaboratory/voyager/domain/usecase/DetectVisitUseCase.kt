@@ -8,6 +8,7 @@ import com.cosmiclaboratory.voyager.storage.TimelineStateStore
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitEvidenceDao
+import com.cosmiclaboratory.voyager.storage.database.dao.VisitWriteGuard
 import com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.VisitEvidenceEntity
 import javax.inject.Inject
@@ -15,6 +16,7 @@ import javax.inject.Inject
 class DetectVisitUseCase @Inject constructor(
     private val stateStore: TimelineStateStore,
     private val visitDao: VisitDao,
+    private val visitWriteGuard: VisitWriteGuard,
     private val visitEvidenceDao: VisitEvidenceDao,
     private val placeDao: PlaceDao
 ) {
@@ -267,7 +269,7 @@ class DetectVisitUseCase @Inject constructor(
             centroidLng = candidate.centroidLng
         )
 
-        val visitId = visitDao.insertIfNotOverlapping(visit)
+        val visitId = visitWriteGuard.insertIfNotOverlapping(visit)
         if (visitId == -1L) {
             stateStore.setPendingVisitCandidate(null)
             return VisitDetectionResult.OverlapRejected

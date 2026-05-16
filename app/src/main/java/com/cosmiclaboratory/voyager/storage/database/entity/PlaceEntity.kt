@@ -32,7 +32,11 @@ data class PlaceEntity(
     val createdAt: Long,
     val lastVisitedAt: Long? = null,
     val mergedIntoPlaceId: Long? = null,
-    val emoji: String? = null
+    val emoji: String? = null,
+    // Cloud-ready audit columns (v3). Inert until sync ships — see MIGRATION_2_3.
+    val lastModifiedAt: Long = 0L,
+    val revision: Long = 1L,
+    val deletedAt: Long? = null
 )
 
 /** Consistent display name with coordinate fallback for ungeocode places. */

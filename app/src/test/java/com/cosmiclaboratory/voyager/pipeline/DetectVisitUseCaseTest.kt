@@ -8,6 +8,7 @@ import com.cosmiclaboratory.voyager.storage.TimelineStateStore
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitEvidenceDao
+import com.cosmiclaboratory.voyager.storage.database.dao.VisitWriteGuard
 import com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
@@ -54,7 +55,9 @@ class DetectVisitUseCaseTest {
 
     @Before
     fun setup() {
-        useCase = DetectVisitUseCase(stateStore, visitDao, visitEvidenceDao, placeDao)
+        // Real guard wrapping the mocked DAO — stubs on visitDao flow through unchanged.
+        val visitWriteGuard = VisitWriteGuard(visitDao)
+        useCase = DetectVisitUseCase(stateStore, visitDao, visitWriteGuard, visitEvidenceDao, placeDao)
     }
 
     private fun sample(

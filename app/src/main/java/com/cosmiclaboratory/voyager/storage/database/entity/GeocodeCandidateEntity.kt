@@ -31,5 +31,9 @@ data class GeocodeCandidateEntity(
     val confidence: Float = 0.5f,
     val licenseClass: String = "FREE", // FREE/ATTRIBUTION/PAID
     val cachedUntil: Long? = null,
-    val fetchedAt: Long
+    val fetchedAt: Long,
+    // Cloud-ready audit columns (v3). Inert until sync ships — see MIGRATION_2_3.
+    val lastModifiedAt: Long = 0L,
+    val revision: Long = 1L,
+    val deletedAt: Long? = null
 )

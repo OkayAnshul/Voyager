@@ -26,5 +26,9 @@ data class MovementSegmentEntity(
     val placeId: Long? = null,
     val gapReason: String? = null, // PERMISSION/DOZE/PROCESS_DEAD/GPS_LOSS/MANUAL_PAUSE/UNKNOWN
     val dayKey: String, // YYYY-MM-DD
-    val isUserCorrected: Boolean = false
+    val isUserCorrected: Boolean = false,
+    // Cloud-ready audit columns (v3). Inert until sync ships — see MIGRATION_2_3.
+    val lastModifiedAt: Long = 0L,
+    val revision: Long = 1L,
+    val deletedAt: Long? = null
 )

@@ -31,5 +31,9 @@ data class RouteEntity(
     val maxSpeedMps: Float,
     val transportMode: String,
     val sampleCount: Int,
-    val boundingBoxJson: String? = null
+    val boundingBoxJson: String? = null,
+    // Cloud-ready audit columns (v3). Inert until sync ships — see MIGRATION_2_3.
+    val lastModifiedAt: Long = 0L,
+    val revision: Long = 1L,
+    val deletedAt: Long? = null
 )

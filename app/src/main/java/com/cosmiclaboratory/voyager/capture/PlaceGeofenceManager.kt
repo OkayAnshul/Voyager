@@ -11,6 +11,8 @@ import com.google.android.gms.location.GeofencingClient
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -27,6 +29,9 @@ class PlaceGeofenceManager @Inject constructor(
     private val geofencingClient: GeofencingClient =
         LocationServices.getGeofencingClient(context)
     private val activeGeofenceIds = mutableSetOf<String>()
+    // H9 fix: serializes concurrent syncGeofences() calls so the activeGeofenceIds
+    // mutable set is never mutated from two coroutines at once (boot restore + auto-promote).
+    private val syncMutex = Mutex()
 
     private val geofencePendingIntent: PendingIntent by lazy {
         val intent = Intent(context, GeofenceBroadcastReceiver::class.java)
@@ -37,7 +42,7 @@ class PlaceGeofenceManager @Inject constructor(
     }
 
     @SuppressLint("MissingPermission")
-    suspend fun syncGeofences() {
+    suspend fun syncGeofences() = syncMutex.withLock {
         val confirmedPlaces = placeDao.getFrequentPlaces(limit = 80)
             .filter { it.lifecycleStatus == PlaceLifecycleStatus.CONFIRMED.name }
 
@@ -77,7 +82,7 @@ class PlaceGeofenceManager @Inject constructor(
         }
     }
 
-    fun removeAllGeofences() {
+    suspend fun removeAllGeofences() = syncMutex.withLock {
         if (activeGeofenceIds.isNotEmpty()) {
             geofencingClient.removeGeofences(geofencePendingIntent)
             activeGeofenceIds.clear()

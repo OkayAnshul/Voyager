@@ -76,14 +76,18 @@ fun VisitDetailSheet(
             }
 
             uiState.visit != null && uiState.place != null -> {
-                VisitDetailContent(
-                    visit = uiState.visit!!,
-                    place = uiState.place!!,
-                    evidence = uiState.evidence,
-                    confidenceBlock = uiState.confidenceBlock,
-                    onIntent = viewModel::onIntent,
-                    onNavigateToPlace = onNavigateToPlace
-                )
+                val visit = uiState.visit
+                val place = uiState.place
+                if (visit != null && place != null) {
+                    VisitDetailContent(
+                        visit = visit,
+                        place = place,
+                        evidence = uiState.evidence,
+                        confidenceBlock = uiState.confidenceBlock,
+                        onIntent = viewModel::onIntent,
+                        onNavigateToPlace = onNavigateToPlace
+                    )
+                }
             }
         }
 
@@ -188,7 +192,7 @@ private fun PlaceHeader(place: PlaceEntity, onNavigateToPlace: (Long) -> Unit) {
         ) {
             val nameSource = when {
                 place.userDisplayName != null -> "USER"
-                place.bestProviderSource != null -> place.bestProviderSource!!
+                place.bestProviderSource != null -> place.bestProviderSource ?: "COORDINATES"
                 else -> "COORDINATES"
             }
             NameSourceIndicator(nameSource = nameSource)

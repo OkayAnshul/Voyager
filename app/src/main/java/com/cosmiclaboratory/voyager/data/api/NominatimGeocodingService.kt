@@ -2,10 +2,13 @@ package com.cosmiclaboratory.voyager.data.api
 
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import org.json.JSONObject
+import kotlin.random.Random
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -39,8 +42,9 @@ class NominatimGeocodingService @Inject constructor(
         longitude: Double
     ): AddressResult? = withContext(Dispatchers.IO) {
         try {
-            // Enforce rate limiting
+            // Enforce rate limiting + per-request jitter
             rateLimiter.acquire()
+            applyJitter()
 
             val url = "$baseUrl/reverse?format=json&lat=$latitude&lon=$longitude&addressdetails=1"
             val request = Request.Builder()
@@ -54,6 +58,11 @@ class NominatimGeocodingService @Inject constructor(
 
             if (!response.isSuccessful) {
                 Log.w(TAG, "Nominatim request failed: ${response.code}")
+                return@withContext null
+            }
+
+            if (!isJsonResponse(response)) {
+                Log.w(TAG, "Nominatim returned non-JSON (captive portal?) — skipping")
                 return@withContext null
             }
 
@@ -103,8 +112,9 @@ class NominatimGeocodingService @Inject constructor(
         longitude: Double
     ): PlaceDetails? = withContext(Dispatchers.IO) {
         try {
-            // Enforce rate limiting
+            // Enforce rate limiting + per-request jitter
             rateLimiter.acquire()
+            applyJitter()
 
             // Use zoom=18 for more specific results (building level)
             val url = "$baseUrl/reverse?format=json&lat=$latitude&lon=$longitude&zoom=18&addressdetails=1"
@@ -119,6 +129,11 @@ class NominatimGeocodingService @Inject constructor(
 
             if (!response.isSuccessful) {
                 Log.w(TAG, "Nominatim place details request failed: ${response.code}")
+                return@withContext null
+            }
+
+            if (!isJsonResponse(response)) {
+                Log.w(TAG, "Nominatim returned non-JSON (captive portal?) — skipping")
                 return@withContext null
             }
 
@@ -165,7 +180,27 @@ class NominatimGeocodingService @Inject constructor(
         return true
     }
 
+    /**
+     * Guards against captive portals (hotel/airport WiFi) that return an HTML login
+     * page with HTTP 200 for every request. Parsing that HTML as JSON would either
+     * throw (caught silently) or, worse, succeed enough to poison a place name.
+     */
+    private fun isJsonResponse(response: Response): Boolean {
+        val contentType = response.header("Content-Type") ?: return false
+        return contentType.contains("json", ignoreCase = true)
+    }
+
+    /**
+     * Random 0–3s delay before each request. Many privacy-conscious users share a VPN
+     * exit IP; without jitter they collectively hammer Nominatim's per-IP rate limit
+     * in lockstep and get the whole exit IP banned.
+     */
+    private suspend fun applyJitter() {
+        delay(Random.nextLong(0, JITTER_MAX_MS))
+    }
+
     companion object {
         private const val TAG = "NominatimGeocodingService"
+        private const val JITTER_MAX_MS = 3000L
     }
 }

@@ -3,11 +3,10 @@ package com.cosmiclaboratory.voyager.capture
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.cosmiclaboratory.voyager.platform.scope.VoyagerApplicationScope
 import com.google.android.gms.location.ActivityTransitionResult
 import com.google.android.gms.location.DetectedActivity
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -17,13 +16,19 @@ class ActivityTransitionReceiver : BroadcastReceiver() {
     @Inject
     lateinit var activityCapture: ActivityCapture
 
+    @Inject
+    lateinit var applicationScope: VoyagerApplicationScope
+
     override fun onReceive(context: Context, intent: Intent) {
         if (ActivityTransitionResult.hasResult(intent)) {
             val result = ActivityTransitionResult.extractResult(intent) ?: return
             val pendingResult = goAsync()
             activityCapture.onTransitionReceived()
 
-            CoroutineScope(Dispatchers.IO).launch {
+            // H8 fix: use the singleton application scope instead of creating a new
+            // CoroutineScope on every broadcast. Activity transitions can fire at high
+            // rate; per-broadcast scopes are never cancelled and leak.
+            applicationScope.scope.launch {
                 try {
                     for (event in result.transitionEvents) {
                         val activityType = mapActivityType(event.activityType)

@@ -3,11 +3,14 @@ package com.cosmiclaboratory.voyager.capture
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Looper
+import com.cosmiclaboratory.voyager.domain.time.Clock
 import com.cosmiclaboratory.voyager.domain.util.GeohashEncoder
 import com.cosmiclaboratory.voyager.pipeline.PipelineSerializer
 import com.cosmiclaboratory.voyager.pipeline.RawSample
 import com.cosmiclaboratory.voyager.platform.coordinator.PermissionMonitor
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
+import com.cosmiclaboratory.voyager.storage.database.dao.HealthLogDao
+import com.cosmiclaboratory.voyager.storage.database.entity.HealthLogEntity
 import com.google.android.gms.location.*
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -15,7 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,14 +28,16 @@ class LocationCapture @Inject constructor(
     private val pipelineSerializer: PipelineSerializer,
     private val permissionMonitor: PermissionMonitor,
     private val adaptiveSamplingPolicy: AdaptiveSamplingPolicy,
-    private val timelineStateStore: TimelineStateStore
+    private val timelineStateStore: TimelineStateStore,
+    private val clock: Clock,
+    private val healthLogDao: HealthLogDao,
 ) {
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var fusedLocationClient: FusedLocationProviderClient? = null
     private var locationCallback: LocationCallback? = null
     private var passiveCallback: LocationCallback? = null
     @Volatile private var activeSessionId: Long = 0
-    @Volatile private var lastProcessedTimestamp: Long = 0
+    private val lastProcessedTimestamp = AtomicLong(0L)
 
     @SuppressLint("MissingPermission")
     fun start(sessionId: Long) {
@@ -40,11 +45,20 @@ class LocationCapture @Inject constructor(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         activeSessionId = sessionId
 
-        // Restore lastProcessedTimestamp from persisted state to reject old cached
-        // FLP locations that arrive after process restart with stale timestamps.
-        val persistedTimestamp = runBlocking { timelineStateStore.getState().lastAcceptedAt }
-        if (persistedTimestamp != null && persistedTimestamp > 0) {
-            lastProcessedTimestamp = persistedTimestamp
+        // Seed lastProcessedTimestamp asynchronously from persisted state to reject old
+        // cached FLP locations that arrive after process restart with stale timestamps.
+        // Until the seed lands, dedup uses 0 — first sample always passes, which is fine.
+        scope.launch {
+            try {
+                val persisted = timelineStateStore.getState().lastAcceptedAt
+                if (persisted != null && persisted > 0) {
+                    // CAS so we don't clobber a newer real fix that arrived ahead of the seed.
+                    lastProcessedTimestamp.updateAndGet { current -> maxOf(current, persisted) }
+                }
+            } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                android.util.Log.w("LocationCapture", "Failed to seed lastProcessedTimestamp", e)
+            }
         }
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
@@ -57,13 +71,8 @@ class LocationCapture @Inject constructor(
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
-                // Deduplicate by timestamp — FLP can return the same cached fix
-                // multiple times in a batch when stationary
                 for (location in result.locations) {
-                    if (location.time > lastProcessedTimestamp) {
-                        lastProcessedTimestamp = location.time
-                        scope.launch { processLocation(location) }
-                    }
+                    handleIncoming(location)
                 }
             }
         }
@@ -73,15 +82,10 @@ class LocationCapture @Inject constructor(
         )
 
         // Passive location: piggyback on other apps' location requests for free data.
-        // Zero additional battery cost — only receives locations already being fetched.
-        // Especially valuable in DORMANT mode when active GPS is off.
         passiveCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 for (location in result.locations) {
-                    if (location.time > lastProcessedTimestamp) {
-                        lastProcessedTimestamp = location.time
-                        scope.launch { processLocation(location) }
-                    }
+                    handleIncoming(location)
                 }
             }
         }
@@ -91,6 +95,66 @@ class LocationCapture @Inject constructor(
         fusedLocationClient?.requestLocationUpdates(
             passiveRequest, passiveCallback!!, Looper.getMainLooper()
         )
+    }
+
+    /**
+     * Dedup + sanity gate. Runs on Main thread (FLP callback dispatcher).
+     *
+     * - Dedup: AtomicLong.updateAndGet — only the coroutine that observed `location.time >
+     *   previous` is allowed past the gate. Two simultaneous batches with the same fix
+     *   can no longer both pass.
+     *
+     * - Sanity gate: reject samples whose wall-clock is more than 1h in the future or
+     *   more than 10min in the past relative to the most recent accepted sample, which
+     *   covers manual time-travel (US2) and stale-cached fixes from FLP (S2).
+     */
+    private fun handleIncoming(location: android.location.Location) {
+        val locTs = location.time
+        if (locTs <= 0L) return
+
+        val now = clock.wallClockMs()
+        // Reject if wildly in the future relative to wall clock — manual time-travel
+        // or corrupt fix. 1h slack covers timezone-without-NTP edge cases.
+        if (locTs > now + ONE_HOUR_MS) {
+            logSanityRejection("FUTURE", location, now)
+            return
+        }
+
+        val prev = lastProcessedTimestamp.get()
+        // Reject if more than 10min before the most recent accepted sample — that's
+        // a teleport into the past, almost always a stale FLP-cached fix.
+        if (prev > 0 && locTs < prev - TEN_MIN_MS) {
+            logSanityRejection("PAST", location, prev)
+            return
+        }
+
+        // Atomic dedup: only accept strictly greater timestamps. CAS retries on
+        // concurrent updates.
+        val accepted = lastProcessedTimestamp.updateAndGet { current ->
+            if (locTs > current) locTs else current
+        }
+        if (accepted != locTs) return // someone else won the race
+
+        scope.launch { processLocation(location) }
+    }
+
+    private fun logSanityRejection(kind: String, location: android.location.Location, reference: Long) {
+        scope.launch {
+            try {
+                healthLogDao.insert(
+                    HealthLogEntity(
+                        eventType = "SAMPLE_REJECTED_$kind",
+                        eventAt = clock.wallClockMs(),
+                        detailsJson = "{\"locTs\":${location.time},\"ref\":$reference," +
+                            "\"lat\":${location.latitude},\"lng\":${location.longitude}," +
+                            "\"acc\":${location.accuracy}}"
+                    )
+                )
+            } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                // best effort
+            }
+        }
     }
 
     fun stop() {
@@ -171,5 +235,10 @@ class LocationCapture @Inject constructor(
     private fun isDeviceIdle(): Boolean {
         val pm = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
         return pm?.isDeviceIdleMode ?: false
+    }
+
+    private companion object {
+        const val ONE_HOUR_MS = 60L * 60L * 1000L
+        const val TEN_MIN_MS = 10L * 60L * 1000L
     }
 }

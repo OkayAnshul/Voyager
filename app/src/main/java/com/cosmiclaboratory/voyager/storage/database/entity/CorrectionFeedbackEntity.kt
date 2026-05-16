@@ -13,5 +13,9 @@ data class CorrectionFeedbackEntity(
     val beforeValueJson: String? = null,
     val afterValueJson: String? = null,
     val createdAt: Long,
-    val propagated: Boolean = false
+    val propagated: Boolean = false,
+    // Cloud-ready audit columns (v3). Inert until sync ships — see MIGRATION_2_3.
+    val lastModifiedAt: Long = 0L,
+    val revision: Long = 1L,
+    val deletedAt: Long? = null
 )

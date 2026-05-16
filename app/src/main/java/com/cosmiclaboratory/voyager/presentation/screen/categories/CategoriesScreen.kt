@@ -219,13 +219,14 @@ fun CategoriesScreen(
         }
 
         // Assignment Dialog
-        if (uiState.showAssignDialog && uiState.selectedCategoryForAssignment != null) {
+        val selectedCategory = uiState.selectedCategoryForAssignment
+        if (uiState.showAssignDialog && selectedCategory != null) {
             AssignPlaceDialog(
-                category = uiState.selectedCategoryForAssignment!!,
-                availablePlaces = viewModel.getAssignablePlaces(uiState.selectedCategoryForAssignment!!),
+                category = selectedCategory,
+                availablePlaces = viewModel.getAssignablePlaces(selectedCategory),
                 onDismiss = { viewModel.hideAssignDialog() },
                 onAssignPlace = { place ->
-                    viewModel.assignPlaceToCategory(place, uiState.selectedCategoryForAssignment!!)
+                    viewModel.assignPlaceToCategory(place, selectedCategory)
                     viewModel.hideAssignDialog()
                 }
             )

@@ -4,8 +4,11 @@ import android.util.Log
 import com.cosmiclaboratory.voyager.domain.model.InProgressSegmentSnapshot
 import com.cosmiclaboratory.voyager.domain.model.PendingVisitCandidate
 import com.cosmiclaboratory.voyager.domain.model.TrackingRuntimeState
+import com.cosmiclaboratory.voyager.domain.time.Clock
 import com.cosmiclaboratory.voyager.storage.database.dao.CurrentRuntimeStateDao
+import com.cosmiclaboratory.voyager.storage.database.dao.HealthLogDao
 import com.cosmiclaboratory.voyager.storage.database.entity.CurrentRuntimeStateEntity
+import com.cosmiclaboratory.voyager.storage.database.entity.HealthLogEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,6 +18,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -33,10 +39,26 @@ private val EMPTY_STATE = TrackingRuntimeState(
 
 @Singleton
 class TimelineStateStore @Inject constructor(
-    private val currentRuntimeStateDao: CurrentRuntimeStateDao
+    private val currentRuntimeStateDao: CurrentRuntimeStateDao,
+    private val healthLogDao: HealthLogDao,
+    private val clock: Clock,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val json = Json { ignoreUnknownKeys = true }
+
+    /**
+     * Serializes all RMW updates to the single runtime-state row (H1 fix).
+     *
+     * Without this, two coroutines both calling `currentRuntimeStateDao.atomicUpdate {}`
+     * concurrently could each read the same snapshot, transform it differently, and
+     * race to write — silently losing one update. Room's @Transaction batches the SQL
+     * but does not serialize the application-level transform lambda.
+     *
+     * Mutex is inside this class because every write funnels through `update()`.
+     * The lock holds only across the in-memory transform + DAO call; the actual SQL
+     * write runs inside Room's transaction queue.
+     */
+    private val updateMutex = Mutex()
 
     /** In-memory only — transient snapshot of the segment the Segmenter is accumulating. */
     private val _inProgressSegment = MutableStateFlow<InProgressSegmentSnapshot?>(null)
@@ -57,7 +79,7 @@ class TimelineStateStore @Inject constructor(
         }
     }
 
-    suspend fun update(transform: (TrackingRuntimeState) -> TrackingRuntimeState) {
+    suspend fun update(transform: (TrackingRuntimeState) -> TrackingRuntimeState) = updateMutex.withLock {
         currentRuntimeStateDao.atomicUpdate { entity ->
             val currentDomain = entity.toDomainModel()
             val updatedDomain = transform(currentDomain)
@@ -101,8 +123,16 @@ class TimelineStateStore @Inject constructor(
     }
 
     private fun CurrentRuntimeStateEntity.toDomainModel(): TrackingRuntimeState {
-        val pendingCandidate = pendingVisitCandidateJson?.let {
-            try { json.decodeFromString<PendingVisitCandidate>(it) } catch (e: Exception) { Log.w("TimelineStateStore", "Failed to deserialize PendingVisitCandidate", e); null }
+        val pendingCandidate = pendingVisitCandidateJson?.let { raw ->
+            try {
+                json.decodeFromString<PendingVisitCandidate>(raw)
+            } catch (e: Exception) {
+                // H10 fix: don't silently drop. Surface as HealthLog so users can see
+                // the pending candidate was lost due to corruption — not "first run".
+                Log.w("TimelineStateStore", "Failed to deserialize PendingVisitCandidate", e)
+                logCorruption("pendingVisitCandidateJson", raw.take(200), e.message)
+                null
+            }
         }
         return TrackingRuntimeState(
             activeSessionId = activeSessionId,
@@ -119,6 +149,24 @@ class TimelineStateStore @Inject constructor(
             lastDepartureTime = lastDepartureTime,
             lastDepartedVisitId = lastDepartedVisitId
         )
+    }
+
+    private fun logCorruption(field: String, sample: String, errMsg: String?) {
+        scope.launch {
+            try {
+                healthLogDao.insert(
+                    HealthLogEntity(
+                        eventType = "STATE_CORRUPTION",
+                        eventAt = clock.wallClockMs(),
+                        detailsJson = "{\"field\":\"$field\"," +
+                            "\"sample\":\"${sample.replace("\"", "'")}\"," +
+                            "\"err\":\"${errMsg?.replace("\"", "'") ?: ""}\"}"
+                    )
+                )
+            } catch (_: Throwable) {
+                // best-effort
+            }
+        }
     }
 
     private fun TrackingRuntimeState.toEntity(currentVersion: Long): CurrentRuntimeStateEntity {

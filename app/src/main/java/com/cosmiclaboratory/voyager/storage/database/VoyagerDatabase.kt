@@ -1,10 +1,12 @@
 package com.cosmiclaboratory.voyager.storage.database
 
 import android.content.Context
+import android.util.Log
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.cosmiclaboratory.voyager.storage.database.converter.Converters
 import com.cosmiclaboratory.voyager.storage.database.dao.*
 import com.cosmiclaboratory.voyager.storage.database.entity.*
@@ -41,7 +43,7 @@ import net.sqlcipher.database.SupportFactory
         // Feedback
         CorrectionFeedbackEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -102,12 +104,80 @@ abstract class VoyagerDatabase : RoomDatabase() {
          * Never use destructive migration — see the class KDoc.
          */
         private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
-            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE places ADD COLUMN emoji TEXT")
             }
         }
 
-        private val MIGRATIONS: Array<androidx.room.migration.Migration> = arrayOf(MIGRATION_1_2)
+        /**
+         * v2 → v3: cloud-ready audit columns + unique visit index.
+         *
+         * Adds `lastModifiedAt`, `revision`, `deletedAt` to the 7 syncable tables. These
+         * columns are inert today — no read query filters on them and no sync engine
+         * exists yet. They are added now, while the schema is small, so that adding cloud
+         * sync later is an additive plugin rather than a destructive migration.
+         *
+         * Also upgrades the (placeId, arrivalAt) visit index to UNIQUE as a belt-and-braces
+         * guard behind the VisitWriteGuard mutex (H4). Any pre-existing exact-duplicate
+         * visits are collapsed first so the unique index can be built.
+         */
+        private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val syncableTables = listOf(
+                    "places", "visits", "movement_segments", "routes",
+                    "geocode_candidates", "correction_feedback", "place_evidence"
+                )
+                for (table in syncableTables) {
+                    db.execSQL("ALTER TABLE $table ADD COLUMN lastModifiedAt INTEGER NOT NULL DEFAULT 0")
+                    db.execSQL("ALTER TABLE $table ADD COLUMN revision INTEGER NOT NULL DEFAULT 1")
+                    db.execSQL("ALTER TABLE $table ADD COLUMN deletedAt INTEGER")
+                }
+
+                // Collapse exact-duplicate visits (same placeId + arrivalAt), keeping the
+                // lowest visitId, so the UNIQUE index below can be created.
+                db.execSQL(
+                    """
+                    DELETE FROM visits WHERE visitId NOT IN (
+                        SELECT MIN(visitId) FROM visits GROUP BY placeId, arrivalAt
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("DROP INDEX IF EXISTS index_visits_placeId_arrivalAt")
+                db.execSQL("CREATE UNIQUE INDEX index_visits_placeId_arrivalAt ON visits (placeId, arrivalAt)")
+            }
+        }
+
+        private val MIGRATIONS: Array<androidx.room.migration.Migration> =
+            arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+
+        /**
+         * Sets WAL journal mode and runs an integrity check on every open.
+         * WAL lets readers and the writer proceed concurrently instead of locking the
+         * whole DB on each write. integrity_check surfaces silent corruption from a
+         * power-loss-mid-write into the log (and, later, a recovery screen).
+         */
+        private val openCallback = object : RoomDatabase.Callback() {
+            override fun onOpen(db: SupportSQLiteDatabase) {
+                super.onOpen(db)
+                try {
+                    db.query("PRAGMA journal_mode=WAL").use { it.moveToFirst() }
+                } catch (e: Exception) {
+                    Log.w("VoyagerDatabase", "Failed to set WAL journal mode", e)
+                }
+                try {
+                    db.query("PRAGMA integrity_check").use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val result = cursor.getString(0)
+                            if (!result.equals("ok", ignoreCase = true)) {
+                                Log.e("VoyagerDatabase", "DB integrity check FAILED: $result")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w("VoyagerDatabase", "integrity_check failed to run", e)
+                }
+            }
+        }
 
         fun create(context: Context, passphrase: ByteArray?): VoyagerDatabase {
             val builder = Room.databaseBuilder(
@@ -123,6 +193,7 @@ abstract class VoyagerDatabase : RoomDatabase() {
 
             return builder
                 .addMigrations(*MIGRATIONS)
+                .addCallback(openCallback)
                 .build()
         }
 
