@@ -102,7 +102,8 @@ class NominatimGeocodingService @Inject constructor(
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Nominatim reverse geocode failed for $latitude, $longitude", e)
+            // Coordinates omitted — never write the user's location to logcat.
+            Log.e(TAG, "Nominatim reverse geocode failed", e)
             null
         }
     }
@@ -169,7 +170,8 @@ class NominatimGeocodingService @Inject constructor(
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Nominatim place details failed for $latitude, $longitude", e)
+            // Coordinates omitted — never write the user's location to logcat.
+            Log.e(TAG, "Nominatim place details failed", e)
             null
         }
     }

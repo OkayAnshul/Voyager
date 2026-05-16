@@ -65,7 +65,8 @@ class AndroidGeocoderService @Inject constructor(
                 countryCode = address.countryCode
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Reverse geocode failed for $latitude, $longitude", e)
+            // Coordinates omitted — never write the user's location to logcat.
+            Log.e(TAG, "Reverse geocode failed", e)
             null
         }
     }

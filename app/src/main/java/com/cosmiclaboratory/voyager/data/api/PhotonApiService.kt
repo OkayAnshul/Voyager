@@ -44,7 +44,8 @@ class PhotonApiService @Inject constructor(
                 val body = response.body?.string() ?: return@withContext null
                 parseAddressResult(body)
             } catch (e: Exception) {
-                Log.e(TAG, "Photon reverse geocode exception for $latitude, $longitude", e)
+                // Coordinates omitted — never write the user's location to logcat.
+                Log.e(TAG, "Photon reverse geocode exception", e)
                 null
             }
         }
@@ -64,7 +65,8 @@ class PhotonApiService @Inject constructor(
                 val body = response.body?.string() ?: return@withContext null
                 parsePlaceDetails(body)
             } catch (e: Exception) {
-                Log.e(TAG, "Photon place details exception for $latitude, $longitude", e)
+                // Coordinates omitted — never write the user's location to logcat.
+                Log.e(TAG, "Photon place details exception", e)
                 null
             }
         }
