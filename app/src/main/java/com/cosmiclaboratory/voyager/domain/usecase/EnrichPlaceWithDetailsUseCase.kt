@@ -54,7 +54,9 @@ class EnrichPlaceWithDetailsUseCase @Inject constructor(
             }
             FullEnrichmentResult(best = best, allCandidates = result.candidates)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to enrich place at $lat, $lng", e)
+            // Coordinates omitted — this error survives the release log strip
+            // and Voyager never writes the user's location to logcat.
+            Log.e(TAG, "Failed to enrich place", e)
             FullEnrichmentResult(best = null, allCandidates = emptyList())
         }
     }

@@ -4,9 +4,12 @@ import com.cosmiclaboratory.voyager.domain.model.TimelinePlace
 import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
 import com.cosmiclaboratory.voyager.domain.model.enums.PlaceLifecycleStatus
 import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
+import com.cosmiclaboratory.voyager.storage.database.VoyagerDatabase
+import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
 import com.cosmiclaboratory.voyager.storage.database.entity.PlaceEntity
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -14,8 +17,10 @@ import javax.inject.Singleton
 
 @Singleton
 class PlaceRepositoryImpl @Inject constructor(
+    private val database: VoyagerDatabase,
     private val placeDao: PlaceDao,
-    private val visitDao: VisitDao
+    private val visitDao: VisitDao,
+    private val movementSegmentDao: MovementSegmentDao
 ) : PlaceRepository {
 
     override fun observePlaces(): Flow<List<TimelinePlace>> {
@@ -33,9 +38,16 @@ class PlaceRepositoryImpl @Inject constructor(
     }
 
     override suspend fun mergePlaces(sourceIds: List<Long>, targetId: Long): Result<Unit> = runCatching {
-        for (sourceId in sourceIds) {
-            if (sourceId != targetId) {
-                placeDao.markMerged(sourceId, targetId)
+        database.withTransaction {
+            for (sourceId in sourceIds) {
+                if (sourceId != targetId) {
+                    // Re-point history to the target before hiding the source. Without
+                    // this, visits/segments keep the merged-away placeId and the
+                    // timeline still resolves them to the now-hidden source place.
+                    visitDao.reassignPlace(sourceId, targetId)
+                    movementSegmentDao.reassignPlace(sourceId, targetId)
+                    placeDao.markMerged(sourceId, targetId)
+                }
             }
         }
     }

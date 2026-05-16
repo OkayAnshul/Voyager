@@ -55,6 +55,10 @@ interface VisitDao {
     @Query("UPDATE visits SET departureAt = :departureAt, dwellMs = :dwellMs WHERE visitId = :visitId")
     suspend fun endVisit(visitId: Long, departureAt: Long, dwellMs: Long)
 
+    /** Re-points every visit at [sourceId] to [targetId] — used when places merge. */
+    @Query("UPDATE visits SET placeId = :targetId WHERE placeId = :sourceId")
+    suspend fun reassignPlace(sourceId: Long, targetId: Long)
+
     @Query("SELECT COUNT(*) FROM visits WHERE placeId = :placeId")
     suspend fun countByPlaceId(placeId: Long): Int
 

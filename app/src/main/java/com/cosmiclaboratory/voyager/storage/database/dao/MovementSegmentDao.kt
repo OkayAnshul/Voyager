@@ -27,6 +27,10 @@ interface MovementSegmentDao {
     @Query("SELECT * FROM movement_segments WHERE placeId = :placeId ORDER BY startAt DESC")
     suspend fun getByPlaceId(placeId: Long): List<MovementSegmentEntity>
 
+    /** Re-points every segment at [sourceId] to [targetId] — used when places merge. */
+    @Query("UPDATE movement_segments SET placeId = :targetId WHERE placeId = :sourceId")
+    suspend fun reassignPlace(sourceId: Long, targetId: Long)
+
     @Query("SELECT * FROM movement_segments WHERE routeId = :routeId")
     suspend fun getByRouteId(routeId: Long): MovementSegmentEntity?
 
