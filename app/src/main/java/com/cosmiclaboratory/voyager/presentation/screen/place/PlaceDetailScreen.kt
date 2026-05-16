@@ -107,14 +107,17 @@ fun PlaceDetailScreen(
             }
 
             else -> {
-                PlaceDetailContent(
-                    place = uiState.place!!,
-                    analytics = uiState.analytics,
-                    evidence = uiState.evidence,
-                    geocodeCandidates = uiState.geocodeCandidates,
-                    onIntent = viewModel::onIntent,
-                    modifier = Modifier.padding(paddingValues)
-                )
+                val place = uiState.place
+                if (place != null) {
+                    PlaceDetailContent(
+                        place = place,
+                        analytics = uiState.analytics,
+                        evidence = uiState.evidence,
+                        geocodeCandidates = uiState.geocodeCandidates,
+                        onIntent = viewModel::onIntent,
+                        modifier = Modifier.padding(paddingValues)
+                    )
+                }
             }
         }
     }

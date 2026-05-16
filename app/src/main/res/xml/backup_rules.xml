@@ -1,13 +1,17 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Auto-backup rules (devices < API 31).
+
+   The SQLCipher database is DELIBERATELY excluded. Its encryption key is derived
+   from the Android Keystore, which is device-bound and NOT backed up. Restoring the
+   encrypted blob onto a new device would yield a DB that can never be opened — and
+   the restore would overwrite the fresh install's empty DB with an unreadable one.
+   Migration between devices happens through Voyager's own encrypted `.voyager` export.
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="database" path="voyager_database" />
+    <exclude domain="database" path="voyager_database-wal" />
+    <exclude domain="database" path="voyager_database-shm" />
+    <exclude domain="database" path="voyager_database-journal" />
+    <exclude domain="sharedpref" path="voyager_db_keys.xml" />
 </full-backup-content>

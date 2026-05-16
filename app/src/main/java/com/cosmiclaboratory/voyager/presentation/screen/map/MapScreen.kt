@@ -209,8 +209,9 @@ private fun MapContent(
         }
 
         // --- Focused visit badge (top-left, when a visit is selected from timeline) ---
-        if (uiState.focusedVisitMarker != null && uiState.focusedRoute == null) {
-            val marker = uiState.focusedVisitMarker!!
+        val focusedMarker = uiState.focusedVisitMarker
+        if (focusedMarker != null && uiState.focusedRoute == null) {
+            val marker = focusedMarker
             LaunchedEffect(marker.visitId) {
                 mapEngine.animateTo(marker.lat, marker.lng, 16.0)
             }
@@ -239,9 +240,10 @@ private fun MapContent(
         }
 
         // --- Live location / active visit indicator (top-left, below focused route) ---
-        if (uiState.activeVisitLocation != null && uiState.focusedRoute == null) {
+        val activeVisitLocation = uiState.activeVisitLocation
+        if (activeVisitLocation != null && uiState.focusedRoute == null) {
             ActiveVisitMapBadge(
-                visit = uiState.activeVisitLocation!!,
+                visit = activeVisitLocation,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(16.dp)

@@ -309,6 +309,7 @@ fun transportIconAndColor(segmentType: SegmentType): Pair<ImageVector, Color> = 
     SegmentType.CYCLE -> Icons.Default.DirectionsBike to VoyagerColors.TransportCycle
     SegmentType.DRIVE -> Icons.Default.DirectionsCar to VoyagerColors.TransportDrive
     SegmentType.TRANSIT -> Icons.Default.Train to VoyagerColors.TransportTransit
+    SegmentType.FLIGHT -> Icons.Default.Flight to VoyagerColors.TransportTransit
     SegmentType.GAP -> Icons.Default.SignalWifiOff to VoyagerColors.TransportGap
     SegmentType.UNKNOWN_MOTION -> Icons.Default.HelpOutline to VoyagerColors.OnSurfaceVariant
 }

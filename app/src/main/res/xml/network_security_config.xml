@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Voyager talks only to HTTPS geocoding endpoints (Nominatim, Photon).
+   Cleartext is denied globally so a stray http:// URL fails loudly instead of
+   leaking a request in plaintext. System + user CAs are still trusted so the app
+   keeps working behind legitimate corporate TLS-inspecting proxies.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

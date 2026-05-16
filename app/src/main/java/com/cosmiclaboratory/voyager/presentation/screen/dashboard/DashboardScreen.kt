@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,6 +27,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cosmiclaboratory.voyager.domain.model.*
 import com.cosmiclaboratory.voyager.domain.model.enums.AnomalySeverity
 import com.cosmiclaboratory.voyager.presentation.components.*
+import com.cosmiclaboratory.voyager.presentation.screen.reliability.ForceStopBanner
+import com.cosmiclaboratory.voyager.presentation.screen.reliability.shouldShowForceStopBanner
 import com.cosmiclaboratory.voyager.presentation.screen.tracking.TrackingControlBanner
 import com.cosmiclaboratory.voyager.presentation.theme.*
 import com.cosmiclaboratory.voyager.ui.theme.MonoStatLarge
@@ -49,6 +52,7 @@ fun DashboardScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var staggerVisible by remember { mutableStateOf(false) }
+    var forceStopBannerDismissed by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(uiState.isLoading) {
         if (!uiState.isLoading) {
             delay(50)
@@ -105,6 +109,15 @@ fun DashboardScreen(
             }
         }
 
+        // ── 0b. FORCE-STOP RECOVERY BANNER ───────────────────────────────
+        if (!forceStopBannerDismissed &&
+            shouldShowForceStopBanner(uiState.lastSampleAt, System.currentTimeMillis())
+        ) {
+            item {
+                ForceStopBanner(onDismiss = { forceStopBannerDismissed = true })
+            }
+        }
+
         // ── 1. LIVE TRACKING BANNER ──────────────────────────────────────
         item {
             AnimatedVisibility(
@@ -116,19 +129,21 @@ fun DashboardScreen(
         }
 
         // ── 1b. ACTIVE VISIT / DETECTING LOCATION ──────────────────────
-        if (uiState.activeVisit != null) {
+        val activeVisit = uiState.activeVisit
+        val pendingCandidate = uiState.pendingCandidate
+        if (activeVisit != null) {
             item {
                 ActiveVisitCard(
-                    placeName = uiState.activeVisit!!.placeName,
-                    category = uiState.activeVisit!!.category,
-                    arrivalAt = uiState.activeVisit!!.arrivalAt
+                    placeName = activeVisit.placeName,
+                    category = activeVisit.category,
+                    arrivalAt = activeVisit.arrivalAt
                 )
             }
-        } else if (uiState.pendingCandidate != null && uiState.isTracking) {
+        } else if (pendingCandidate != null && uiState.isTracking) {
             item {
                 DetectingLocationCard(
-                    sampleCount = uiState.pendingCandidate!!.sampleCount,
-                    accumulationStartAt = uiState.pendingCandidate!!.accumulationStartAt
+                    sampleCount = pendingCandidate.sampleCount,
+                    accumulationStartAt = pendingCandidate.accumulationStartAt
                 )
             }
         }

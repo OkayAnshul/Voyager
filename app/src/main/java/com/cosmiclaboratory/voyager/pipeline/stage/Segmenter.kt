@@ -54,8 +54,12 @@ class Segmenter @Inject constructor(
         private const val TRANSITION_THRESHOLD = 5
         /** Flush in-progress segment every 5 minutes so the timeline stays up to date */
         private const val MAX_SEGMENT_DURATION_MS = 5 * 60 * 1000L
+        /** Time-flush trigger for VISIT/DWELL: trim buffer every 15 min even if under sample cap */
+        private const val VISIT_TRIM_INTERVAL_MS = 15 * 60 * 1000L
         /** Hard cap on in-memory samples to prevent OOM if flush fails repeatedly */
         private const val MAX_SEGMENT_SAMPLES = 500
+        /** Implied speed above this is treated as FLIGHT — faster than any commercial flight */
+        private const val FLIGHT_SPEED_THRESHOLD_MPS = 200.0
         private const val DISPLACEMENT_TRANSIT_THRESHOLD_M = PipelineConstants.DISPLACEMENT_TRANSIT_THRESHOLD_M
         private const val DISPLACEMENT_SPEED_THRESHOLD_MPS = PipelineConstants.DISPLACEMENT_SPEED_THRESHOLD_MPS
         private const val DISPLACEMENT_MAX_ACCURACY_M = PipelineConstants.DISPLACEMENT_MAX_ACCURACY_M
@@ -82,6 +86,7 @@ class Segmenter @Inject constructor(
                     val impliedSpeed = displacement / (timeDeltaMs / 1000.0)
                     if (impliedSpeed > DISPLACEMENT_SPEED_THRESHOLD_MPS) {
                         when {
+                            impliedSpeed >= FLIGHT_SPEED_THRESHOLD_MPS -> SegmentType.FLIGHT
                             impliedSpeed >= 7.5 -> SegmentType.DRIVE
                             impliedSpeed >= 3.7 -> SegmentType.CYCLE
                             else -> SegmentType.WALK
@@ -100,9 +105,11 @@ class Segmenter @Inject constructor(
         if (currentSegmentType != null && segmentSamples.isNotEmpty()) {
             val segmentAge = sample.capturedAt - segmentSamples.first().capturedAt
             val isVisit = currentSegmentType == SegmentType.VISIT || currentSegmentType == SegmentType.DWELL
-            if (isVisit && segmentSamples.size >= MAX_SEGMENT_SAMPLES) {
-                // VISIT/DWELL: trim buffer instead of closing — prevents fragmentation.
-                // Keep first sample (for startAt) + recent 50 (for centroid accuracy).
+            // VISIT/DWELL: trim buffer when EITHER sample-count OR time threshold reached.
+            // Without the time trigger, an overnight 8h stay at 1 sample / 30s can keep
+            // ~960 samples in memory; trim early to bound at ~50.
+            val visitNeedsTrim = isVisit && (segmentSamples.size >= MAX_SEGMENT_SAMPLES || segmentAge >= VISIT_TRIM_INTERVAL_MS)
+            if (visitNeedsTrim) {
                 val first = segmentSamples.first()
                 val recent = segmentSamples.takeLast(50)
                 segmentSamples.clear()

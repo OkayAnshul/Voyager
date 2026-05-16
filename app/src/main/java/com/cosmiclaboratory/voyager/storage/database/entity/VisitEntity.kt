@@ -7,7 +7,10 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "visits",
     indices = [
-        Index(value = ["placeId", "arrivalAt"]),
+        // Unique: belt-and-braces against exact-duplicate visit inserts (H4).
+        // The VisitWriteGuard mutex is the primary defence; this catches anything
+        // that ever bypasses it. Two visits to one place cannot share a ms-precise arrivalAt.
+        Index(value = ["placeId", "arrivalAt"], unique = true),
         Index(value = ["dayKey", "arrivalAt"])
     ]
 )
@@ -24,5 +27,9 @@ data class VisitEntity(
     val isUserCorrected: Boolean = false,
     val dayKey: String,
     val centroidLat: Double? = null,
-    val centroidLng: Double? = null
+    val centroidLng: Double? = null,
+    // Cloud-ready audit columns (v3). Inert until sync ships — see MIGRATION_2_3.
+    val lastModifiedAt: Long = 0L,
+    val revision: Long = 1L,
+    val deletedAt: Long? = null
 )

@@ -1,7 +1,7 @@
 package com.cosmiclaboratory.voyager.domain.model.enums
 
 enum class SegmentType {
-    VISIT, DWELL, WALK, RUN, CYCLE, DRIVE, TRANSIT, GAP, UNKNOWN_MOTION
+    VISIT, DWELL, WALK, RUN, CYCLE, DRIVE, TRANSIT, FLIGHT, GAP, UNKNOWN_MOTION
 }
 
 enum class ActivityType {

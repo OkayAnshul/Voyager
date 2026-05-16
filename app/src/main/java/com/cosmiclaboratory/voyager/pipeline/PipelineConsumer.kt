@@ -112,6 +112,10 @@ class PipelineConsumer @Inject constructor(
             for (rawSample in pipelineSerializer.sampleChannel) {
                 try {
                     processSample(rawSample)
+                } catch (e: android.database.sqlite.SQLiteFullException) {
+                    // F1: device storage exhausted — keep draining the channel so we
+                    // don't deadlock the producer, but surface it loudly.
+                    logger.e("PipelineConsumer", "Storage full — sample dropped", e)
                 } catch (e: Exception) {
                     logger.e("PipelineConsumer", "Error processing sample", e)
                 }

@@ -70,14 +70,16 @@ fun TimelineScreen(
         }
 
         // ── Current Location — fixed above scroll (today only) ──────────
-        if (uiState.activeVisit != null) {
+        val activeVisit = uiState.activeVisit
+        val pendingCandidate = uiState.pendingCandidate
+        if (activeVisit != null) {
             CurrentLocationCard(
-                visit = uiState.activeVisit!!,
+                visit = activeVisit,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
-        } else if (uiState.pendingCandidate != null && uiState.isTracking) {
+        } else if (pendingCandidate != null && uiState.isTracking) {
             PendingLocationCard(
-                candidate = uiState.pendingCandidate!!,
+                candidate = pendingCandidate,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
         }
@@ -97,6 +99,7 @@ fun TimelineScreen(
             }
 
             uiState.errorMessage != null -> {
+                val errorMessage = uiState.errorMessage
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -115,7 +118,7 @@ fun TimelineScreen(
                                 modifier = Modifier.size(24.dp)
                             )
                             Text(
-                                text = uiState.errorMessage!!,
+                                text = errorMessage ?: "",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = VoyagerColors.Error
                             )

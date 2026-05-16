@@ -27,5 +27,9 @@ data class PlaceEvidenceEntity(
     val namingCandidatesJson: String? = null,
     val userConfirmationCount: Int = 0,
     val categoryReasoningJson: String? = null,
-    val lastClusterUpdateAt: Long? = null
+    val lastClusterUpdateAt: Long? = null,
+    // Cloud-ready audit columns (v3). Inert until sync ships — see MIGRATION_2_3.
+    val lastModifiedAt: Long = 0L,
+    val revision: Long = 1L,
+    val deletedAt: Long? = null
 )

@@ -69,21 +69,22 @@ fun SegmentDetailSheet(
             }
 
             else -> {
-                val segment = uiState.segment!!
-                SegmentDetailContent(
-                    segment = segment,
-                    evidence = uiState.evidence,
-                    explanation = uiState.explanation,
-                    onChangeType = { newType ->
-                        viewModel.onIntent(SegmentDetailIntent.ChangeType(newType))
-                    },
-                    onSplit = { timestampMs ->
-                        viewModel.onIntent(SegmentDetailIntent.SplitAt(timestampMs))
-                    },
-                    onMerge = { nextId ->
-                        viewModel.onIntent(SegmentDetailIntent.MergeWithNext(nextId))
-                    }
-                )
+                uiState.segment?.let { segment ->
+                    SegmentDetailContent(
+                        segment = segment,
+                        evidence = uiState.evidence,
+                        explanation = uiState.explanation,
+                        onChangeType = { newType ->
+                            viewModel.onIntent(SegmentDetailIntent.ChangeType(newType))
+                        },
+                        onSplit = { timestampMs ->
+                            viewModel.onIntent(SegmentDetailIntent.SplitAt(timestampMs))
+                        },
+                        onMerge = { nextId ->
+                            viewModel.onIntent(SegmentDetailIntent.MergeWithNext(nextId))
+                        }
+                    )
+                }
             }
         }
     }
@@ -579,6 +580,7 @@ private fun segmentTypeIcon(type: SegmentType) = when (type) {
     SegmentType.CYCLE -> Icons.Default.DirectionsBike
     SegmentType.DRIVE -> Icons.Default.DirectionsCar
     SegmentType.TRANSIT -> Icons.Default.DirectionsTransit
+    SegmentType.FLIGHT -> Icons.Default.Flight
     SegmentType.GAP -> Icons.Default.SignalWifiOff
     SegmentType.UNKNOWN_MOTION -> Icons.Default.HelpOutline
 }
