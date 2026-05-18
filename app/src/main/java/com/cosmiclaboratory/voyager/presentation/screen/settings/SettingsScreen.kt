@@ -63,6 +63,8 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit = {},
     onNavigateToFeedback: () -> Unit = {},
     onNavigateToOpenSourceLicenses: () -> Unit = {},
+    onNavigateToReliability: () -> Unit = {},
+    onNavigateToMileage: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -136,7 +138,9 @@ fun SettingsScreen(
                 onNavigateToCategories = onNavigateToCategories,
                 onNavigateToFeedback = onNavigateToFeedback,
                 onNavigateToDeveloperProfile = onNavigateToDeveloperProfile,
-                onNavigateToOpenSourceLicenses = onNavigateToOpenSourceLicenses
+                onNavigateToOpenSourceLicenses = onNavigateToOpenSourceLicenses,
+                onNavigateToReliability = onNavigateToReliability,
+                onNavigateToMileage = onNavigateToMileage
             )
             SettingsTab.DETECTION -> DetectionTabContent(
                 uiState = uiState,
@@ -217,7 +221,9 @@ private fun GeneralTabContent(
     onNavigateToCategories: () -> Unit,
     onNavigateToFeedback: () -> Unit,
     onNavigateToDeveloperProfile: () -> Unit,
-    onNavigateToOpenSourceLicenses: () -> Unit
+    onNavigateToOpenSourceLicenses: () -> Unit,
+    onNavigateToReliability: () -> Unit,
+    onNavigateToMileage: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier
@@ -384,11 +390,87 @@ private fun GeneralTabContent(
             )
         }
 
+        // ── Tax & reports ──────────────────────────────────────────────
+        item {
+            SectionHeader(title = "Tax & reports")
+            Spacer(modifier = Modifier.height(8.dp))
+            VoyagerCard(modifier = Modifier.fillMaxWidth(), padding = 0.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToMileage() }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DirectionsCar,
+                        contentDescription = null,
+                        tint = VoyagerColors.Primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Mileage log",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = VoyagerColors.OnSurface
+                        )
+                        Text(
+                            text = "Classify drives & export a tax PDF",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = VoyagerColors.OnSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = VoyagerColors.OnSurfaceVariant
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         // ── About & Feedback ───────────────────────────────────────────
         item {
             SectionHeader(title = "About & Feedback")
             Spacer(modifier = Modifier.height(8.dp))
             VoyagerCard(modifier = Modifier.fillMaxWidth(), padding = 0.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToReliability() }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.HealthAndSafety,
+                        contentDescription = null,
+                        tint = VoyagerColors.Primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Tracking reliability",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = VoyagerColors.OnSurface
+                        )
+                        Text(
+                            text = "OEM check & keep tracking running",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = VoyagerColors.OnSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = VoyagerColors.OnSurfaceVariant
+                    )
+                }
+                HorizontalDivider(color = VoyagerColors.SurfaceVariant, thickness = 0.5.dp)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -699,6 +781,15 @@ private fun PrivacyDataTabContent(
                     subtitle = "Include raw location samples when exporting",
                     checked = uiState.settings.exportIncludeRawSamples,
                     onCheckedChange = { viewModel.updateSetting("exportIncludeRawSamples", it) }
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                SettingsToggleRow(
+                    title = "Hide in App Switcher",
+                    subtitle = "Blocks screenshots and hides your timeline in the recents view",
+                    checked = uiState.settings.flagSecureEnabled,
+                    onCheckedChange = { viewModel.updateSetting("flagSecureEnabled", it) }
                 )
             }
         }

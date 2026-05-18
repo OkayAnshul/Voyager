@@ -41,6 +41,19 @@ interface MovementSegmentDao {
     """)
     suspend fun getOverlapping(dayKey: String, startAt: Long, endAt: Long): List<MovementSegmentEntity>
 
+    /** Segments of the given types within an inclusive dayKey range — drives the mileage log. */
+    @Query("""
+        SELECT * FROM movement_segments
+        WHERE segmentType IN (:types)
+        AND dayKey BETWEEN :startDay AND :endDay
+        ORDER BY startAt DESC
+    """)
+    suspend fun getByTypesBetween(
+        types: List<String>,
+        startDay: String,
+        endDay: String
+    ): List<MovementSegmentEntity>
+
     @Query("SELECT * FROM movement_segments ORDER BY startAt DESC LIMIT 1")
     suspend fun getLatest(): MovementSegmentEntity?
 

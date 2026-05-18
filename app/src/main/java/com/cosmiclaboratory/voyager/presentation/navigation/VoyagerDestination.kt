@@ -45,6 +45,8 @@ sealed class VoyagerDestination(
     object DeveloperProfile : VoyagerDestination("developer_profile", "About Developer", Icons.Filled.Person)
     object OpenSourceLicenses : VoyagerDestination("open_source_licenses", "Open-source licenses", Icons.Filled.Code)
     object Feedback : VoyagerDestination("feedback", "Send feedback", Icons.Filled.Send)
+    object Reliability : VoyagerDestination("reliability", "Reliability", Icons.Filled.HealthAndSafety)
+    object Mileage : VoyagerDestination("mileage", "Mileage log", Icons.Filled.DirectionsCar)
 
     companion object {
         /** Bottom nav: 4 tabs only. Settings is push-nav from top bar gear. */

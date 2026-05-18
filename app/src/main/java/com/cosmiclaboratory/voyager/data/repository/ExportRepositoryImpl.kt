@@ -9,12 +9,15 @@ import com.cosmiclaboratory.voyager.domain.model.DateRange
 import com.cosmiclaboratory.voyager.domain.model.ImportSummary
 import com.cosmiclaboratory.voyager.domain.model.enums.ExportFormat
 import com.cosmiclaboratory.voyager.domain.repository.ExportRepository
+import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
 import com.cosmiclaboratory.voyager.storage.database.VoyagerDatabase
 import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
+import com.cosmiclaboratory.voyager.storage.database.dao.RawLocationSampleDao
 import com.cosmiclaboratory.voyager.storage.database.dao.RouteDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
+import com.cosmiclaboratory.voyager.storage.database.entity.RawLocationSampleEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.PlaceEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.RouteEntity
@@ -33,7 +36,9 @@ class ExportRepositoryImpl @Inject constructor(
     private val movementSegmentDao: MovementSegmentDao,
     private val visitDao: VisitDao,
     private val routeDao: RouteDao,
-    private val placeDao: PlaceDao
+    private val placeDao: PlaceDao,
+    private val rawLocationSampleDao: RawLocationSampleDao,
+    private val settingsRepository: SettingsRepository
 ) : ExportRepository {
 
     private val json = Json {
@@ -43,13 +48,19 @@ class ExportRepositoryImpl @Inject constructor(
     }
 
     override suspend fun exportDay(dayKey: String, format: ExportFormat): Result<Uri> = runCatching {
+        val settings = settingsRepository.observeSettings().value
+        val stripCoords = settings.stripExactCoordinatesOnExport
         val segments = movementSegmentDao.getByDayKey(dayKey)
         val visits = visitDao.getByDayKey(dayKey)
+        val rawSamples = if (format == ExportFormat.VOYAGER_JSON && settings.exportIncludeRawSamples) {
+            rawSamplesForDays(dayKey, dayKey, stripCoords)
+        } else emptyList()
+
         val content = when (format) {
-            ExportFormat.GPX -> buildGpx(segments, visits)
-            ExportFormat.GEOJSON -> buildGeoJson(segments, visits)
+            ExportFormat.GPX -> buildGpx(segments, visits, stripCoords)
+            ExportFormat.GEOJSON -> buildGeoJson(segments, visits, stripCoords)
             ExportFormat.CSV -> buildCsv(segments)
-            ExportFormat.VOYAGER_JSON -> buildVoyagerJson(segments, visits)
+            ExportFormat.VOYAGER_JSON -> buildVoyagerJson(segments, visits, rawSamples, stripCoords)
         }
 
         val ext = when (format) {
@@ -65,15 +76,20 @@ class ExportRepositoryImpl @Inject constructor(
     }
 
     override suspend fun exportRange(range: DateRange, format: ExportFormat): Result<Uri> = runCatching {
+        val settings = settingsRepository.observeSettings().value
+        val stripCoords = settings.stripExactCoordinatesOnExport
         val dayKeys = generateDayKeys(range.startDay, range.endDay)
         val allSegments = dayKeys.flatMap { movementSegmentDao.getByDayKey(it) }
         val allVisits = dayKeys.flatMap { visitDao.getByDayKey(it) }
+        val rawSamples = if (format == ExportFormat.VOYAGER_JSON && settings.exportIncludeRawSamples) {
+            rawSamplesForDays(range.startDay, range.endDay, stripCoords)
+        } else emptyList()
 
         val content = when (format) {
-            ExportFormat.GPX -> buildGpx(allSegments, allVisits)
-            ExportFormat.GEOJSON -> buildGeoJson(allSegments, allVisits)
+            ExportFormat.GPX -> buildGpx(allSegments, allVisits, stripCoords)
+            ExportFormat.GEOJSON -> buildGeoJson(allSegments, allVisits, stripCoords)
             ExportFormat.CSV -> buildCsv(allSegments)
-            ExportFormat.VOYAGER_JSON -> buildVoyagerJson(allSegments, allVisits)
+            ExportFormat.VOYAGER_JSON -> buildVoyagerJson(allSegments, allVisits, rawSamples, stripCoords)
         }
 
         val ext = when (format) {
@@ -219,7 +235,8 @@ class ExportRepositoryImpl @Inject constructor(
 
     private suspend fun buildGpx(
         segments: List<com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity>,
-        visits: List<com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity>
+        visits: List<com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity>,
+        stripCoords: Boolean
     ): String {
         val sb = StringBuilder()
         sb.appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
@@ -228,12 +245,12 @@ class ExportRepositoryImpl @Inject constructor(
         // Transit segments as tracks
         for (segment in segments) {
             val route = routeDao.getBySegmentId(segment.segmentId) ?: continue
-            val points = decodePolyline(route.encodedPolyline)
+            val points = PolylineCodec.decode(route.encodedPolyline)
             if (points.isEmpty()) continue
 
             sb.appendLine("""  <trk><name>Segment ${segment.segmentId}</name><trkseg>""")
             for ((lat, lng) in points) {
-                sb.appendLine("""    <trkpt lat="$lat" lon="$lng"/>""")
+                sb.appendLine("""    <trkpt lat="${lat.stripIf(stripCoords)}" lon="${lng.stripIf(stripCoords)}"/>""")
             }
             sb.appendLine("""  </trkseg></trk>""")
         }
@@ -245,7 +262,7 @@ class ExportRepositoryImpl @Inject constructor(
             val placeName = if (visit.placeId != 0L) {
                 placeDao.getById(visit.placeId)?.displayName() ?: "Visit"
             } else "Visit"
-            sb.appendLine("""  <wpt lat="$lat" lon="$lng"><name>${escapeXml(placeName)}</name><time>${java.time.Instant.ofEpochMilli(visit.arrivalAt)}</time></wpt>""")
+            sb.appendLine("""  <wpt lat="${lat.stripIf(stripCoords)}" lon="${lng.stripIf(stripCoords)}"><name>${escapeXml(placeName)}</name><time>${java.time.Instant.ofEpochMilli(visit.arrivalAt)}</time></wpt>""")
         }
 
         sb.appendLine("</gpx>")
@@ -254,17 +271,20 @@ class ExportRepositoryImpl @Inject constructor(
 
     private suspend fun buildGeoJson(
         segments: List<com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity>,
-        visits: List<com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity>
+        visits: List<com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity>,
+        stripCoords: Boolean
     ): String {
         val features = mutableListOf<String>()
 
         // Transit segments as LineStrings
         for (segment in segments) {
             val route = routeDao.getBySegmentId(segment.segmentId) ?: continue
-            val points = decodePolyline(route.encodedPolyline)
+            val points = PolylineCodec.decode(route.encodedPolyline)
             if (points.isEmpty()) continue
 
-            val coords = points.joinToString(",") { (lat, lng) -> "[$lng,$lat]" }
+            val coords = points.joinToString(",") { (lat, lng) ->
+                "[${lng.stripIf(stripCoords)},${lat.stripIf(stripCoords)}]"
+            }
             features.add("""{"type":"Feature","properties":{"segmentId":${segment.segmentId},"transportMode":"${escapeJson(route.transportMode)}","distanceM":${route.totalDistanceM}},"geometry":{"type":"LineString","coordinates":[$coords]}}""")
         }
 
@@ -275,42 +295,10 @@ class ExportRepositoryImpl @Inject constructor(
             val placeName = if (visit.placeId != 0L) {
                 placeDao.getById(visit.placeId)?.displayName()
             } else null
-            features.add("""{"type":"Feature","properties":{"visitId":${visit.visitId},"placeName":${if (placeName != null) "\"${escapeJson(placeName)}\"" else "null"},"arrivalAt":${visit.arrivalAt},"departureAt":${visit.departureAt ?: "null"},"dwellMs":${visit.dwellMs ?: "null"}},"geometry":{"type":"Point","coordinates":[$lng,$lat]}}""")
+            features.add("""{"type":"Feature","properties":{"visitId":${visit.visitId},"placeName":${if (placeName != null) "\"${escapeJson(placeName)}\"" else "null"},"arrivalAt":${visit.arrivalAt},"departureAt":${visit.departureAt ?: "null"},"dwellMs":${visit.dwellMs ?: "null"}},"geometry":{"type":"Point","coordinates":[${lng.stripIf(stripCoords)},${lat.stripIf(stripCoords)}]}}""")
         }
 
         return """{"type":"FeatureCollection","features":[${features.joinToString(",")}]}"""
-    }
-
-    /** Decode Google-encoded polyline to list of (lat, lng) pairs */
-    private fun decodePolyline(encoded: String): List<Pair<Double, Double>> {
-        val result = mutableListOf<Pair<Double, Double>>()
-        var index = 0
-        var lat = 0
-        var lng = 0
-
-        while (index < encoded.length) {
-            var shift = 0
-            var b: Int
-            var value = 0
-            do {
-                b = encoded[index++].code - 63
-                value = value or ((b and 0x1F) shl shift)
-                shift += 5
-            } while (b >= 0x20)
-            lat += if (value and 1 != 0) (value shr 1).inv() else value shr 1
-
-            shift = 0
-            value = 0
-            do {
-                b = encoded[index++].code - 63
-                value = value or ((b and 0x1F) shl shift)
-                shift += 5
-            } while (b >= 0x20)
-            lng += if (value and 1 != 0) (value shr 1).inv() else value shr 1
-
-            result.add(lat / 1e5 to lng / 1e5)
-        }
-        return result
     }
 
     private fun buildCsv(segments: List<com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity>): String {
@@ -323,7 +311,9 @@ class ExportRepositoryImpl @Inject constructor(
 
     private suspend fun buildVoyagerJson(
         segments: List<MovementSegmentEntity>,
-        visits: List<VisitEntity>
+        visits: List<VisitEntity>,
+        rawSamples: List<RawSampleWire>,
+        stripCoords: Boolean
     ): String {
         // Collect every place referenced by a segment or visit so import can
         // restore the graph without dangling references.
@@ -331,29 +321,31 @@ class ExportRepositoryImpl @Inject constructor(
             segments.mapNotNullTo(this) { it.placeId }
             visits.mapTo(this) { it.placeId }
         }
-        val places = placeIds.mapNotNull { placeDao.getById(it) }.map { it.toWire() }
+        val places = placeIds.mapNotNull { placeDao.getById(it) }.map { it.toWire(stripCoords) }
 
         val segmentWires = segments.map { segment ->
-            val route = routeDao.getBySegmentId(segment.segmentId)?.toWire()
+            val route = routeDao.getBySegmentId(segment.segmentId)?.toWire(stripCoords)
             segment.toWire(route)
         }
 
-        val visitWires = visits.map { it.toWire() }
+        val visitWires = visits.map { it.toWire(stripCoords) }
 
         val payload = VoyagerJsonExport(
             exportedAt = System.currentTimeMillis(),
             appVersion = BuildConfig.VERSION_NAME,
+            coordsStripped = stripCoords,
             places = places,
             segments = segmentWires,
-            visits = visitWires
+            visits = visitWires,
+            rawSamples = rawSamples
         )
         return json.encodeToString(VoyagerJsonExport.serializer(), payload)
     }
 
-    private fun PlaceEntity.toWire() = PlaceWire(
+    private fun PlaceEntity.toWire(stripCoords: Boolean) = PlaceWire(
         placeId = placeId,
-        centroidLat = centroidLat,
-        centroidLng = centroidLng,
+        centroidLat = centroidLat.stripIf(stripCoords),
+        centroidLng = centroidLng.stripIf(stripCoords),
         radiusM = radiusM,
         geohash = geohash,
         s2CellId = s2CellId,
@@ -383,9 +375,9 @@ class ExportRepositoryImpl @Inject constructor(
         route = route
     )
 
-    private fun RouteEntity.toWire() = RouteWire(
-        encodedPolyline = encodedPolyline,
-        simplifiedPolyline = simplifiedPolyline,
+    private fun RouteEntity.toWire(stripCoords: Boolean) = RouteWire(
+        encodedPolyline = encodedPolyline.stripPolylineIf(stripCoords),
+        simplifiedPolyline = simplifiedPolyline?.stripPolylineIf(stripCoords),
         totalDistanceM = totalDistanceM,
         totalDurationMs = totalDurationMs,
         avgSpeedMps = avgSpeedMps,
@@ -395,7 +387,7 @@ class ExportRepositoryImpl @Inject constructor(
         boundingBoxJson = boundingBoxJson
     )
 
-    private fun VisitEntity.toWire() = VisitWire(
+    private fun VisitEntity.toWire(stripCoords: Boolean) = VisitWire(
         visitId = visitId,
         placeId = placeId,
         arrivalAt = arrivalAt,
@@ -405,8 +397,28 @@ class ExportRepositoryImpl @Inject constructor(
         confidence = confidence,
         isUserCorrected = isUserCorrected,
         dayKey = dayKey,
-        centroidLat = centroidLat,
-        centroidLng = centroidLng
+        centroidLat = centroidLat?.stripIf(stripCoords),
+        centroidLng = centroidLng?.stripIf(stripCoords)
+    )
+
+    private fun RawLocationSampleEntity.toWire(stripCoords: Boolean) = RawSampleWire(
+        capturedAt = capturedAt,
+        receivedAt = receivedAt,
+        lat = lat.stripIf(stripCoords),
+        lng = lng.stripIf(stripCoords),
+        accuracyM = accuracyM,
+        verticalAccuracyM = verticalAccuracyM,
+        speedMps = speedMps,
+        bearingDeg = bearingDeg,
+        altitudeM = altitudeM,
+        provider = provider,
+        isMock = isMock,
+        batteryPct = batteryPct,
+        isCharging = isCharging,
+        deviceIdleMode = deviceIdleMode,
+        permissionSnapshot = permissionSnapshot,
+        localTimeZone = localTimeZone,
+        geohash = geohash
     )
 
     /** Escape special XML characters. & must be first to avoid double-escaping. */
@@ -424,6 +436,35 @@ class ExportRepositoryImpl @Inject constructor(
         .replace("\n", "\\n")
         .replace("\r", "\\r")
         .replace("\t", "\\t")
+
+    /**
+     * Rounds a coordinate to ~2 decimal places (~1.1 km) when [strip] is set, so an
+     * export can be shared without revealing a precise location. Backs the
+     * `stripExactCoordinatesOnExport` setting.
+     */
+    private fun Double.stripIf(strip: Boolean): Double =
+        if (strip) Math.round(this * 100.0) / 100.0 else this
+
+    /** Decodes, rounds, and re-encodes a polyline so coordinate stripping reaches route geometry. */
+    private fun String.stripPolylineIf(strip: Boolean): String {
+        if (!strip || isEmpty()) return this
+        val rounded = PolylineCodec.decode(this).map { (lat, lng) -> lat.stripIf(true) to lng.stripIf(true) }
+        return PolylineCodec.encode(rounded)
+    }
+
+    /** Raw location samples captured within an inclusive [startDay]..[endDay] window. */
+    private suspend fun rawSamplesForDays(
+        startDay: String,
+        endDay: String,
+        stripCoords: Boolean
+    ): List<RawSampleWire> {
+        val zone = java.time.ZoneId.systemDefault()
+        val startMs = java.time.LocalDate.parse(startDay)
+            .atStartOfDay(zone).toInstant().toEpochMilli()
+        val endMs = java.time.LocalDate.parse(endDay).plusDays(1)
+            .atStartOfDay(zone).toInstant().toEpochMilli() - 1
+        return rawLocationSampleDao.getByTimeRange(startMs, endMs).map { it.toWire(stripCoords) }
+    }
 
     private fun generateDayKeys(startDay: String, endDay: String): List<String> {
         val start = java.time.LocalDate.parse(startDay)

@@ -70,6 +70,20 @@ android {
             }
         }
     }
+    // Distribution flavors:
+    //  - play:   Google Play build; proprietary Play Billing lives only in src/play.
+    //  - fdroid: fully-free build for F-Droid; no proprietary billing code.
+    // Flavor-specific code goes in src/play/java and src/fdroid/java.
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") {
+            dimension = "distribution"
+        }
+        create("fdroid") {
+            dimension = "distribution"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -87,6 +101,10 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    // Exported Room schemas must be on the androidTest classpath so
+    // MigrationTestHelper can load them when validating migrations.
+    sourceSets["androidTest"].assets.srcDir("$projectDir/schemas")
 }
 
 ksp {
@@ -184,6 +202,8 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation("androidx.room:room-testing:2.6.1")
+    androidTestImplementation(libs.truth)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
