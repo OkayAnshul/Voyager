@@ -65,6 +65,7 @@ fun SettingsScreen(
     onNavigateToOpenSourceLicenses: () -> Unit = {},
     onNavigateToReliability: () -> Unit = {},
     onNavigateToMileage: () -> Unit = {},
+    onNavigateToPaywall: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -140,7 +141,8 @@ fun SettingsScreen(
                 onNavigateToDeveloperProfile = onNavigateToDeveloperProfile,
                 onNavigateToOpenSourceLicenses = onNavigateToOpenSourceLicenses,
                 onNavigateToReliability = onNavigateToReliability,
-                onNavigateToMileage = onNavigateToMileage
+                onNavigateToMileage = onNavigateToMileage,
+                onNavigateToPaywall = onNavigateToPaywall
             )
             SettingsTab.DETECTION -> DetectionTabContent(
                 uiState = uiState,
@@ -223,7 +225,8 @@ private fun GeneralTabContent(
     onNavigateToDeveloperProfile: () -> Unit,
     onNavigateToOpenSourceLicenses: () -> Unit,
     onNavigateToReliability: () -> Unit,
-    onNavigateToMileage: () -> Unit
+    onNavigateToMileage: () -> Unit,
+    onNavigateToPaywall: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier
@@ -232,6 +235,50 @@ private fun GeneralTabContent(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(vertical = 16.dp)
     ) {
+        // ── Voyager Pro ────────────────────────────────────────────────
+        item {
+            VoyagerCard(
+                modifier = Modifier.fillMaxWidth(),
+                padding = 0.dp,
+                variant = CardVariant.HIGHLIGHTED
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToPaywall() }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.WorkspacePremium,
+                        contentDescription = null,
+                        tint = VoyagerColors.Premium,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Voyager Pro",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = VoyagerColors.OnSurface
+                        )
+                        Text(
+                            text = "Evidence, mileage, insights & more",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = VoyagerColors.OnSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = VoyagerColors.OnSurfaceVariant
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+        }
+
         // ── Profile Preset ─────────────────────────────────────────────
         item {
             SectionHeader(title = "Profile Preset")

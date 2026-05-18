@@ -150,6 +150,9 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(libs.play.services.activity.recognition)
 
+    // Play Billing — play flavor only; proprietary code must never reach the F-Droid build
+    "playImplementation"(libs.billing.ktx)
+
     // Navigation
     implementation(libs.navigation.compose)
 

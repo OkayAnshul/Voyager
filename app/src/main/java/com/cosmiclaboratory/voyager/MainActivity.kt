@@ -510,6 +510,9 @@ fun VoyagerApp(
                     },
                     onNavigateToMileage = {
                         navController.navigate(VoyagerDestination.Mileage.route)
+                    },
+                    onNavigateToPaywall = {
+                        navController.navigate(VoyagerDestination.Paywall.route)
                     }
                 )
             }
@@ -518,6 +521,11 @@ fun VoyagerApp(
             }
             composable(VoyagerDestination.Mileage.route) {
                 com.cosmiclaboratory.voyager.presentation.screen.mileage.MileageScreen()
+            }
+            composable(VoyagerDestination.Paywall.route) {
+                com.cosmiclaboratory.voyager.presentation.billing.PaywallScreen(
+                    onClose = { navController.popBackStack() }
+                )
             }
             // PlaceReview — push-nav from top bar bell icon
             composable(VoyagerDestination.PlaceReview.route) {
