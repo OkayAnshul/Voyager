@@ -15,8 +15,20 @@ data class GeocodeCandidate(
     val structuredParts: StructuredAddress?,
     val confidence: Float,
     val licenseClass: LicenseClass,
-    val fetchedAt: Long
+    val fetchedAt: Long,
+    /**
+     * Accuracy-gated name safe to show the user — coarsened when confidence is low so
+     * a wrong house number/street is never presented as fact. Computed by
+     * [com.cosmiclaboratory.voyager.domain.geocoding.GeocodingConflictResolver].
+     */
+    val safeDisplayName: String? = null
 )
+
+/**
+ * How much the resolved name can be trusted — drives both the accuracy gate
+ * (how precise a name to show) and the sequential short-circuit (HIGH stops the stack).
+ */
+enum class ConfidenceTier { HIGH, MEDIUM, LOW, NONE }
 
 data class StructuredAddress(
     val street: String? = null,

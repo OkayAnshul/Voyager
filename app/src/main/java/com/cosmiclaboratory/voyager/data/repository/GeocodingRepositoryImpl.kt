@@ -3,6 +3,7 @@ package com.cosmiclaboratory.voyager.data.repository
 import android.util.Log
 import com.cosmiclaboratory.voyager.domain.geocoding.GeocodingConflictResolver
 import com.cosmiclaboratory.voyager.domain.geocoding.GeocodingProvider
+import com.cosmiclaboratory.voyager.domain.model.ConfidenceTier
 import com.cosmiclaboratory.voyager.domain.model.GeocodeCandidate
 import com.cosmiclaboratory.voyager.domain.model.GeocodingResult
 import com.cosmiclaboratory.voyager.domain.model.ProviderStatus
@@ -10,6 +11,7 @@ import com.cosmiclaboratory.voyager.domain.model.StructuredAddress
 import com.cosmiclaboratory.voyager.domain.model.enums.GeocodingProviderId
 import com.cosmiclaboratory.voyager.domain.model.enums.LicenseClass
 import com.cosmiclaboratory.voyager.domain.repository.GeocodingRepository
+import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import com.cosmiclaboratory.voyager.storage.database.dao.GeocodeCandidateDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.entity.GeocodeCandidateEntity
@@ -21,23 +23,52 @@ class GeocodingRepositoryImpl @Inject constructor(
     private val providers: List<@JvmSuppressWildcards GeocodingProvider>,
     private val geocodeCandidateDao: GeocodeCandidateDao,
     private val placeDao: PlaceDao,
-    private val conflictResolver: GeocodingConflictResolver
+    private val conflictResolver: GeocodingConflictResolver,
+    private val settingsRepository: SettingsRepository
 ) : GeocodingRepository {
 
-    private val sortedProviders: List<GeocodingProvider>
-        get() = providers.sortedBy { it.priority }
+    /**
+     * Providers to query, filtered to the user's enabled set and in their chosen
+     * order ([UserSettings.providerOrder]). An empty order falls back to the static
+     * `priority` so geocoding never silently goes dark.
+     */
+    private fun activeProviders(): List<GeocodingProvider> {
+        val order = try {
+            settingsRepository.observeSettings().value.providerOrder
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to read providerOrder; using priority order", e)
+            emptyList()
+        }
+        if (order.isEmpty()) return providers.sortedBy { it.priority }
+        val byId = providers.associateBy { it.providerId }
+        return order.mapNotNull { byId[it] }
+    }
 
+    /**
+     * Reverse geocodes with **sequential short-circuit**: providers are tried in the
+     * user's order and the first result that clears the accuracy gate's HIGH tier is
+     * accepted immediately — remaining providers are not queried. Weaker results fall
+     * through and the collected candidates are ranked. Typically 0–1 network calls.
+     */
     override suspend fun reverseGeocode(lat: Double, lng: Double): GeocodingResult {
         val candidates = mutableListOf<GeocodeCandidate>()
         var rank = 1
+        val coarsen = try {
+            settingsRepository.observeSettings().value.coarsenGeocodeQueries
+        } catch (_: Exception) { false }
 
-        for (provider in sortedProviders) {
+        for (provider in activeProviders()) {
             if (!provider.isAvailable) {
                 Log.d(TAG, "Skipping unavailable provider: ${provider.providerId}")
                 continue
             }
 
-            val result = provider.reverseGeocode(lat, lng)
+            // Privacy: when coarsening is on, round coordinates before network
+            // providers; the offline Android Geocoder always gets exact coordinates.
+            val sendExact = !coarsen || provider.providerId == GeocodingProviderId.ANDROID_GEOCODER
+            val qLat = if (sendExact) lat else roundCoordinate(lat)
+            val qLng = if (sendExact) lng else roundCoordinate(lng)
+            val result = provider.reverseGeocode(qLat, qLng)
             result.onSuccess { providerResult ->
                 val candidate = GeocodeCandidate(
                     provider = provider.providerId,
@@ -49,16 +80,36 @@ class GeocodingRepositoryImpl @Inject constructor(
                     fetchedAt = System.currentTimeMillis()
                 )
                 candidates.add(candidate)
+                // Short-circuit: a HIGH-tier result is trustworthy — stop here.
+                if (conflictResolver.confidenceTier(candidate, candidates) == ConfidenceTier.HIGH) {
+                    return buildResult(candidates, lat, lng)
+                }
             }
             result.onFailure { e ->
                 Log.w(TAG, "${provider.providerId} reverseGeocode failed: ${e.message}")
             }
         }
 
+        return buildResult(candidates, lat, lng)
+    }
+
+    /** Rounds a coordinate to ~3 dp (~110 m) — the privacy coarsening grid. */
+    private fun roundCoordinate(value: Double): Double = Math.round(value * 1000.0) / 1000.0
+
+    /** Ranks the collected candidates and attaches the accuracy-gated name to the best. */
+    private fun buildResult(
+        candidates: List<GeocodeCandidate>,
+        lat: Double,
+        lng: Double
+    ): GeocodingResult {
         val ranked = conflictResolver.rankCandidates(candidates)
+        val best = ranked.firstOrNull() ?: return GeocodingResult(emptyList(), null)
+        val bestWithSafe = best.copy(
+            safeDisplayName = conflictResolver.safeDisplayName(best, ranked, lat, lng)
+        )
         return GeocodingResult(
-            candidates = ranked,
-            bestCandidate = ranked.firstOrNull()
+            candidates = listOf(bestWithSafe) + ranked.drop(1),
+            bestCandidate = bestWithSafe
         )
     }
 
@@ -66,7 +117,7 @@ class GeocodingRepositoryImpl @Inject constructor(
         val candidates = mutableListOf<GeocodeCandidate>()
         var rank = 1
 
-        for (provider in sortedProviders) {
+        for (provider in activeProviders()) {
             if (!provider.isAvailable) continue
 
             val result = provider.forwardGeocode(query)
@@ -175,7 +226,8 @@ class GeocodingRepositoryImpl @Inject constructor(
             geocodingResult.bestCandidate?.let { best ->
                 placeDao.update(
                     place.copy(
-                        bestProviderName = best.displayName,
+                        // Accuracy-gated name — never an over-precise/wrong address.
+                        bestProviderName = best.safeDisplayName ?: best.displayName,
                         bestProviderSource = best.provider.name
                     )
                 )
@@ -211,7 +263,7 @@ class GeocodingRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getProviderStatus(): List<ProviderStatus> {
-        return sortedProviders.map { provider ->
+        return activeProviders().map { provider ->
             ProviderStatus(
                 providerId = provider.providerId,
                 isAvailable = provider.isAvailable,

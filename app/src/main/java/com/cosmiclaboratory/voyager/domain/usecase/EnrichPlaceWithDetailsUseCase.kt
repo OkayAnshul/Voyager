@@ -48,7 +48,8 @@ class EnrichPlaceWithDetailsUseCase @Inject constructor(
             val result = geocodingRepository.reverseGeocode(lat, lng)
             val best = result.bestCandidate?.let {
                 EnrichmentResult(
-                    displayName = it.displayName,
+                    // Accuracy-gated name — coarsened when confidence is low.
+                    displayName = it.safeDisplayName ?: it.displayName,
                     providerSource = it.provider.name
                 )
             }

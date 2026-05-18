@@ -5,6 +5,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.cosmiclaboratory.voyager.domain.repository.GeocodingRepository
+import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import com.cosmiclaboratory.voyager.storage.database.dao.HealthLogDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.entity.HealthLogEntity
@@ -22,6 +23,7 @@ class GeocodeBackfillWorker @AssistedInject constructor(
     private val placeDao: PlaceDao,
     private val geocodingRepository: GeocodingRepository,
     private val healthLogDao: HealthLogDao,
+    private val settingsRepository: SettingsRepository,
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -30,6 +32,12 @@ class GeocodeBackfillWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
+        // Respect the privacy lever — when auto-geocoding is off, names are not
+        // looked up over the network; places keep their coordinate name.
+        if (!settingsRepository.observeSettings().value.autoGeocodeNewPlaces) {
+            logCompletion(geocodedCount = 0, failedCount = 0)
+            return Result.success()
+        }
         return try {
             val unnamedPlaces = placeDao.getAllActive()
                 .filter { it.bestProviderName == null }
