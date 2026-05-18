@@ -66,7 +66,7 @@ import com.cosmiclaboratory.voyager.ui.theme.VoyagerTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
-private enum class AppPhase { SPLASH, ONBOARDING, PERSONA, WALKTHROUGH, MAIN }
+private enum class AppPhase { SPLASH, RESTORE, ONBOARDING, PERSONA, WALKTHROUGH, MAIN }
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -74,6 +74,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var permissionMonitor: PermissionMonitor
     @Inject lateinit var sharedUiState: SharedUiState
     @Inject lateinit var walkthroughPreferences: WalkthroughPreferences
+    @Inject lateinit var restorePreferences: com.cosmiclaboratory.voyager.presentation.screen.onboarding.RestorePreferences
     @Inject lateinit var settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 
     private val locationPermissionLauncher = registerForActivityResult(
@@ -109,6 +110,8 @@ class MainActivity : ComponentActivity() {
                     permissionState == PermissionState.NO_LOCATION_WITH_AR
                 val hasSeenWalkthrough by walkthroughPreferences.hasSeen
                     .collectAsState(initial = true)
+                val hasSeenRestore by restorePreferences.hasSeen
+                    .collectAsState(initial = true)
                 val settings by settingsRepository.observeSettings().collectAsState()
                 val hasChosenPersona = settings.activeJob.isNotBlank()
 
@@ -135,10 +138,23 @@ class MainActivity : ComponentActivity() {
                     AppPhase.SPLASH -> {
                         AnimatedSplashContent(onComplete = {
                             phase = when {
+                                // Fresh install: offer a one-time restore before onboarding.
+                                needsOnboarding && !hasSeenRestore -> AppPhase.RESTORE
                                 needsOnboarding -> AppPhase.ONBOARDING
                                 else -> nextAfterPermissions()
                             }
                         })
+                    }
+                    AppPhase.RESTORE -> {
+                        com.cosmiclaboratory.voyager.presentation.screen.onboarding.RestoreScreen(
+                            onComplete = {
+                                phase = if (needsOnboarding) {
+                                    AppPhase.ONBOARDING
+                                } else {
+                                    nextAfterPermissions()
+                                }
+                            }
+                        )
                     }
                     AppPhase.ONBOARDING -> {
                         PermissionOnboardingScreen(onComplete = {
