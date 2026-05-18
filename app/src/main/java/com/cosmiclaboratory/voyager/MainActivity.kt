@@ -481,7 +481,11 @@ fun VoyagerApp(
             }
             // UI-1.05: Insights routes to StatisticsScreen (NOT DashboardScreen)
             composable(VoyagerDestination.Insights.route) {
-                StatisticsScreen()
+                StatisticsScreen(
+                    onNavigateToPaywall = {
+                        navController.navigate(VoyagerDestination.Paywall.route)
+                    }
+                )
             }
             // Settings — push-nav from top bar gear icon
             composable(VoyagerDestination.Settings.route) {

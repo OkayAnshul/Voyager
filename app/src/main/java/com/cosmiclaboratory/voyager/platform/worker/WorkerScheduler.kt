@@ -22,6 +22,7 @@ object WorkerScheduler {
         scheduleGeocodeBackfill(workManager)
         scheduleDailyRollup(workManager)
         scheduleDailyRecap(workManager)
+        scheduleAnomalyAlert(workManager)
         scheduleWeeklyRollup(workManager)
         scheduleSemanticLabel(workManager)
         scheduleDataRetention(workManager)
@@ -87,6 +88,21 @@ object WorkerScheduler {
 
         workManager.enqueueUniquePeriodicWork(
             DailyRecapWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
+    }
+
+    /** Morning anomaly check (~09:00) — the worker itself gates on the setting + Pro. */
+    private fun scheduleAnomalyAlert(workManager: WorkManager) {
+        val initialDelay = computeDelayUntil(hour = 9, minute = 0)
+        val request = PeriodicWorkRequestBuilder<AnomalyAlertWorker>(24, TimeUnit.HOURS)
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .setConstraints(defaultConstraints())
+            .build()
+
+        workManager.enqueueUniquePeriodicWork(
+            AnomalyAlertWorker.WORK_NAME,
             ExistingPeriodicWorkPolicy.KEEP,
             request,
         )
