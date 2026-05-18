@@ -3,6 +3,7 @@ package com.cosmiclaboratory.voyager.presentation.screen.export
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.cosmiclaboratory.voyager.data.imports.GoogleTimelineImporter
 import com.cosmiclaboratory.voyager.domain.model.ImportSummary
 import com.cosmiclaboratory.voyager.domain.model.enums.ExportFormat
 import com.cosmiclaboratory.voyager.domain.repository.ExportRepository
@@ -26,7 +27,8 @@ data class ExportUiState(
 
 @HiltViewModel
 class ExportViewModel @Inject constructor(
-    private val exportRepository: ExportRepository
+    private val exportRepository: ExportRepository,
+    private val googleTimelineImporter: GoogleTimelineImporter
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExportUiState())
@@ -60,6 +62,21 @@ class ExportViewModel @Inject constructor(
         _uiState.update { it.copy(isWorking = true, importSummary = null, error = null) }
         viewModelScope.launch {
             val result = exportRepository.importData(uri, ExportFormat.VOYAGER_JSON)
+            _uiState.update {
+                it.copy(
+                    isWorking = false,
+                    importSummary = result.getOrNull(),
+                    error = result.exceptionOrNull()?.localizedMessage
+                )
+            }
+        }
+    }
+
+    /** Imports a Google Timeline / Location History export (the migration wedge). */
+    fun importGoogleTimeline(uri: Uri) {
+        _uiState.update { it.copy(isWorking = true, importSummary = null, error = null) }
+        viewModelScope.launch {
+            val result = googleTimelineImporter.import(uri)
             _uiState.update {
                 it.copy(
                     isWorking = false,
