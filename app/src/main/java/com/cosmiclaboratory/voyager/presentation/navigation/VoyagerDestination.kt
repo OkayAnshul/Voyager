@@ -49,6 +49,12 @@ sealed class VoyagerDestination(
     object Mileage : VoyagerDestination("mileage", "Mileage log", Icons.Filled.DirectionsCar)
     object Paywall : VoyagerDestination("paywall", "Voyager Pro", Icons.Filled.WorkspacePremium)
 
+    object Trips : VoyagerDestination("trips", "Trips", Icons.Filled.Luggage)
+
+    object TripDetail : VoyagerDestination("trip_detail/{tripId}", "Trip", Icons.Filled.Luggage) {
+        fun createRoute(tripId: Long) = "trip_detail/$tripId"
+    }
+
     /** Photo Day Story — optional `dayKey` arg deep-links from the Timeline day header. */
     object DayStory : VoyagerDestination(
         "day_story?dayKey={dayKey}", "Photo Day Story", Icons.Filled.PhotoLibrary

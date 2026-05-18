@@ -79,4 +79,8 @@ interface VisitDao {
 
     @Query("DELETE FROM visits WHERE arrivalAt < :cutoffMs")
     suspend fun deleteOlderThan(cutoffMs: Long): Int
+
+    /** Distinct days that have at least one visit, oldest first — drives trip detection. */
+    @Query("SELECT DISTINCT dayKey FROM visits WHERE deletedAt IS NULL ORDER BY dayKey ASC")
+    suspend fun getAllDayKeys(): List<String>
 }

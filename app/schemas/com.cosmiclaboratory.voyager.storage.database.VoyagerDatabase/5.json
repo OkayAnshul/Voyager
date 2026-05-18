@@ -1,0 +1,2213 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 5,
+    "identityHash": "18fc2e084e2b1d4b73f4366d3c8ba622",
+    "entities": [
+      {
+        "tableName": "raw_location_samples",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sampleId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `capturedAt` INTEGER NOT NULL, `receivedAt` INTEGER NOT NULL, `lat` REAL NOT NULL, `lng` REAL NOT NULL, `accuracyM` REAL NOT NULL, `verticalAccuracyM` REAL, `speedMps` REAL, `bearingDeg` REAL, `altitudeM` REAL, `provider` TEXT NOT NULL, `isMock` INTEGER NOT NULL, `batteryPct` INTEGER, `isCharging` INTEGER NOT NULL, `deviceIdleMode` INTEGER NOT NULL, `permissionSnapshot` TEXT NOT NULL, `trackingSessionId` INTEGER NOT NULL, `localTimeZone` TEXT NOT NULL, `geohash` TEXT NOT NULL, FOREIGN KEY(`trackingSessionId`) REFERENCES `tracking_sessions`(`sessionId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "sampleId",
+            "columnName": "sampleId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "capturedAt",
+            "columnName": "capturedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receivedAt",
+            "columnName": "receivedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lat",
+            "columnName": "lat",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lng",
+            "columnName": "lng",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accuracyM",
+            "columnName": "accuracyM",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "verticalAccuracyM",
+            "columnName": "verticalAccuracyM",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "speedMps",
+            "columnName": "speedMps",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "bearingDeg",
+            "columnName": "bearingDeg",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "altitudeM",
+            "columnName": "altitudeM",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "provider",
+            "columnName": "provider",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isMock",
+            "columnName": "isMock",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "batteryPct",
+            "columnName": "batteryPct",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "isCharging",
+            "columnName": "isCharging",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceIdleMode",
+            "columnName": "deviceIdleMode",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "permissionSnapshot",
+            "columnName": "permissionSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trackingSessionId",
+            "columnName": "trackingSessionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localTimeZone",
+            "columnName": "localTimeZone",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "geohash",
+            "columnName": "geohash",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "sampleId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_raw_location_samples_trackingSessionId_capturedAt",
+            "unique": false,
+            "columnNames": [
+              "trackingSessionId",
+              "capturedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_raw_location_samples_trackingSessionId_capturedAt` ON `${TABLE_NAME}` (`trackingSessionId`, `capturedAt`)"
+          },
+          {
+            "name": "index_raw_location_samples_capturedAt",
+            "unique": false,
+            "columnNames": [
+              "capturedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_raw_location_samples_capturedAt` ON `${TABLE_NAME}` (`capturedAt`)"
+          },
+          {
+            "name": "index_raw_location_samples_geohash",
+            "unique": false,
+            "columnNames": [
+              "geohash"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_raw_location_samples_geohash` ON `${TABLE_NAME}` (`geohash`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "tracking_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "trackingSessionId"
+            ],
+            "referencedColumns": [
+              "sessionId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "raw_activity_samples",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`activitySampleId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `activityType` TEXT NOT NULL, `confidence` INTEGER NOT NULL, `source` TEXT NOT NULL, `transition` TEXT, `capturedAt` INTEGER NOT NULL, `trackingSessionId` INTEGER NOT NULL, FOREIGN KEY(`trackingSessionId`) REFERENCES `tracking_sessions`(`sessionId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "activitySampleId",
+            "columnName": "activitySampleId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activityType",
+            "columnName": "activityType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transition",
+            "columnName": "transition",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "capturedAt",
+            "columnName": "capturedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trackingSessionId",
+            "columnName": "trackingSessionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "activitySampleId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_raw_activity_samples_trackingSessionId_capturedAt",
+            "unique": false,
+            "columnNames": [
+              "trackingSessionId",
+              "capturedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_raw_activity_samples_trackingSessionId_capturedAt` ON `${TABLE_NAME}` (`trackingSessionId`, `capturedAt`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "tracking_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "trackingSessionId"
+            ],
+            "referencedColumns": [
+              "sessionId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "raw_step_samples",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`stepSampleId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `periodStart` INTEGER NOT NULL, `periodEnd` INTEGER NOT NULL, `stepCount` INTEGER NOT NULL, `source` TEXT NOT NULL, `confidence` REAL NOT NULL, `trackingSessionId` INTEGER NOT NULL, FOREIGN KEY(`trackingSessionId`) REFERENCES `tracking_sessions`(`sessionId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "stepSampleId",
+            "columnName": "stepSampleId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "periodStart",
+            "columnName": "periodStart",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "periodEnd",
+            "columnName": "periodEnd",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stepCount",
+            "columnName": "stepCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trackingSessionId",
+            "columnName": "trackingSessionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "stepSampleId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_raw_step_samples_periodStart_periodEnd",
+            "unique": false,
+            "columnNames": [
+              "periodStart",
+              "periodEnd"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_raw_step_samples_periodStart_periodEnd` ON `${TABLE_NAME}` (`periodStart`, `periodEnd`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "tracking_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "trackingSessionId"
+            ],
+            "referencedColumns": [
+              "sessionId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "tracking_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `startedAt` INTEGER NOT NULL, `endedAt` INTEGER, `startedBy` TEXT NOT NULL, `endedBy` TEXT, `interruptionReason` TEXT, `restartReason` TEXT, `localTimeZone` TEXT NOT NULL, `totalSamples` INTEGER NOT NULL, `totalDistanceM` REAL NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "startedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAt",
+            "columnName": "endedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "startedBy",
+            "columnName": "startedBy",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedBy",
+            "columnName": "endedBy",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "interruptionReason",
+            "columnName": "interruptionReason",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "restartReason",
+            "columnName": "restartReason",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "localTimeZone",
+            "columnName": "localTimeZone",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalSamples",
+            "columnName": "totalSamples",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalDistanceM",
+            "columnName": "totalDistanceM",
+            "affinity": "REAL",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "sessionId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "movement_segments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`segmentId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `segmentType` TEXT NOT NULL, `startAt` INTEGER NOT NULL, `endAt` INTEGER NOT NULL, `startSampleId` INTEGER, `endSampleId` INTEGER, `distanceM` REAL NOT NULL, `confidence` REAL NOT NULL, `routeId` INTEGER, `placeId` INTEGER, `gapReason` TEXT, `dayKey` TEXT NOT NULL, `isUserCorrected` INTEGER NOT NULL, `lastModifiedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `deletedAt` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segmentId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "segmentType",
+            "columnName": "segmentType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startAt",
+            "columnName": "startAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endAt",
+            "columnName": "endAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startSampleId",
+            "columnName": "startSampleId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "endSampleId",
+            "columnName": "endSampleId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "distanceM",
+            "columnName": "distanceM",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "routeId",
+            "columnName": "routeId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "placeId",
+            "columnName": "placeId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "gapReason",
+            "columnName": "gapReason",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dayKey",
+            "columnName": "dayKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isUserCorrected",
+            "columnName": "isUserCorrected",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastModifiedAt",
+            "columnName": "lastModifiedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deletedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "segmentId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_movement_segments_dayKey_startAt",
+            "unique": false,
+            "columnNames": [
+              "dayKey",
+              "startAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_movement_segments_dayKey_startAt` ON `${TABLE_NAME}` (`dayKey`, `startAt`)"
+          },
+          {
+            "name": "index_movement_segments_placeId",
+            "unique": false,
+            "columnNames": [
+              "placeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_movement_segments_placeId` ON `${TABLE_NAME}` (`placeId`)"
+          },
+          {
+            "name": "index_movement_segments_routeId",
+            "unique": false,
+            "columnNames": [
+              "routeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_movement_segments_routeId` ON `${TABLE_NAME}` (`routeId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "segment_evidence",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`segmentId` INTEGER NOT NULL, `avgSpeedMps` REAL, `maxSpeedMps` REAL, `speedStdDev` REAL, `sampleCount` INTEGER NOT NULL, `activityVotesJson` TEXT, `stepCount` INTEGER, `headingConsistency` REAL, `dwellMarkers` TEXT, `providerMixJson` TEXT, `decisionRuleVersion` TEXT, `explanationJson` TEXT, `counterEvidenceJson` TEXT, PRIMARY KEY(`segmentId`), FOREIGN KEY(`segmentId`) REFERENCES `movement_segments`(`segmentId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segmentId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avgSpeedMps",
+            "columnName": "avgSpeedMps",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "maxSpeedMps",
+            "columnName": "maxSpeedMps",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "speedStdDev",
+            "columnName": "speedStdDev",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sampleCount",
+            "columnName": "sampleCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activityVotesJson",
+            "columnName": "activityVotesJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "stepCount",
+            "columnName": "stepCount",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "headingConsistency",
+            "columnName": "headingConsistency",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dwellMarkers",
+            "columnName": "dwellMarkers",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "providerMixJson",
+            "columnName": "providerMixJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "decisionRuleVersion",
+            "columnName": "decisionRuleVersion",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "explanationJson",
+            "columnName": "explanationJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "counterEvidenceJson",
+            "columnName": "counterEvidenceJson",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "segmentId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": [
+          {
+            "table": "movement_segments",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "segmentId"
+            ],
+            "referencedColumns": [
+              "segmentId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "routes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`routeId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `segmentId` INTEGER NOT NULL, `encodedPolyline` TEXT NOT NULL, `simplifiedPolyline` TEXT, `totalDistanceM` REAL NOT NULL, `totalDurationMs` INTEGER NOT NULL, `avgSpeedMps` REAL NOT NULL, `maxSpeedMps` REAL NOT NULL, `transportMode` TEXT NOT NULL, `sampleCount` INTEGER NOT NULL, `boundingBoxJson` TEXT, `lastModifiedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `deletedAt` INTEGER, FOREIGN KEY(`segmentId`) REFERENCES `movement_segments`(`segmentId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "routeId",
+            "columnName": "routeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segmentId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encodedPolyline",
+            "columnName": "encodedPolyline",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "simplifiedPolyline",
+            "columnName": "simplifiedPolyline",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "totalDistanceM",
+            "columnName": "totalDistanceM",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalDurationMs",
+            "columnName": "totalDurationMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avgSpeedMps",
+            "columnName": "avgSpeedMps",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "maxSpeedMps",
+            "columnName": "maxSpeedMps",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transportMode",
+            "columnName": "transportMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sampleCount",
+            "columnName": "sampleCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "boundingBoxJson",
+            "columnName": "boundingBoxJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastModifiedAt",
+            "columnName": "lastModifiedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deletedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "routeId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_routes_segmentId",
+            "unique": false,
+            "columnNames": [
+              "segmentId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_routes_segmentId` ON `${TABLE_NAME}` (`segmentId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "movement_segments",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "segmentId"
+            ],
+            "referencedColumns": [
+              "segmentId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "places",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`placeId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `centroidLat` REAL NOT NULL, `centroidLng` REAL NOT NULL, `radiusM` REAL NOT NULL, `geohash` TEXT NOT NULL, `s2CellId` INTEGER, `confidence` REAL NOT NULL, `lifecycleStatus` TEXT NOT NULL, `userDisplayName` TEXT, `bestProviderName` TEXT, `bestProviderSource` TEXT, `category` TEXT NOT NULL, `categoryConfidence` REAL NOT NULL, `userCategory` TEXT, `createdAt` INTEGER NOT NULL, `lastVisitedAt` INTEGER, `mergedIntoPlaceId` INTEGER, `emoji` TEXT, `lastModifiedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `deletedAt` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "placeId",
+            "columnName": "placeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "centroidLat",
+            "columnName": "centroidLat",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "centroidLng",
+            "columnName": "centroidLng",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "radiusM",
+            "columnName": "radiusM",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "geohash",
+            "columnName": "geohash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "s2CellId",
+            "columnName": "s2CellId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lifecycleStatus",
+            "columnName": "lifecycleStatus",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userDisplayName",
+            "columnName": "userDisplayName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "bestProviderName",
+            "columnName": "bestProviderName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "bestProviderSource",
+            "columnName": "bestProviderSource",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "categoryConfidence",
+            "columnName": "categoryConfidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userCategory",
+            "columnName": "userCategory",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastVisitedAt",
+            "columnName": "lastVisitedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "mergedIntoPlaceId",
+            "columnName": "mergedIntoPlaceId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "emoji",
+            "columnName": "emoji",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastModifiedAt",
+            "columnName": "lastModifiedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deletedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "placeId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_places_geohash",
+            "unique": false,
+            "columnNames": [
+              "geohash"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_places_geohash` ON `${TABLE_NAME}` (`geohash`)"
+          },
+          {
+            "name": "index_places_s2CellId",
+            "unique": false,
+            "columnNames": [
+              "s2CellId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_places_s2CellId` ON `${TABLE_NAME}` (`s2CellId`)"
+          },
+          {
+            "name": "index_places_lifecycleStatus",
+            "unique": false,
+            "columnNames": [
+              "lifecycleStatus"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_places_lifecycleStatus` ON `${TABLE_NAME}` (`lifecycleStatus`)"
+          },
+          {
+            "name": "index_places_category",
+            "unique": false,
+            "columnNames": [
+              "category"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_places_category` ON `${TABLE_NAME}` (`category`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "visits",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`visitId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `placeId` INTEGER NOT NULL, `arrivalAt` INTEGER NOT NULL, `departureAt` INTEGER, `dwellMs` INTEGER, `source` TEXT NOT NULL, `confidence` REAL NOT NULL, `supersedesVisitId` INTEGER, `isUserCorrected` INTEGER NOT NULL, `dayKey` TEXT NOT NULL, `centroidLat` REAL, `centroidLng` REAL, `lastModifiedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `deletedAt` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "visitId",
+            "columnName": "visitId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placeId",
+            "columnName": "placeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "arrivalAt",
+            "columnName": "arrivalAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "departureAt",
+            "columnName": "departureAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dwellMs",
+            "columnName": "dwellMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "supersedesVisitId",
+            "columnName": "supersedesVisitId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "isUserCorrected",
+            "columnName": "isUserCorrected",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dayKey",
+            "columnName": "dayKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "centroidLat",
+            "columnName": "centroidLat",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "centroidLng",
+            "columnName": "centroidLng",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastModifiedAt",
+            "columnName": "lastModifiedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deletedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "visitId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_visits_placeId_arrivalAt",
+            "unique": true,
+            "columnNames": [
+              "placeId",
+              "arrivalAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_visits_placeId_arrivalAt` ON `${TABLE_NAME}` (`placeId`, `arrivalAt`)"
+          },
+          {
+            "name": "index_visits_dayKey_arrivalAt",
+            "unique": false,
+            "columnNames": [
+              "dayKey",
+              "arrivalAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_visits_dayKey_arrivalAt` ON `${TABLE_NAME}` (`dayKey`, `arrivalAt`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "visit_evidence",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`visitId` INTEGER NOT NULL, `entrySampleIdsJson` TEXT, `exitSampleIdsJson` TEXT, `dwellCurveJson` TEXT, `insideCount` INTEGER NOT NULL, `outsideCount` INTEGER NOT NULL, `suppressionReasonsJson` TEXT, `geofenceHints` TEXT, `confirmationRuleUsed` TEXT, `arrivalConfidence` REAL NOT NULL, `departureConfidence` REAL NOT NULL, PRIMARY KEY(`visitId`), FOREIGN KEY(`visitId`) REFERENCES `visits`(`visitId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "visitId",
+            "columnName": "visitId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entrySampleIdsJson",
+            "columnName": "entrySampleIdsJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "exitSampleIdsJson",
+            "columnName": "exitSampleIdsJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dwellCurveJson",
+            "columnName": "dwellCurveJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "insideCount",
+            "columnName": "insideCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outsideCount",
+            "columnName": "outsideCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "suppressionReasonsJson",
+            "columnName": "suppressionReasonsJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "geofenceHints",
+            "columnName": "geofenceHints",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "confirmationRuleUsed",
+            "columnName": "confirmationRuleUsed",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "arrivalConfidence",
+            "columnName": "arrivalConfidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "departureConfidence",
+            "columnName": "departureConfidence",
+            "affinity": "REAL",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "visitId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": [
+          {
+            "table": "visits",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "visitId"
+            ],
+            "referencedColumns": [
+              "visitId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "place_evidence",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`placeId` INTEGER NOT NULL, `clusterDensity` REAL, `totalVisitCount` INTEGER NOT NULL, `visitCountLast7d` INTEGER NOT NULL, `visitCountLast30d` INTEGER NOT NULL, `avgDwellMs` INTEGER, `repeatabilityScore` REAL NOT NULL, `namingCandidatesJson` TEXT, `userConfirmationCount` INTEGER NOT NULL, `categoryReasoningJson` TEXT, `lastClusterUpdateAt` INTEGER, `lastModifiedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `deletedAt` INTEGER, PRIMARY KEY(`placeId`), FOREIGN KEY(`placeId`) REFERENCES `places`(`placeId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "placeId",
+            "columnName": "placeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "clusterDensity",
+            "columnName": "clusterDensity",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "totalVisitCount",
+            "columnName": "totalVisitCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visitCountLast7d",
+            "columnName": "visitCountLast7d",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visitCountLast30d",
+            "columnName": "visitCountLast30d",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avgDwellMs",
+            "columnName": "avgDwellMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "repeatabilityScore",
+            "columnName": "repeatabilityScore",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "namingCandidatesJson",
+            "columnName": "namingCandidatesJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "userConfirmationCount",
+            "columnName": "userConfirmationCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "categoryReasoningJson",
+            "columnName": "categoryReasoningJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastClusterUpdateAt",
+            "columnName": "lastClusterUpdateAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastModifiedAt",
+            "columnName": "lastModifiedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deletedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "placeId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": [
+          {
+            "table": "places",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "placeId"
+            ],
+            "referencedColumns": [
+              "placeId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "geocode_candidates",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`geocodeId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `placeId` INTEGER NOT NULL, `provider` TEXT NOT NULL, `rank` INTEGER NOT NULL, `language` TEXT, `displayName` TEXT NOT NULL, `structuredPartsJson` TEXT, `confidence` REAL NOT NULL, `licenseClass` TEXT NOT NULL, `cachedUntil` INTEGER, `fetchedAt` INTEGER NOT NULL, `lastModifiedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `deletedAt` INTEGER, FOREIGN KEY(`placeId`) REFERENCES `places`(`placeId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "geocodeId",
+            "columnName": "geocodeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placeId",
+            "columnName": "placeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provider",
+            "columnName": "provider",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rank",
+            "columnName": "rank",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "language",
+            "columnName": "language",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "structuredPartsJson",
+            "columnName": "structuredPartsJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "licenseClass",
+            "columnName": "licenseClass",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cachedUntil",
+            "columnName": "cachedUntil",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "fetchedAt",
+            "columnName": "fetchedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastModifiedAt",
+            "columnName": "lastModifiedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deletedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "geocodeId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_geocode_candidates_placeId_rank",
+            "unique": false,
+            "columnNames": [
+              "placeId",
+              "rank"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_geocode_candidates_placeId_rank` ON `${TABLE_NAME}` (`placeId`, `rank`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "places",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "placeId"
+            ],
+            "referencedColumns": [
+              "placeId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "current_runtime_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `activeSessionId` INTEGER, `currentSegmentId` INTEGER, `pendingVisitCandidateJson` TEXT, `lastConfirmedVisitId` INTEGER, `lastAcceptedSampleId` INTEGER, `lastAcceptedAt` INTEGER, `livePlaceStateJson` TEXT, `lastWorkerHeartbeatsJson` TEXT, `stateVersion` INTEGER NOT NULL, `lastPipelineLatencyMs` INTEGER, `lastMotionState` TEXT, `lastDepartedCentroidLat` REAL, `lastDepartedCentroidLng` REAL, `lastDepartureTime` INTEGER, `lastDepartedVisitId` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activeSessionId",
+            "columnName": "activeSessionId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "currentSegmentId",
+            "columnName": "currentSegmentId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "pendingVisitCandidateJson",
+            "columnName": "pendingVisitCandidateJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastConfirmedVisitId",
+            "columnName": "lastConfirmedVisitId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastAcceptedSampleId",
+            "columnName": "lastAcceptedSampleId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastAcceptedAt",
+            "columnName": "lastAcceptedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "livePlaceStateJson",
+            "columnName": "livePlaceStateJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastWorkerHeartbeatsJson",
+            "columnName": "lastWorkerHeartbeatsJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "stateVersion",
+            "columnName": "stateVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastPipelineLatencyMs",
+            "columnName": "lastPipelineLatencyMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastMotionState",
+            "columnName": "lastMotionState",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastDepartedCentroidLat",
+            "columnName": "lastDepartedCentroidLat",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastDepartedCentroidLng",
+            "columnName": "lastDepartedCentroidLng",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastDepartureTime",
+            "columnName": "lastDepartureTime",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastDepartedVisitId",
+            "columnName": "lastDepartedVisitId",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "pending_place_updates",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`updateId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `placeId` INTEGER NOT NULL, `updateType` TEXT NOT NULL, `payloadJson` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `consumedAt` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "updateId",
+            "columnName": "updateId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placeId",
+            "columnName": "placeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updateType",
+            "columnName": "updateType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadJson",
+            "columnName": "payloadJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "consumedAt",
+            "columnName": "consumedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "updateId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "health_log",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`logId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `eventType` TEXT NOT NULL, `eventAt` INTEGER NOT NULL, `detailsJson` TEXT, `acknowledged` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "logId",
+            "columnName": "logId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventType",
+            "columnName": "eventType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventAt",
+            "columnName": "eventAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detailsJson",
+            "columnName": "detailsJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "acknowledged",
+            "columnName": "acknowledged",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "logId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "ftsVersion": "FTS4",
+        "ftsOptions": {
+          "tokenizer": "unicode61",
+          "tokenizerArgs": [],
+          "contentTable": "",
+          "languageIdColumnName": "",
+          "matchInfo": "FTS4",
+          "notIndexedColumns": [],
+          "prefixSizes": [],
+          "preferredOrder": "ASC"
+        },
+        "contentSyncTriggers": [],
+        "tableName": "search_index",
+        "createSql": "CREATE VIRTUAL TABLE IF NOT EXISTS `${TABLE_NAME}` USING FTS4(`placeDisplayName` TEXT, `placeCategory` TEXT, `dayKey` TEXT, `segmentType` TEXT, `geocodeDisplayName` TEXT, `userNotes` TEXT, tokenize=unicode61)",
+        "fields": [
+          {
+            "fieldPath": "placeDisplayName",
+            "columnName": "placeDisplayName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "placeCategory",
+            "columnName": "placeCategory",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dayKey",
+            "columnName": "dayKey",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "segmentType",
+            "columnName": "segmentType",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "geocodeDisplayName",
+            "columnName": "geocodeDisplayName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "userNotes",
+            "columnName": "userNotes",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": []
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "search_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`searchRowId` INTEGER NOT NULL, `sourceTable` TEXT NOT NULL, `sourceId` INTEGER NOT NULL, `relevanceBoost` REAL NOT NULL, PRIMARY KEY(`searchRowId`))",
+        "fields": [
+          {
+            "fieldPath": "searchRowId",
+            "columnName": "searchRowId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceTable",
+            "columnName": "sourceTable",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceId",
+            "columnName": "sourceId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relevanceBoost",
+            "columnName": "relevanceBoost",
+            "affinity": "REAL",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "searchRowId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "daily_rollups",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`dayKey` TEXT NOT NULL, `totalDistanceM` REAL NOT NULL, `totalSteps` INTEGER NOT NULL, `totalDwellMs` INTEGER NOT NULL, `totalTransitMs` INTEGER NOT NULL, `totalWalkMs` INTEGER NOT NULL, `totalDriveMs` INTEGER NOT NULL, `placeVisitCount` INTEGER NOT NULL, `uniquePlacesVisited` INTEGER NOT NULL, `firstActivityAt` INTEGER, `lastActivityAt` INTEGER, `dominantTransportMode` TEXT, `anomalyFlagsJson` TEXT, `computedAt` INTEGER NOT NULL, PRIMARY KEY(`dayKey`))",
+        "fields": [
+          {
+            "fieldPath": "dayKey",
+            "columnName": "dayKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalDistanceM",
+            "columnName": "totalDistanceM",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalSteps",
+            "columnName": "totalSteps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalDwellMs",
+            "columnName": "totalDwellMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalTransitMs",
+            "columnName": "totalTransitMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalWalkMs",
+            "columnName": "totalWalkMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalDriveMs",
+            "columnName": "totalDriveMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placeVisitCount",
+            "columnName": "placeVisitCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uniquePlacesVisited",
+            "columnName": "uniquePlacesVisited",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstActivityAt",
+            "columnName": "firstActivityAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastActivityAt",
+            "columnName": "lastActivityAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dominantTransportMode",
+            "columnName": "dominantTransportMode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "anomalyFlagsJson",
+            "columnName": "anomalyFlagsJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "computedAt",
+            "columnName": "computedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "dayKey"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "weekly_rollups",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`weekKey` TEXT NOT NULL, `avgDailyDistanceM` REAL NOT NULL, `avgDailySteps` INTEGER NOT NULL, `totalDistanceM` REAL NOT NULL, `totalSteps` INTEGER NOT NULL, `activeDayCount` INTEGER NOT NULL, `topPlacesJson` TEXT, `transportModeDistributionJson` TEXT, `comparisonToPrevWeekJson` TEXT, `computedAt` INTEGER NOT NULL, PRIMARY KEY(`weekKey`))",
+        "fields": [
+          {
+            "fieldPath": "weekKey",
+            "columnName": "weekKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avgDailyDistanceM",
+            "columnName": "avgDailyDistanceM",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avgDailySteps",
+            "columnName": "avgDailySteps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalDistanceM",
+            "columnName": "totalDistanceM",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalSteps",
+            "columnName": "totalSteps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activeDayCount",
+            "columnName": "activeDayCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "topPlacesJson",
+            "columnName": "topPlacesJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "transportModeDistributionJson",
+            "columnName": "transportModeDistributionJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "comparisonToPrevWeekJson",
+            "columnName": "comparisonToPrevWeekJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "computedAt",
+            "columnName": "computedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "weekKey"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "place_rollups",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`placeId` INTEGER NOT NULL, `totalVisitCount` INTEGER NOT NULL, `totalDwellMs` INTEGER NOT NULL, `avgDwellMs` INTEGER NOT NULL, `lastVisitAt` INTEGER, `firstVisitAt` INTEGER, `visitCountLast7d` INTEGER NOT NULL, `visitCountLast30d` INTEGER NOT NULL, `visitCountLast90d` INTEGER NOT NULL, `dominantDayOfWeek` INTEGER, `dominantTimeOfDay` TEXT, `computedAt` INTEGER NOT NULL, PRIMARY KEY(`placeId`), FOREIGN KEY(`placeId`) REFERENCES `places`(`placeId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "placeId",
+            "columnName": "placeId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalVisitCount",
+            "columnName": "totalVisitCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalDwellMs",
+            "columnName": "totalDwellMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avgDwellMs",
+            "columnName": "avgDwellMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastVisitAt",
+            "columnName": "lastVisitAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "firstVisitAt",
+            "columnName": "firstVisitAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "visitCountLast7d",
+            "columnName": "visitCountLast7d",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visitCountLast30d",
+            "columnName": "visitCountLast30d",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visitCountLast90d",
+            "columnName": "visitCountLast90d",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dominantDayOfWeek",
+            "columnName": "dominantDayOfWeek",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dominantTimeOfDay",
+            "columnName": "dominantTimeOfDay",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "computedAt",
+            "columnName": "computedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "placeId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": [
+          {
+            "table": "places",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "placeId"
+            ],
+            "referencedColumns": [
+              "placeId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "correction_feedback",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`feedbackId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `correctionType` TEXT NOT NULL, `entityType` TEXT NOT NULL, `entityId` INTEGER NOT NULL, `beforeValueJson` TEXT, `afterValueJson` TEXT, `createdAt` INTEGER NOT NULL, `propagated` INTEGER NOT NULL, `lastModifiedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `deletedAt` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "feedbackId",
+            "columnName": "feedbackId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctionType",
+            "columnName": "correctionType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entityType",
+            "columnName": "entityType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entityId",
+            "columnName": "entityId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "beforeValueJson",
+            "columnName": "beforeValueJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "afterValueJson",
+            "columnName": "afterValueJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "propagated",
+            "columnName": "propagated",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastModifiedAt",
+            "columnName": "lastModifiedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deletedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "feedbackId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "mileage_classifications",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`segmentId` INTEGER NOT NULL, `purpose` TEXT NOT NULL, `note` TEXT, `lastModifiedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `deletedAt` INTEGER, PRIMARY KEY(`segmentId`), FOREIGN KEY(`segmentId`) REFERENCES `movement_segments`(`segmentId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segmentId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "purpose",
+            "columnName": "purpose",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastModifiedAt",
+            "columnName": "lastModifiedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deletedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "segmentId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": [
+          {
+            "table": "movement_segments",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "segmentId"
+            ],
+            "referencedColumns": [
+              "segmentId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "trips",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tripId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `startDayKey` TEXT NOT NULL, `endDayKey` TEXT NOT NULL, `title` TEXT NOT NULL, `placeCount` INTEGER NOT NULL, `visitCount` INTEGER NOT NULL, `distanceMeters` REAL NOT NULL, `isOngoing` INTEGER NOT NULL, `detectedAt` INTEGER NOT NULL, `lastModifiedAt` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `deletedAt` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "tripId",
+            "columnName": "tripId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startDayKey",
+            "columnName": "startDayKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endDayKey",
+            "columnName": "endDayKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placeCount",
+            "columnName": "placeCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visitCount",
+            "columnName": "visitCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "distanceMeters",
+            "columnName": "distanceMeters",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isOngoing",
+            "columnName": "isOngoing",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detectedAt",
+            "columnName": "detectedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastModifiedAt",
+            "columnName": "lastModifiedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deletedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "tripId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_trips_startDayKey",
+            "unique": true,
+            "columnNames": [
+              "startDayKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_trips_startDayKey` ON `${TABLE_NAME}` (`startDayKey`)"
+          }
+        ],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '18fc2e084e2b1d4b73f4366d3c8ba622')"
+    ]
+  }
+}

@@ -65,4 +65,7 @@ object DatabaseModule {
 
     // Mileage
     @Provides fun provideMileageClassificationDao(db: VoyagerDatabase) = db.mileageClassificationDao()
+
+    // Trips
+    @Provides fun provideTripDao(db: VoyagerDatabase) = db.tripDao()
 }
