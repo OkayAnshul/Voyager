@@ -41,6 +41,12 @@ fun ExportScreen(
         if (uri != null) viewModel.import(uri)
     }
 
+    val googleImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) viewModel.importGoogleTimeline(uri)
+    }
+
     // When export finishes, fire a share intent and clear the result.
     LaunchedEffect(state.resultUri) {
         val uri = state.resultUri ?: return@LaunchedEffect
@@ -176,6 +182,30 @@ fun ExportScreen(
                     modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Choose file…")
+            }
+
+            HorizontalDivider()
+
+            // ── Google Timeline import ───────────────────────────────────
+            Text("Import from Google Timeline", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Switching from Google Maps Timeline? Import your places and trips. " +
+                    "Use the Semantic Location History from Google Takeout, or the " +
+                    "Timeline.json exported from your phone. (Records.json — raw GPS — " +
+                    "isn't supported.)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            OutlinedButton(
+                onClick = { googleImportLauncher.launch(arrayOf("application/json", "*/*")) },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !state.isWorking
+            ) {
+                Icon(Icons.Default.FileUpload, contentDescription = null,
+                    modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Choose Google export…")
             }
 
             state.importSummary?.let { summary ->
