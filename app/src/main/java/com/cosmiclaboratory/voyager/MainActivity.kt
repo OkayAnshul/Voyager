@@ -470,6 +470,9 @@ fun VoyagerApp(
                     onNavigateToDayStory = {
                         navController.navigate(VoyagerDestination.DayStory.createRoute())
                     },
+                    onNavigateToTrips = {
+                        navController.navigate(VoyagerDestination.Trips.route)
+                    },
                     onRunPlaceDetection = {
                         val wm = androidx.work.WorkManager.getInstance(context.applicationContext)
                         val request = androidx.work.OneTimeWorkRequestBuilder<com.cosmiclaboratory.voyager.platform.worker.DiscoverPlacesWorker>()
@@ -564,6 +567,24 @@ fun VoyagerApp(
                     onNavigateToPaywall = {
                         navController.navigate(VoyagerDestination.Paywall.route)
                     }
+                )
+            }
+            composable(VoyagerDestination.Trips.route) {
+                com.cosmiclaboratory.voyager.presentation.screen.trips.TripsScreen(
+                    onTripClick = { tripId ->
+                        navController.navigate(VoyagerDestination.TripDetail.createRoute(tripId))
+                    },
+                    onNavigateToPaywall = {
+                        navController.navigate(VoyagerDestination.Paywall.route)
+                    }
+                )
+            }
+            composable(
+                route = VoyagerDestination.TripDetail.route,
+                arguments = listOf(navArgument("tripId") { type = NavType.LongType })
+            ) {
+                com.cosmiclaboratory.voyager.presentation.screen.trips.TripDetailScreen(
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
             composable(VoyagerDestination.Paywall.route) {

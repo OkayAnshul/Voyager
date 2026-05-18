@@ -50,6 +50,7 @@ fun DashboardScreen(
     onNavigateToExport: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onNavigateToDayStory: () -> Unit = {},
+    onNavigateToTrips: () -> Unit = {},
     onRunPlaceDetection: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -59,6 +60,7 @@ fun DashboardScreen(
         onNavigateToExport = onNavigateToExport,
         onNavigateToSearch = onNavigateToSearch,
         onNavigateToDayStory = onNavigateToDayStory,
+        onNavigateToTrips = onNavigateToTrips,
         onRunPlaceDetection = onRunPlaceDetection
     )
 }
@@ -67,6 +69,7 @@ fun DashboardScreen(
  * Stateless dashboard body — takes [DashboardUiState] instead of collecting it,
  * so it can be rendered in @Preview and exercised in tests.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun DashboardContent(
     uiState: DashboardUiState,
@@ -74,6 +77,7 @@ fun DashboardContent(
     onNavigateToExport: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onNavigateToDayStory: () -> Unit = {},
+    onNavigateToTrips: () -> Unit = {},
     onRunPlaceDetection: () -> Unit = {}
 ) {
     var staggerVisible by remember { mutableStateOf(false) }
@@ -344,9 +348,11 @@ fun DashboardContent(
             SectionHeader(title = "Quick Actions")
         }
         item {
-            Row(
+            androidx.compose.foundation.layout.FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                maxItemsInEachRow = 3
             ) {
                 VoyagerOutlinedButton(
                     onClick = onRunPlaceDetection,
@@ -379,6 +385,14 @@ fun DashboardContent(
                     Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Photos", style = MaterialTheme.typography.labelSmall)
+                }
+                VoyagerOutlinedButton(
+                    onClick = onNavigateToTrips,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Luggage, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Trips", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }

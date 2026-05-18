@@ -23,6 +23,7 @@ object WorkerScheduler {
         scheduleDailyRollup(workManager)
         scheduleDailyRecap(workManager)
         scheduleAnomalyAlert(workManager)
+        scheduleTripDetection(workManager)
         scheduleWeeklyRollup(workManager)
         scheduleSemanticLabel(workManager)
         scheduleDataRetention(workManager)
@@ -103,6 +104,21 @@ object WorkerScheduler {
 
         workManager.enqueueUniquePeriodicWork(
             AnomalyAlertWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
+    }
+
+    /** Nightly trip detection (~04:30), after the daily rollups have settled. */
+    private fun scheduleTripDetection(workManager: WorkManager) {
+        val initialDelay = computeDelayUntil(hour = 4, minute = 30)
+        val request = PeriodicWorkRequestBuilder<TripDetectionWorker>(24, TimeUnit.HOURS)
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .setConstraints(defaultConstraints())
+            .build()
+
+        workManager.enqueueUniquePeriodicWork(
+            TripDetectionWorker.WORK_NAME,
             ExistingPeriodicWorkPolicy.KEEP,
             request,
         )

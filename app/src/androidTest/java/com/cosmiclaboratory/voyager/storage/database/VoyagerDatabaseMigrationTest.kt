@@ -14,8 +14,8 @@ import java.io.IOException
  * Exercises every shipped Room migration of [VoyagerDatabase].
  *
  * The contract from the database KDoc: no destructive migration, no silent data loss.
- * These tests prove the full v1 → v4 chain runs and that real rows written at v1
- * survive to v4 intact.
+ * These tests prove the full v1 → v5 chain runs and that real rows written at v1
+ * survive intact.
  */
 @RunWith(AndroidJUnit4::class)
 class VoyagerDatabaseMigrationTest {
@@ -32,11 +32,11 @@ class VoyagerDatabaseMigrationTest {
 
     /**
      * Full chain: create the DB at the original v1 schema, write a place and a drive
-     * segment, then migrate v1 → v2 → v3 → v4 in one pass and assert the data is intact.
+     * segment, then migrate v1 → … → v5 in one pass and assert the data is intact.
      */
     @Test
     @Throws(IOException::class)
-    fun migrate1To4_preservesData() {
+    fun migrate1To5_preservesData() {
         helper.createDatabase(testDb, 1).apply {
             execSQL(
                 """
@@ -58,7 +58,7 @@ class VoyagerDatabaseMigrationTest {
         }
 
         val db = helper.runMigrationsAndValidate(
-            testDb, 4, true, *VoyagerDatabase.MIGRATIONS
+            testDb, 5, true, *VoyagerDatabase.MIGRATIONS
         )
 
         db.query("SELECT segmentId, segmentType, distanceM FROM movement_segments").use { c ->
@@ -83,6 +83,58 @@ class VoyagerDatabaseMigrationTest {
         db.query("SELECT purpose FROM mileage_classifications WHERE segmentId = 1").use { c ->
             assertThat(c.moveToFirst()).isTrue()
             assertThat(c.getString(0)).isEqualTo("BUSINESS")
+        }
+
+        // The v5 trips table exists and accepts a row.
+        db.execSQL(
+            """
+            INSERT INTO trips
+                (startDayKey, endDayKey, title, placeCount, visitCount, distanceMeters,
+                 isOngoing, detectedAt, lastModifiedAt, revision)
+            VALUES ('2026-05-01', '2026-05-04', 'Trip to Paris', 5, 12, 84000.0, 0, 9000, 0, 1)
+            """.trimIndent()
+        )
+        db.query("SELECT title FROM trips WHERE startDayKey = '2026-05-01'").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("Trip to Paris")
+        }
+    }
+
+    /**
+     * Direct v4 → v5 hop: the trips migration is purely additive and leaves the existing
+     * v4 schema untouched.
+     */
+    @Test
+    @Throws(IOException::class)
+    fun migrate4To5_addsTripsTable() {
+        helper.createDatabase(testDb, 4).apply {
+            execSQL(
+                """
+                INSERT INTO movement_segments
+                    (segmentType, startAt, endAt, distanceM, confidence, dayKey,
+                     isUserCorrected, lastModifiedAt, revision)
+                VALUES ('DRIVE', 1000, 5000, 8000.0, 0.9, '2026-05-17', 0, 0, 1)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(testDb, 5, true, VoyagerDatabase.MIGRATIONS.last())
+
+        // The pre-existing v4 row survives.
+        db.query("SELECT COUNT(*) FROM movement_segments").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(1)
+        }
+        // The new trips table is present and writable, and its unique startDayKey index holds.
+        db.execSQL(
+            "INSERT INTO trips (startDayKey, endDayKey, title, placeCount, visitCount, " +
+                "distanceMeters, isOngoing, detectedAt) " +
+                "VALUES ('2026-06-01', '2026-06-03', '3-day trip', 2, 4, 12000.0, 1, 100)"
+        )
+        db.query("SELECT COUNT(*) FROM trips").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(1)
         }
     }
 
