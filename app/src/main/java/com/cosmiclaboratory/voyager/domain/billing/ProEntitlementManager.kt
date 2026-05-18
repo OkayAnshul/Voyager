@@ -9,11 +9,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -47,6 +49,14 @@ class ProEntitlementManager @Inject constructor(
     /** Whether the user currently has Pro. Seeded from the offline cache, kept live by the channel. */
     val isPro: StateFlow<Boolean> = _isPro.asStateFlow()
 
+    /**
+     * Current state of the debug Pro override — for a developer-mode toggle to reflect.
+     * Always effectively false in release builds (the override is ignored there).
+     */
+    val debugProOverride: StateFlow<Boolean> = dataStore.data
+        .map { (it[DEBUG_OVERRIDE_KEY] ?: false) && BuildConfig.DEBUG }
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
     init {
         // Mirror the channel's entitlement into the offline cache.
         scope.launch {
@@ -72,11 +82,12 @@ class ProEntitlementManager @Inject constructor(
 
     /**
      * Debug-only: force Pro on/off without a purchase. No effect in release builds.
+     * Fire-and-forget — observe [debugProOverride] for the resulting state.
      * Intended for a developer-mode toggle and for instrumented tests.
      */
-    suspend fun setDebugProOverride(enabled: Boolean) {
+    fun setDebugProOverride(enabled: Boolean) {
         if (!BuildConfig.DEBUG) return
-        dataStore.edit { it[DEBUG_OVERRIDE_KEY] = enabled }
+        scope.launch { dataStore.edit { it[DEBUG_OVERRIDE_KEY] = enabled } }
     }
 
     private fun effectivePro(prefs: Preferences): Boolean {
