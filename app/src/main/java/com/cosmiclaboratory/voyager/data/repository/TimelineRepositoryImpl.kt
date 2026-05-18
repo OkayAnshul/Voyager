@@ -35,6 +35,12 @@ class TimelineRepositoryImpl @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
     private val classScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    private companion object {
+        /** Movement segments below this confidence are hidden when the user
+         *  disables low-confidence segments. */
+        const val LOW_CONFIDENCE_THRESHOLD = 0.4f
+    }
+
     // Sentinel for "queried but no result" since ConcurrentHashMap doesn't allow null values
     private val NO_POI = com.cosmiclaboratory.voyager.data.api.OverpassResult("", "", 0.0, 0.0, 0.0)
     // Cache Overpass results per place to avoid re-querying on timeline re-renders
@@ -185,7 +191,19 @@ class TimelineRepositoryImpl @Inject constructor(
                 )
             }
 
+            // Visualization filters — applied to the timeline view only (analytics
+            // in observeRange intentionally sees the unfiltered data).
             val reconciled = reconciler.reconcile(timelineSegments, settings.unifyTravelSegments)
+                .filter { seg ->
+                    val isMovement = seg.type != SegmentType.VISIT && seg.type != SegmentType.GAP
+                    when {
+                        seg.type == SegmentType.GAP && !settings.showGapSegments -> false
+                        isMovement && seg.durationMs < settings.minSegmentDurationMs -> false
+                        isMovement && !settings.showLowConfidenceSegments &&
+                            seg.confidence < LOW_CONFIDENCE_THRESHOLD -> false
+                        else -> true
+                    }
+                }
             // Assign 1-indexed sequence numbers to VISIT segments
             var visitCounter = 0
             val reconciledSegments = reconciled.map { seg ->

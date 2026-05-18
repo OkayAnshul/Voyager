@@ -2,6 +2,7 @@ package com.cosmiclaboratory.voyager.data.repository
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
+import com.cosmiclaboratory.voyager.domain.model.SettingsPresets
 import com.cosmiclaboratory.voyager.domain.model.UserSettings
 import com.cosmiclaboratory.voyager.domain.model.enums.*
 import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
@@ -28,8 +29,9 @@ class SettingsRepositoryImpl @Inject constructor(
         val HOME_TIMEZONE = stringPreferencesKey("home_timezone")
         val SLEEP_DETECTION_ENABLED = booleanPreferencesKey("sleep_detection_enabled")
         val STEP_COUNTING_ENABLED = booleanPreferencesKey("step_counting_enabled")
-        val DB_ENCRYPTION_ENABLED = booleanPreferencesKey("db_encryption_enabled")
         val ACTIVE_PRESET = stringPreferencesKey("active_preset")
+        val ACTIVE_JOB = stringPreferencesKey("active_job")
+        val FLAG_SECURE_ENABLED = booleanPreferencesKey("flag_secure_enabled")
         val BATTERY_SAVER_THRESHOLD = intPreferencesKey("battery_saver_threshold")
         val AUTO_GEOCODE = booleanPreferencesKey("auto_geocode_new_places")
         val DAILY_INSIGHTS_ENABLED = booleanPreferencesKey("daily_insights_enabled")
@@ -80,8 +82,10 @@ class SettingsRepositoryImpl @Inject constructor(
         val CLUSTER_MARKERS_AT_ZOOM = intPreferencesKey("cluster_markers_at_zoom")
     }
 
-    override fun observeSettings(): StateFlow<UserSettings> {
-        return dataStore.data.map { prefs ->
+    // Built once and shared — every consumer reads the same StateFlow,
+    // so adding settings consumers never spawns extra DataStore collectors.
+    private val settingsFlow: StateFlow<UserSettings> =
+        dataStore.data.map { prefs ->
             UserSettings(
                 trackingEnabled = prefs[TRACKING_ENABLED] ?: true,
                 samplingPreset = prefs[SAMPLING_PRESET]?.let { try { SamplingPreset.valueOf(it) } catch (_: Exception) { null } } ?: SamplingPreset.BALANCED,
@@ -92,8 +96,8 @@ class SettingsRepositoryImpl @Inject constructor(
                 homeTimeZone = prefs[HOME_TIMEZONE] ?: java.util.TimeZone.getDefault().id,
                 sleepDetectionEnabled = prefs[SLEEP_DETECTION_ENABLED] ?: true,
                 stepCountingEnabled = prefs[STEP_COUNTING_ENABLED] ?: true,
-                databaseEncryptionEnabled = prefs[DB_ENCRYPTION_ENABLED] ?: false,
                 activePreset = prefs[ACTIVE_PRESET] ?: "DAILY_COMMUTER",
+                activeJob = prefs[ACTIVE_JOB] ?: "",
                 batterySaverThresholdPct = prefs[BATTERY_SAVER_THRESHOLD] ?: 20,
                 autoGeocodeNewPlaces = prefs[AUTO_GEOCODE] ?: true,
                 dailyInsightsEnabled = prefs[DAILY_INSIGHTS_ENABLED] ?: true,
@@ -134,6 +138,7 @@ class SettingsRepositoryImpl @Inject constructor(
                 // Privacy & retention
                 stripExactCoordinatesOnExport = prefs[STRIP_COORDINATES_ON_EXPORT] ?: false,
                 exportIncludeRawSamples = prefs[EXPORT_INCLUDE_RAW_SAMPLES] ?: false,
+                flagSecureEnabled = prefs[FLAG_SECURE_ENABLED] ?: false,
                 derivedDataRetentionDays = prefs[DERIVED_DATA_RETENTION_DAYS] ?: 365,
                 correctionFeedbackRetentionDays = prefs[CORRECTION_FEEDBACK_RETENTION_DAYS] ?: 180,
                 autoCleanupEnabled = prefs[AUTO_CLEANUP_ENABLED] ?: true,
@@ -141,7 +146,8 @@ class SettingsRepositoryImpl @Inject constructor(
                 clusterMarkersAtZoom = prefs[CLUSTER_MARKERS_AT_ZOOM] ?: 12
             )
         }.stateIn(scope, SharingStarted.Eagerly, UserSettings())
-    }
+
+    override fun observeSettings(): StateFlow<UserSettings> = settingsFlow
 
     override suspend fun updateSetting(key: String, value: Any): Result<Unit> = runCatching {
         // Normalize camelCase keys from UI to snake_case used by DataStore.
@@ -160,8 +166,8 @@ class SettingsRepositoryImpl @Inject constructor(
                 "home_timezone" -> prefs[HOME_TIMEZONE] = value as String
                 "sleep_detection_enabled" -> prefs[SLEEP_DETECTION_ENABLED] = value as Boolean
                 "step_counting_enabled" -> prefs[STEP_COUNTING_ENABLED] = value as Boolean
-                "database_encryption_enabled", "db_encryption_enabled" -> prefs[DB_ENCRYPTION_ENABLED] = value as Boolean
                 "active_preset" -> prefs[ACTIVE_PRESET] = value as String
+                "active_job" -> prefs[ACTIVE_JOB] = value as String
                 "battery_saver_threshold", "battery_saver_threshold_pct" -> prefs[BATTERY_SAVER_THRESHOLD] = (value as Number).toInt()
                 "auto_geocode_new_places" -> prefs[AUTO_GEOCODE] = value as Boolean
                 "daily_insights_enabled" -> prefs[DAILY_INSIGHTS_ENABLED] = value as Boolean
@@ -203,6 +209,7 @@ class SettingsRepositoryImpl @Inject constructor(
                 // Privacy & retention
                 "strip_exact_coordinates_on_export" -> prefs[STRIP_COORDINATES_ON_EXPORT] = value as Boolean
                 "export_include_raw_samples" -> prefs[EXPORT_INCLUDE_RAW_SAMPLES] = value as Boolean
+                "flag_secure_enabled" -> prefs[FLAG_SECURE_ENABLED] = value as Boolean
                 "derived_data_retention_days" -> prefs[DERIVED_DATA_RETENTION_DAYS] = (value as Number).toInt()
                 "correction_feedback_retention_days" -> prefs[CORRECTION_FEEDBACK_RETENTION_DAYS] = (value as Number).toInt()
                 "auto_cleanup_enabled" -> prefs[AUTO_CLEANUP_ENABLED] = value as Boolean
@@ -213,103 +220,42 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 
     override suspend fun applyPreset(presetId: String): Result<Unit> = runCatching {
+        val preset = SettingsPresets.forId(presetId)
+            ?: throw IllegalArgumentException("Unknown preset: $presetId")
+        // A preset comprehensively reconfigures every tracking-behaviour setting,
+        // so switching presets fully changes how the app captures and detects.
         dataStore.edit { prefs ->
             prefs[ACTIVE_PRESET] = presetId
-            when (presetId) {
-                "BATTERY_SAVER" -> {
-                    prefs[MIN_DWELL_MINUTES] = 10
-                    prefs[PLACE_RADIUS_M] = 120
-                    prefs[BATTERY_SAVER_THRESHOLD] = 30
-                    prefs[STEP_COUNTING_ENABLED] = false
-                    prefs[DAILY_INSIGHTS_ENABLED] = false
-                    prefs[RAW_RETENTION_DAYS] = 30
-                }
-                "DAILY_COMMUTER" -> {
-                    prefs[MIN_DWELL_MINUTES] = 5
-                    prefs[PLACE_RADIUS_M] = 80
-                    prefs[BATTERY_SAVER_THRESHOLD] = 20
-                    prefs[STEP_COUNTING_ENABLED] = true
-                    prefs[DAILY_INSIGHTS_ENABLED] = true
-                    prefs[RAW_RETENTION_DAYS] = 90
-                }
-                "PRECISION_MAX" -> {
-                    prefs[MIN_DWELL_MINUTES] = 2
-                    prefs[PLACE_RADIUS_M] = 40
-                    prefs[BATTERY_SAVER_THRESHOLD] = 10
-                    prefs[STEP_COUNTING_ENABLED] = true
-                    prefs[DAILY_INSIGHTS_ENABLED] = true
-                    prefs[RAW_RETENTION_DAYS] = 365
-                }
-                "PRIVACY_MAX" -> {
-                    prefs[MIN_DWELL_MINUTES] = 5
-                    prefs[PLACE_RADIUS_M] = 100
-                    prefs[DB_ENCRYPTION_ENABLED] = true
-                    prefs[AUTO_GEOCODE] = false
-                    prefs[DAILY_INSIGHTS_ENABLED] = false
-                    prefs[RAW_RETENTION_DAYS] = 30
-                }
-                "CYCLIST_RIDER" -> {
-                    prefs[MIN_DWELL_MINUTES] = 8
-                    prefs[PLACE_RADIUS_M] = 60
-                    prefs[BATTERY_SAVER_THRESHOLD] = 15
-                    prefs[STEP_COUNTING_ENABLED] = false
-                    prefs[DAILY_INSIGHTS_ENABLED] = true
-                    prefs[RAW_RETENTION_DAYS] = 180
-                    prefs[SHOW_ROUTE_POLYLINES] = true
-                    prefs[SHOW_VISIT_MARKERS] = true
-                }
-                "CITY_EXPLORER" -> {
-                    prefs[MIN_DWELL_MINUTES] = 3
-                    prefs[PLACE_RADIUS_M] = 60
-                    prefs[BATTERY_SAVER_THRESHOLD] = 15
-                    prefs[STEP_COUNTING_ENABLED] = true
-                    prefs[DAILY_INSIGHTS_ENABLED] = true
-                    prefs[RAW_RETENTION_DAYS] = 90
-                }
-                "SHORT_TRIPPER" -> {
-                    prefs[MIN_DWELL_MINUTES] = 5
-                    prefs[PLACE_RADIUS_M] = 100
-                    prefs[BATTERY_SAVER_THRESHOLD] = 20
-                    prefs[STEP_COUNTING_ENABLED] = true
-                    prefs[DAILY_INSIGHTS_ENABLED] = true
-                    prefs[RAW_RETENTION_DAYS] = 120
-                }
-                "LONG_TRAVELER" -> {
-                    prefs[MIN_DWELL_MINUTES] = 10
-                    prefs[PLACE_RADIUS_M] = 150
-                    prefs[BATTERY_SAVER_THRESHOLD] = 25
-                    prefs[STEP_COUNTING_ENABLED] = false
-                    prefs[DAILY_INSIGHTS_ENABLED] = true
-                    prefs[WEEKLY_INSIGHTS_ENABLED] = true
-                    prefs[RAW_RETENTION_DAYS] = 365
-                }
-                "ROAD_TRIPPER" -> {
-                    prefs[MIN_DWELL_MINUTES] = 8
-                    prefs[PLACE_RADIUS_M] = 120
-                    prefs[BATTERY_SAVER_THRESHOLD] = 20
-                    prefs[STEP_COUNTING_ENABLED] = false
-                    prefs[DAILY_INSIGHTS_ENABLED] = true
-                    prefs[RAW_RETENTION_DAYS] = 180
-                    prefs[SHOW_ROUTE_POLYLINES] = true
-                }
-                "TRANSIT_COMMUTER" -> {
-                    prefs[MIN_DWELL_MINUTES] = 5
-                    prefs[PLACE_RADIUS_M] = 80
-                    prefs[BATTERY_SAVER_THRESHOLD] = 20
-                    prefs[STEP_COUNTING_ENABLED] = true
-                    prefs[DAILY_INSIGHTS_ENABLED] = true
-                    prefs[RAW_RETENTION_DAYS] = 90
-                }
-                "BACKPACKER" -> {
-                    prefs[MIN_DWELL_MINUTES] = 10
-                    prefs[PLACE_RADIUS_M] = 130
-                    prefs[BATTERY_SAVER_THRESHOLD] = 30
-                    prefs[STEP_COUNTING_ENABLED] = true
-                    prefs[DAILY_INSIGHTS_ENABLED] = false
-                    prefs[WEEKLY_INSIGHTS_ENABLED] = true
-                    prefs[RAW_RETENTION_DAYS] = 365
-                }
-            }
+            prefs[SAMPLING_PRESET] = preset.samplingPreset.name
+            prefs[CUSTOM_SAMPLING_INTERVAL_MS] = preset.customSamplingIntervalMs
+            prefs[MIN_DWELL_MINUTES] = preset.minDwellMinutes
+            prefs[PLACE_RADIUS_M] = preset.placeRadiusM
+            prefs[ENTRY_HYSTERESIS_COUNT] = preset.entryHysteresisCount
+            prefs[EXIT_HYSTERESIS_COUNT] = preset.exitHysteresisCount
+            prefs[EXIT_BUFFER_M] = preset.exitBufferM
+            prefs[AUTO_DISCOVERY_ENABLED] = preset.autoDiscoveryEnabled
+            prefs[DISCOVERY_INTERVAL_HOURS] = preset.discoveryIntervalHours
+            prefs[MOTION_DETECTION_ENABLED] = preset.motionDetectionEnabled
+            prefs[ACTIVITY_RECOGNITION_ENABLED] = preset.activityRecognitionEnabled
+            prefs[STEP_COUNTING_ENABLED] = preset.stepCountingEnabled
+            prefs[AR_CONFIDENCE_THRESHOLD] = preset.arConfidenceThreshold
+            prefs[SPEED_HEURISTIC_ENABLED] = preset.speedHeuristicEnabled
+            prefs[STEP_RATE_FUSION_ENABLED] = preset.stepRateFusionEnabled
+            prefs[SLEEP_DETECTION_ENABLED] = preset.sleepDetectionEnabled
+            prefs[SLEEP_WINDOW_START_HOUR] = preset.sleepWindowStartHour
+            prefs[SLEEP_WINDOW_START_MINUTE] = preset.sleepWindowStartMinute
+            prefs[SLEEP_WINDOW_END_HOUR] = preset.sleepWindowEndHour
+            prefs[SLEEP_WINDOW_END_MINUTE] = preset.sleepWindowEndMinute
+            prefs[SLEEP_SAMPLING_INTERVAL_MS] = preset.sleepSamplingIntervalMs
+            prefs[BATTERY_SAVER_THRESHOLD] = preset.batterySaverThresholdPct
+            prefs[CHARGING_BOOST_ENABLED] = preset.chargingBoostEnabled
+            prefs[DAILY_INSIGHTS_ENABLED] = preset.dailyInsightsEnabled
+            prefs[WEEKLY_INSIGHTS_ENABLED] = preset.weeklyInsightsEnabled
+            prefs[RAW_RETENTION_DAYS] = preset.rawSampleRetentionDays
+            prefs[DERIVED_DATA_RETENTION_DAYS] = preset.derivedDataRetentionDays
+            prefs[AUTO_GEOCODE] = preset.autoGeocodeNewPlaces
+            prefs[SHOW_ROUTE_POLYLINES] = preset.showRoutePolylines
+            prefs[SHOW_VISIT_MARKERS] = preset.showVisitMarkers
         }
     }
 
@@ -344,8 +290,8 @@ class SettingsRepositoryImpl @Inject constructor(
             "home_timezone" -> prefs[HOME_TIMEZONE] = value as String
             "sleep_detection_enabled" -> prefs[SLEEP_DETECTION_ENABLED] = value as Boolean
             "step_counting_enabled" -> prefs[STEP_COUNTING_ENABLED] = value as Boolean
-            "db_encryption_enabled" -> prefs[DB_ENCRYPTION_ENABLED] = value as Boolean
             "active_preset" -> prefs[ACTIVE_PRESET] = value as String
+            "active_job" -> prefs[ACTIVE_JOB] = value as String
             "battery_saver_threshold" -> prefs[BATTERY_SAVER_THRESHOLD] = value as Int
             "auto_geocode_new_places" -> prefs[AUTO_GEOCODE] = value as Boolean
             "daily_insights_enabled" -> prefs[DAILY_INSIGHTS_ENABLED] = value as Boolean

@@ -27,6 +27,7 @@ class WeeklyRollupWorker @AssistedInject constructor(
     private val weeklyRollupDao: WeeklyRollupDao,
     private val healthLogDao: HealthLogDao,
     private val notificationManager: VoyagerNotificationManager,
+    private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository,
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -120,6 +121,8 @@ class WeeklyRollupWorker @AssistedInject constructor(
     }
 
     private fun sendWeeklySummaryNotification(rollup: WeeklyRollupEntity) {
+        // Respect the weekly-insights notification toggle.
+        if (!settingsRepository.observeSettings().value.weeklyInsightsEnabled) return
         if (rollup.activeDayCount == 0) return
         val km = rollup.totalDistanceM / 1000.0
         val body = buildString {

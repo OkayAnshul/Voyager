@@ -31,6 +31,7 @@ class DailyRollupWorker @AssistedInject constructor(
     private val dailyRollupDao: DailyRollupDao,
     private val healthLogDao: HealthLogDao,
     private val notificationManager: VoyagerNotificationManager,
+    private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository,
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -95,6 +96,8 @@ class DailyRollupWorker @AssistedInject constructor(
     private fun computeYesterdayKey(): String = LocalDate.now().minusDays(1).toString()
 
     private fun sendDailySummaryNotification(rollup: DailyRollupEntity) {
+        // Respect the daily-insights notification toggle.
+        if (!settingsRepository.observeSettings().value.dailyInsightsEnabled) return
         if (rollup.uniquePlacesVisited == 0 && rollup.totalDistanceM < 100.0) return
         val km = rollup.totalDistanceM / 1000.0
         val walkMin = rollup.totalWalkMs / 60_000L

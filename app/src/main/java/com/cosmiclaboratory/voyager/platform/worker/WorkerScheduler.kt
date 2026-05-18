@@ -5,6 +5,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.cosmiclaboratory.voyager.domain.model.UserSettings
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
@@ -16,10 +17,11 @@ import java.util.concurrent.TimeUnit
  */
 object WorkerScheduler {
 
-    fun scheduleAll(workManager: WorkManager) {
-        scheduleDiscoverPlaces(workManager)
+    fun scheduleAll(workManager: WorkManager, settings: UserSettings) {
+        scheduleDiscoverPlaces(workManager, settings.discoveryIntervalHours)
         scheduleGeocodeBackfill(workManager)
         scheduleDailyRollup(workManager)
+        scheduleDailyRecap(workManager)
         scheduleWeeklyRollup(workManager)
         scheduleSemanticLabel(workManager)
         scheduleDataRetention(workManager)
@@ -30,14 +32,21 @@ object WorkerScheduler {
         scheduleTrackingHealthCheck(workManager)
     }
 
-    private fun scheduleDiscoverPlaces(workManager: WorkManager) {
-        val request = PeriodicWorkRequestBuilder<DiscoverPlacesWorker>(6, TimeUnit.HOURS)
+    /**
+     * Discovery period is user-configurable ([UserSettings.discoveryIntervalHours]).
+     * Uses UPDATE so a changed interval is applied on the next app launch; the worker
+     * also self-disables at runtime when auto-discovery is turned off.
+     */
+    private fun scheduleDiscoverPlaces(workManager: WorkManager, intervalHours: Int) {
+        val request = PeriodicWorkRequestBuilder<DiscoverPlacesWorker>(
+            intervalHours.coerceIn(1, 24).toLong(), TimeUnit.HOURS
+        )
             .setConstraints(defaultConstraints())
             .build()
 
         workManager.enqueueUniquePeriodicWork(
             DiscoverPlacesWorker.WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.UPDATE,
             request,
         )
     }
@@ -63,6 +72,21 @@ object WorkerScheduler {
 
         workManager.enqueueUniquePeriodicWork(
             DailyRollupWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
+    }
+
+    /** Same-day evening recap notification at ~22:00. */
+    private fun scheduleDailyRecap(workManager: WorkManager) {
+        val initialDelay = computeDelayUntil(hour = 22, minute = 0)
+        val request = PeriodicWorkRequestBuilder<DailyRecapWorker>(24, TimeUnit.HOURS)
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .setConstraints(defaultConstraints())
+            .build()
+
+        workManager.enqueueUniquePeriodicWork(
+            DailyRecapWorker.WORK_NAME,
             ExistingPeriodicWorkPolicy.KEEP,
             request,
         )

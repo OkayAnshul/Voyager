@@ -34,6 +34,23 @@ fun StatisticsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val selectedPeriod by viewModel.selectedPeriod.collectAsState()
+    StatisticsContent(
+        uiState = uiState,
+        selectedPeriod = selectedPeriod,
+        onSelectPeriod = viewModel::selectPeriod
+    )
+}
+
+/**
+ * Stateless insights body — takes state instead of collecting it,
+ * so it can be rendered in @Preview and exercised in tests.
+ */
+@Composable
+fun StatisticsContent(
+    uiState: StatisticsUiState,
+    selectedPeriod: DateRangePeriod,
+    onSelectPeriod: (DateRangePeriod) -> Unit
+) {
     var selectedTab by remember { mutableStateOf(StatisticsTab.OVERVIEW) }
 
     Column(
@@ -70,7 +87,7 @@ fun StatisticsScreen(
         // Period Selector
         PeriodSelectorBar(
             selectedPeriod = selectedPeriod,
-            onPeriodSelected = { viewModel.selectPeriod(it) },
+            onPeriodSelected = onSelectPeriod,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
 

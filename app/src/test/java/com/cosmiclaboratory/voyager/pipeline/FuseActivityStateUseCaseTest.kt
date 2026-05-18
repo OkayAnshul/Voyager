@@ -1,7 +1,12 @@
 package com.cosmiclaboratory.voyager.pipeline
 
+import com.cosmiclaboratory.voyager.domain.model.UserSettings
 import com.cosmiclaboratory.voyager.domain.model.enums.ActivityType
+import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import com.cosmiclaboratory.voyager.domain.usecase.FuseActivityStateUseCase
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -14,7 +19,13 @@ import org.junit.Test
  */
 class FuseActivityStateUseCaseTest {
 
-    private val useCase = FuseActivityStateUseCase()
+    /** Mutable so tests can toggle signal settings and assert fusion reacts. */
+    private val settingsFlow = MutableStateFlow(UserSettings())
+    private val useCase = FuseActivityStateUseCase(
+        mockk<SettingsRepository>().apply {
+            every { observeSettings() } returns settingsFlow
+        }
+    )
 
     // ── Speed heuristic bands ──
 
@@ -120,6 +131,43 @@ class FuseActivityStateUseCaseTest {
     fun `zero speed is STILL`() {
         val result = useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 0.0f, stepRatePerMinute = null)
         assertEquals(ActivityType.STILL, result.activityType)
+    }
+
+    // ── Settings gating ──
+
+    @Test
+    fun `disabling speed heuristic drops speed-only classification`() {
+        // 5 m/s alone classifies as CYCLING when the speed heuristic is on.
+        settingsFlow.value = UserSettings(speedHeuristicEnabled = true)
+        assertEquals(
+            ActivityType.CYCLING,
+            useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 5.0f, stepRatePerMinute = null).activityType
+        )
+        // With the speed heuristic disabled there is no signal left → UNKNOWN.
+        settingsFlow.value = UserSettings(speedHeuristicEnabled = false)
+        assertEquals(
+            ActivityType.UNKNOWN,
+            useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 5.0f, stepRatePerMinute = null).activityType
+        )
+    }
+
+    @Test
+    fun `arConfidenceThreshold gates whether AR contributes`() {
+        // AR says IN_VEHICLE at 60% confidence; speed says WALKING.
+        // Threshold 50 → AR counts and dominates.
+        settingsFlow.value = UserSettings(arConfidenceThreshold = 50)
+        assertEquals(
+            ActivityType.IN_VEHICLE,
+            useCase.fuse(arActivity = ActivityType.IN_VEHICLE, arConfidence = 60f,
+                speedMps = 0.5f, stepRatePerMinute = null).activityType
+        )
+        // Threshold 80 → 60% AR is below it, AR ignored, speed wins → WALKING.
+        settingsFlow.value = UserSettings(arConfidenceThreshold = 80)
+        assertEquals(
+            ActivityType.WALKING,
+            useCase.fuse(arActivity = ActivityType.IN_VEHICLE, arConfidence = 60f,
+                speedMps = 0.5f, stepRatePerMinute = null).activityType
+        )
     }
 
     // ── Confidence values ──

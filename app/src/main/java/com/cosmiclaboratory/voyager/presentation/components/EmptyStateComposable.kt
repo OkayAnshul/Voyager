@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material3.Button
@@ -102,6 +103,60 @@ fun EmptyStateComposable(
 
             Button(onClick = onAction) {
                 Text(text = type.actionLabel)
+            }
+        }
+    }
+}
+
+/**
+ * Generic error state with an optional retry action. Use for failures (network,
+ * compute, parse) — distinct from [EmptyStateComposable], which is for "no data yet".
+ */
+@Composable
+fun ErrorStateComposable(
+    message: String,
+    modifier: Modifier = Modifier,
+    title: String = "Something went wrong",
+    retryLabel: String = "Retry",
+    onRetry: (() -> Unit)? = null
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.ErrorOutline,
+            contentDescription = title,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+
+        if (onRetry != null) {
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Button(onClick = onRetry) {
+                Text(text = retryLabel)
             }
         }
     }

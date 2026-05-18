@@ -63,6 +63,8 @@ class PipelineConsumer @Inject constructor(
     private val geofenceEventHandler: GeofenceEventHandler,
     private val placeLinkingService: PlaceLinkingService,
     private val timelineStateStore: TimelineStateStore,
+    private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository,
+    private val dayBoundaryResolver: com.cosmiclaboratory.voyager.domain.util.DayBoundaryResolver,
     private val logger: ProductionLogger
 ) {
     private val started = AtomicBoolean(false)
@@ -246,15 +248,28 @@ class PipelineConsumer @Inject constructor(
             timelineStateStore.update { it.copy(lastMotionState = samplingMotion.name) }
         }
 
+        // 4b-bis. Battery-saver sampling — stretch intervals when battery is below
+        // the user-configured threshold (and not charging).
+        rawSample.batteryPct?.let { pct ->
+            val threshold = settingsRepository.observeSettings().value.batterySaverThresholdPct
+            val saverActive = pct < threshold && rawSample.isCharging != true
+            adaptiveSamplingPolicy.setBatterySaverMultiplier(if (saverActive) 2.0f else 1.0f)
+        }
+
         // 4c. Dormant mode management
         if (dormantModeManager.onActivityUpdate(motionState.activityType)) {
             timelineStateStore.update { it.copy(lastMotionState = dormantModeManager.currentMotionStateName) }
         }
 
-        val dayKey = Instant.ofEpochMilli(smoothed.capturedAt)
-            .atZone(ZoneId.of(smoothed.localTimeZone))
-            .toLocalDate()
-            .format(dayKeyFormatter)
+        // Day-key assignment honours the user's day-boundary mode (home timezone
+        // vs travel-aware) instead of always using the sample's capture timezone.
+        val daySettings = settingsRepository.observeSettings().value
+        val dayKey = dayBoundaryResolver.resolveDayKey(
+            instantEpochMs = smoothed.capturedAt,
+            mode = daySettings.dayBoundaryMode,
+            homeTimeZone = daySettings.homeTimeZone,
+            sampleTimeZone = smoothed.localTimeZone
+        )
 
         // 5. Displacement-based movement detection
         val prevSample = lastAcceptedSample

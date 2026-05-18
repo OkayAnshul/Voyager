@@ -46,31 +46,35 @@ class DataRetentionWorker @AssistedInject constructor(
     private val pendingPlaceUpdateDao: PendingPlaceUpdateDao,
     private val geocodeCandidateDao: GeocodeCandidateDao,
     private val correctionFeedbackDao: CorrectionFeedbackDao,
+    private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository,
 ) : CoroutineWorker(context, params) {
 
     companion object {
         const val WORK_NAME = "data_retention"
 
-        private const val RAW_RETENTION_DAYS = 90L
-        private const val DERIVED_RETENTION_DAYS = 365L
         private const val OPS_RETENTION_DAYS = 30L
-        private const val FEEDBACK_RETENTION_DAYS = 180L
 
         private const val MS_PER_DAY = 24L * 60 * 60 * 1000
     }
 
     override suspend fun doWork(): Result {
         return try {
+            val settings = settingsRepository.observeSettings().value
+            // Respect the auto-cleanup toggle — when off, retain everything.
+            if (!settings.autoCleanupEnabled) return Result.success()
+
             val now = System.currentTimeMillis()
             var totalDeleted = 0
 
-            // Size-adaptive retention: reduce retention when DB grows too large
+            // Size-adaptive retention: reduce retention when DB grows too large,
+            // but never beyond the user-configured raw retention.
             val dbFile = applicationContext.getDatabasePath("voyager_database")
             val dbSizeMb = dbFile.length() / (1024 * 1024)
+            val rawRetentionDays = settings.rawSampleRetentionDays.toLong()
             val effectiveRawRetention = when {
-                dbSizeMb > 1024 -> 30L   // >1GB: aggressive trim
-                dbSizeMb > 500 -> 60L    // >500MB: moderate trim
-                else -> RAW_RETENTION_DAYS
+                dbSizeMb > 1024 -> minOf(30L, rawRetentionDays)   // >1GB: aggressive trim
+                dbSizeMb > 500 -> minOf(60L, rawRetentionDays)    // >500MB: moderate trim
+                else -> rawRetentionDays
             }
 
             // --- Raw tier ---
@@ -79,8 +83,8 @@ class DataRetentionWorker @AssistedInject constructor(
             totalDeleted += rawActivitySampleDao.deleteOlderThan(rawCutoffMs)
             totalDeleted += rawStepSampleDao.deleteOlderThan(rawCutoffMs)
 
-            // --- Derived tier: 365 days ---
-            val derivedCutoffMs = now - DERIVED_RETENTION_DAYS * MS_PER_DAY
+            // --- Derived tier ---
+            val derivedCutoffMs = now - settings.derivedDataRetentionDays.toLong() * MS_PER_DAY
             val derivedCutoffDayKey = millisToDayKey(derivedCutoffMs)
             totalDeleted += movementSegmentDao.deleteOlderThan(derivedCutoffMs)
             totalDeleted += visitDao.deleteOlderThan(derivedCutoffMs)
@@ -95,8 +99,8 @@ class DataRetentionWorker @AssistedInject constructor(
             totalDeleted += pendingPlaceUpdateDao.deleteConsumedOlderThan(opsCutoffMs)
             totalDeleted += geocodeCandidateDao.deleteExpired(now)
 
-            // --- Feedback tier: 180 days ---
-            val feedbackCutoffMs = now - FEEDBACK_RETENTION_DAYS * MS_PER_DAY
+            // --- Feedback tier ---
+            val feedbackCutoffMs = now - settings.correctionFeedbackRetentionDays.toLong() * MS_PER_DAY
             totalDeleted += correctionFeedbackDao.deleteOlderThan(feedbackCutoffMs)
 
             logCompletion(totalDeleted, dbSizeMb, effectiveRawRetention)

@@ -42,6 +42,12 @@ object VoyagerColors {
     val AccentRed = Color(0xFFEF5350)         // Errors
     val AccentOrange = Color(0xFFFF7043)      // Transit
 
+    // ── Premium ──────────────────────────────────────────────────────────
+    // Reserved for Pro surfaces (paywall, Pro-only features, lock states).
+    // Used sparingly so "Pro" reads as distinct, not just another accent.
+    val Premium = Color(0xFFE6B450)           // Warm gold — Pro tier
+    val PremiumDim = Color(0xFFB8902F)        // Deeper gold for borders/pressed
+
     // ── Transport Mode Colors ────────────────────────────────────────────
     val TransportWalk = Color(0xFF66BB6A)     // WALK/RUN segments
     val TransportDrive = Color(0xFFAB47BC)    // DRIVE segments

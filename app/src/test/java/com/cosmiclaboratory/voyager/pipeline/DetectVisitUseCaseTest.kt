@@ -2,9 +2,12 @@ package com.cosmiclaboratory.voyager.pipeline
 
 import com.cosmiclaboratory.voyager.domain.model.PendingVisitCandidate
 import com.cosmiclaboratory.voyager.domain.model.TrackingRuntimeState
+import com.cosmiclaboratory.voyager.domain.model.UserSettings
+import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import com.cosmiclaboratory.voyager.domain.usecase.DetectVisitUseCase
 import com.cosmiclaboratory.voyager.domain.usecase.VisitDetectionResult
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitEvidenceDao
@@ -33,6 +36,10 @@ class DetectVisitUseCaseTest {
     private val visitDao = mockk<VisitDao>(relaxed = true)
     private val visitEvidenceDao = mockk<VisitEvidenceDao>(relaxed = true)
     private val placeDao = mockk<PlaceDao>(relaxed = true)
+    private val settingsRepository = mockk<SettingsRepository>(relaxed = true)
+
+    /** Mutable so tests can change a setting and assert the detector reacts. */
+    private val settingsFlow = MutableStateFlow(UserSettings())
 
     private lateinit var useCase: DetectVisitUseCase
 
@@ -55,9 +62,12 @@ class DetectVisitUseCaseTest {
 
     @Before
     fun setup() {
+        every { settingsRepository.observeSettings() } returns settingsFlow
         // Real guard wrapping the mocked DAO — stubs on visitDao flow through unchanged.
         val visitWriteGuard = VisitWriteGuard(visitDao)
-        useCase = DetectVisitUseCase(stateStore, visitDao, visitWriteGuard, visitEvidenceDao, placeDao)
+        useCase = DetectVisitUseCase(
+            stateStore, visitDao, visitWriteGuard, visitEvidenceDao, placeDao, settingsRepository
+        )
     }
 
     private fun sample(
@@ -287,6 +297,35 @@ class DetectVisitUseCaseTest {
         val result = useCase.processSample(poorAccuracySample, dayKey)
         assertTrue("Expected Accumulating with wide radius, got $result",
             result is VisitDetectionResult.Accumulating)
+    }
+
+    // ── Scenario 10: minDwellMinutes setting actually controls confirmation ──
+
+    @Test
+    fun `minDwellMinutes setting controls confirmation threshold`() = runTest {
+        val now = System.currentTimeMillis()
+        val candidate = PendingVisitCandidate(
+            centroidLat = baseLat,
+            centroidLng = baseLng,
+            accumulationStartAt = now - 100_000, // 100s of dwell so far
+            sampleCount = 20,
+            maxDistanceFromCentroidM = 10.0,
+            matchedPlaceId = null
+        )
+        coEvery { stateStore.getState() } returns emptyState.copy(pendingVisitCandidate = candidate)
+        coEvery { visitDao.insertIfNotOverlapping(any()) } returns 7L
+
+        // Default 5-minute dwell: 100s is not enough → still accumulating.
+        settingsFlow.value = UserSettings(minDwellMinutes = 5)
+        val notYet = useCase.processSample(sample(lat = baseLat + 0.00001, capturedAt = now), dayKey)
+        assertTrue("Expected Accumulating at 5-min dwell, got $notYet",
+            notYet is VisitDetectionResult.Accumulating)
+
+        // Lower the setting to 1 minute: 100s now exceeds the threshold → confirmed.
+        settingsFlow.value = UserSettings(minDwellMinutes = 1)
+        val confirmed = useCase.processSample(sample(lat = baseLat + 0.00001, capturedAt = now), dayKey)
+        assertTrue("Expected Confirmed at 1-min dwell, got $confirmed",
+            confirmed is VisitDetectionResult.Confirmed)
     }
 
     // ── Scenario 9: Walking user — exit hysteresis prevents premature departure ──

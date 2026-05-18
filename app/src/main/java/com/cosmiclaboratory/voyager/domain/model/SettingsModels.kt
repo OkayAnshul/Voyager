@@ -68,9 +68,11 @@ data class UserSettings(
     val geocodeLanguage: String = "",
 
     // Privacy
-    val databaseEncryptionEnabled: Boolean = false,
     val stripExactCoordinatesOnExport: Boolean = false,
     val exportIncludeRawSamples: Boolean = false,
+    /** When on, sets FLAG_SECURE — hides app content in the recents switcher and
+     *  blocks screenshots. */
+    val flagSecureEnabled: Boolean = false,
 
     // Retention
     val rawSampleRetentionDays: Int = 90,
@@ -95,7 +97,9 @@ data class UserSettings(
     val forceProvider: GeocodingProviderId? = null,
     val exportDiagnostics: Boolean = false,
 
-    // Presets
+    // Presets & persona
     val activePreset: String = "DAILY_COMMUTER",
-    val customBasePreset: String? = null
+    val customBasePreset: String? = null,
+    /** The user's chosen job (Job.id) — blank until the onboarding persona pick. */
+    val activeJob: String = ""
 )

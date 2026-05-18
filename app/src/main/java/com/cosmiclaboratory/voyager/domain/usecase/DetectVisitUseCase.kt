@@ -2,6 +2,7 @@ package com.cosmiclaboratory.voyager.domain.usecase
 
 import com.cosmiclaboratory.voyager.domain.model.PendingVisitCandidate
 import com.cosmiclaboratory.voyager.domain.model.enums.VisitSource
+import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import com.cosmiclaboratory.voyager.domain.util.LocationUtils
 import com.cosmiclaboratory.voyager.pipeline.RawSample
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
@@ -18,28 +19,23 @@ class DetectVisitUseCase @Inject constructor(
     private val visitDao: VisitDao,
     private val visitWriteGuard: VisitWriteGuard,
     private val visitEvidenceDao: VisitEvidenceDao,
-    private val placeDao: PlaceDao
+    private val placeDao: PlaceDao,
+    private val settingsRepository: SettingsRepository
 ) {
     companion object {
-        private const val MIN_SAMPLES_FOR_CANDIDATE = 3
-        private const val MIN_DWELL_MS = 180_000L // 3 minutes (unknown locations)
-        private const val MIN_DWELL_KNOWN_PLACE_MS = 120_000L // 2 minutes (matched/known places)
-        private const val EXIT_HYSTERESIS_THRESHOLD = 3
         /** Max time window to treat a return as continuation of the previous visit.
-         *  30 minutes covers typical 15-30 min PROCESS_DEAD gaps while RETURN_RADIUS_M
-         *  (80m) provides spatial gating to prevent false joins at nearby places. */
+         *  30 minutes covers typical 15-30 min PROCESS_DEAD gaps while the place radius
+         *  provides spatial gating to prevent false joins at nearby places. */
         private const val RETURN_WINDOW_MS = 1_800_000L // 30 minutes
-        /** Max distance from previous visit centroid to treat as a return */
-        private const val RETURN_RADIUS_M = 80.0
         /** Radius expansion factor after visit confirmation (prevents GPS jitter departures) */
         private const val CONFIRMED_RADIUS_MULTIPLIER = 1.2
-        private const val MAX_CONFIRMED_RADIUS = 80.0
-        /** Buffer added to place radius for place-anchored departure resistance */
-        private const val PLACE_ANCHOR_BUFFER_M = 30.0
         /** Grace period before Accumulating suppresses motion state in the pipeline.
          *  During this window, CandidateStarted is returned so transit samples
          *  preserve their fused activity (enables WALK/DRIVE segments between visits). */
         private const val ACCUMULATION_GRACE_MS = 90_000L // 90 seconds
+        /** Known/matched places confirm faster than unknown ones — fraction of the
+         *  user-configured min dwell applied to matched-place candidates. */
+        private const val KNOWN_PLACE_DWELL_FRACTION = 2.0 / 3.0
     }
 
     var consecutiveOutsideSamples = 0
@@ -56,20 +52,29 @@ class DetectVisitUseCase @Inject constructor(
         }
     }
 
-    /** Adaptive radius based on GPS accuracy — tighter in good conditions, wider in poor. */
-    private fun effectiveRadius(accuracyM: Float?): Double = when {
-        accuracyM != null && accuracyM <= 10f -> 40.0
-        accuracyM != null && accuracyM <= 25f -> 60.0
-        else -> 80.0
+    /** Adaptive radius based on GPS accuracy — tighter in good conditions, wider in poor.
+     *  Scales against the user-configured [placeRadiusM] (the wide/poor-accuracy bound). */
+    private fun effectiveRadius(accuracyM: Float?, placeRadiusM: Double): Double = when {
+        accuracyM != null && accuracyM <= 10f -> placeRadiusM * 0.5
+        accuracyM != null && accuracyM <= 25f -> placeRadiusM * 0.75
+        else -> placeRadiusM
     }
 
     suspend fun processSample(sample: RawSample, dayKey: String): VisitDetectionResult {
+        val settings = settingsRepository.observeSettings().value
+        val placeRadiusM = settings.placeRadiusM.toDouble()
+        val minSamplesForCandidate = settings.entryHysteresisCount
+        val exitHysteresisThreshold = settings.exitHysteresisCount
+        val placeAnchorBufferM = settings.exitBufferM.toDouble()
+        val unknownDwellMs = settings.minDwellMinutes * 60_000L
+        val knownPlaceDwellMs = (unknownDwellMs * KNOWN_PLACE_DWELL_FRACTION).toLong()
+
         val state = stateStore.getState()
         val candidate = state.pendingVisitCandidate
-        val baseRadius = effectiveRadius(sample.accuracyM)
+        val baseRadius = effectiveRadius(sample.accuracyM, placeRadiusM)
         // Expand radius after visit confirmation to resist GPS jitter departures
         val radius = if (state.lastConfirmedVisitId != null) {
-            (baseRadius * CONFIRMED_RADIUS_MULTIPLIER).coerceAtMost(MAX_CONFIRMED_RADIUS)
+            (baseRadius * CONFIRMED_RADIUS_MULTIPLIER).coerceAtMost(placeRadiusM)
         } else {
             baseRadius
         }
@@ -104,8 +109,8 @@ class DetectVisitUseCase @Inject constructor(
                 stateStore.setPendingVisitCandidate(updated)
 
                 val dwellMs = sample.capturedAt - candidate.accumulationStartAt
-                val effectiveDwell = if (updated.matchedPlaceId != null) MIN_DWELL_KNOWN_PLACE_MS else MIN_DWELL_MS
-                if (dwellMs >= effectiveDwell && updated.sampleCount >= MIN_SAMPLES_FOR_CANDIDATE) {
+                val effectiveDwell = if (updated.matchedPlaceId != null) knownPlaceDwellMs else unknownDwellMs
+                if (dwellMs >= effectiveDwell && updated.sampleCount >= minSamplesForCandidate) {
                     // Already confirmed this visit? Keep dwelling without re-inserting.
                     if (state.lastConfirmedVisitId != null) {
                         return VisitDetectionResult.Accumulating(updated)
@@ -122,10 +127,10 @@ class DetectVisitUseCase @Inject constructor(
                     VisitDetectionResult.Accumulating(updated)
                 }
             } else {
-                // Outside candidate area — require EXIT_HYSTERESIS_THRESHOLD consecutive
+                // Outside candidate area — require exitHysteresisCount consecutive
                 // outside samples before confirming departure (prevents GPS jitter exits)
                 consecutiveOutsideSamples++
-                if (consecutiveOutsideSamples < EXIT_HYSTERESIS_THRESHOLD) {
+                if (consecutiveOutsideSamples < exitHysteresisThreshold) {
                     // Not enough outside samples yet — keep candidate alive
                     return VisitDetectionResult.Accumulating(candidate)
                 }
@@ -143,7 +148,7 @@ class DetectVisitUseCase @Inject constructor(
                                 sample.lat, sample.lng,
                                 place.centroidLat, place.centroidLng
                             )
-                            if (distToPlace <= place.radiusM + PLACE_ANCHOR_BUFFER_M) {
+                            if (distToPlace <= place.radiusM + placeAnchorBufferM) {
                                 // Still within place boundary — don't depart
                                 consecutiveOutsideSamples = 0
                                 return VisitDetectionResult.Accumulating(candidate)
@@ -193,7 +198,7 @@ class DetectVisitUseCase @Inject constructor(
                     val distFromPrevious = LocationUtils.calculateDistance(
                         depLat, depLng, sample.lat, sample.lng
                     )
-                    if (distFromPrevious <= RETURN_RADIUS_M && depVisitId != null) {
+                    if (distFromPrevious <= placeRadiusM && depVisitId != null) {
                         // Quick return — reopen previous visit as continuation
                         val previousVisit = visitDao.getById(depVisitId)
                         if (previousVisit != null) {

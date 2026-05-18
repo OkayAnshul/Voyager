@@ -48,9 +48,31 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel(),
     onNavigateToInsights: () -> Unit = {},
     onNavigateToExport: () -> Unit = {},
+    onNavigateToSearch: () -> Unit = {},
     onRunPlaceDetection: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    DashboardContent(
+        uiState = uiState,
+        onNavigateToInsights = onNavigateToInsights,
+        onNavigateToExport = onNavigateToExport,
+        onNavigateToSearch = onNavigateToSearch,
+        onRunPlaceDetection = onRunPlaceDetection
+    )
+}
+
+/**
+ * Stateless dashboard body — takes [DashboardUiState] instead of collecting it,
+ * so it can be rendered in @Preview and exercised in tests.
+ */
+@Composable
+fun DashboardContent(
+    uiState: DashboardUiState,
+    onNavigateToInsights: () -> Unit = {},
+    onNavigateToExport: () -> Unit = {},
+    onNavigateToSearch: () -> Unit = {},
+    onRunPlaceDetection: () -> Unit = {}
+) {
     var staggerVisible by remember { mutableStateOf(false) }
     var forceStopBannerDismissed by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(uiState.isLoading) {
@@ -96,6 +118,29 @@ fun DashboardScreen(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // ── SEARCH BAR ───────────────────────────────────────────────────
+        item {
+            VoyagerCard(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onNavigateToSearch
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = VoyagerColors.OnSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Search places, days, trips…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = VoyagerColors.OnSurfaceVariant
+                    )
+                }
+            }
+        }
+
         // ── 0. GREETING HEADER ───────────────────────────────────────────
         item {
             AnimatedVisibility(
@@ -213,43 +258,81 @@ fun DashboardScreen(
             }
         }
 
-        // ── 4. TOP PLACES ────────────────────────────────────────────────
-        if (uiState.topPlaces.isNotEmpty()) {
-            item {
-                SectionHeader(title = "Today's Places")
-            }
-            items(uiState.topPlaces, key = { it.placeId }) { place ->
-                TopPlaceCard(place = place)
-            }
-        }
-
-        // ── 5. INSIGHTS ─────────────────────────────────────────────────
-        if (uiState.insights.isNotEmpty()) {
-            item {
-                SectionHeader(title = "Insights")
-            }
-            items(uiState.insights.take(3), key = { it.title }) { insight ->
-                InsightCard(insight = insight)
+        // ── 4-6. JOB-AWARE SECTIONS (places / insights / anomalies) ──────
+        // The chosen Job decides which of these the user sees first.
+        val placesSection: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
+            if (uiState.topPlaces.isNotEmpty()) {
+                item { SectionHeader(title = "Today's Places") }
+                items(uiState.topPlaces, key = { it.placeId }) { place ->
+                    TopPlaceCard(place = place)
+                }
             }
         }
-
-        // ── 6. ANOMALIES ────────────────────────────────────────────────
-        if (uiState.anomalies.isNotEmpty()) {
-            item {
-                SectionHeader(title = "Anomalies")
+        val insightsSection: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
+            if (uiState.insights.isNotEmpty()) {
+                item { SectionHeader(title = "Insights") }
+                items(uiState.insights.take(3), key = { it.title }) { insight ->
+                    InsightCard(insight = insight)
+                }
             }
-            items(uiState.anomalies.take(3), key = { it.metricKey + it.impactedDay }) { anomaly ->
-                AnomalyAlertCard(
-                    metricKey = anomaly.metricKey,
-                    humanExplanation = anomaly.humanExplanation,
-                    severity = when (anomaly.severity) {
-                        AnomalySeverity.SIGNIFICANT -> "HIGH"
-                        AnomalySeverity.NOTABLE -> "MEDIUM"
-                        AnomalySeverity.MILD -> "LOW"
-                    },
-                    deviationSigma = anomaly.deviationSigma.toDouble(),
-                    impactedDay = anomaly.impactedDay
-                )
+        }
+        val anomaliesSection: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
+            if (uiState.anomalies.isNotEmpty()) {
+                item { SectionHeader(title = "Anomalies") }
+                items(uiState.anomalies.take(3), key = { it.metricKey + it.impactedDay }) { anomaly ->
+                    AnomalyAlertCard(
+                        metricKey = anomaly.metricKey,
+                        humanExplanation = anomaly.humanExplanation,
+                        severity = when (anomaly.severity) {
+                            AnomalySeverity.SIGNIFICANT -> "HIGH"
+                            AnomalySeverity.NOTABLE -> "MEDIUM"
+                            AnomalySeverity.MILD -> "LOW"
+                        },
+                        deviationSigma = anomaly.deviationSigma.toDouble(),
+                        impactedDay = anomaly.impactedDay
+                    )
+                }
+            }
+        }
+        val orderedSections = when (uiState.activeJob) {
+            Job.MEMORY -> listOf(placesSection, insightsSection, anomaliesSection)
+            Job.HABITS -> listOf(insightsSection, placesSection, anomaliesSection)
+            Job.PROOF -> listOf(placesSection, anomaliesSection, insightsSection)
+        }
+        orderedSections.forEach { section -> section() }
+
+        // ── 6b. BATTERY SELF-REPORT ──────────────────────────────────────
+        uiState.batteryPercentPerDay?.let { perDay ->
+            item {
+                VoyagerCard(modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.BatteryChargingFull,
+                            contentDescription = null,
+                            tint = VoyagerColors.AccentGreen,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Battery while tracking",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = VoyagerColors.OnSurface
+                            )
+                            Text(
+                                text = "Your phone's overall drain during tracking hours — not Voyager alone.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = VoyagerColors.OnSurfaceVariant
+                            )
+                        }
+                        Text(
+                            text = "~$perDay%/day",
+                            style = MonoStatMedium,
+                            color = VoyagerColors.OnSurface
+                        )
+                    }
+                }
             }
         }
 

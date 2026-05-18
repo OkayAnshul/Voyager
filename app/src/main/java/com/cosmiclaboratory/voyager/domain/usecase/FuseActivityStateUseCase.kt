@@ -2,6 +2,7 @@ package com.cosmiclaboratory.voyager.domain.usecase
 
 import com.cosmiclaboratory.voyager.domain.model.UserCalibrationProfile
 import com.cosmiclaboratory.voyager.domain.model.enums.ActivityType
+import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import javax.inject.Inject
 
 data class FusedMotionState(
@@ -12,7 +13,9 @@ data class FusedMotionState(
     val stepConfidence: Float
 )
 
-class FuseActivityStateUseCase @Inject constructor() {
+class FuseActivityStateUseCase @Inject constructor(
+    private val settingsRepository: SettingsRepository
+) {
 
     // Hysteresis: keep last speed-derived activity to avoid oscillation at boundaries
     private var lastSpeedActivity: ActivityType? = null
@@ -77,16 +80,29 @@ class FuseActivityStateUseCase @Inject constructor() {
             else -> 0.4f
         }
 
+        // Settings gate which signals contribute to the fused state.
+        val settings = settingsRepository.observeSettings().value
+        // Activity Recognition only counts when enabled AND its confidence clears
+        // the user-configured threshold (arConfidence is on a 0-100 scale).
+        val effectiveArActivity = if (
+            settings.activityRecognitionEnabled &&
+            arConfidence >= settings.arConfidenceThreshold
+        ) arActivity else null
+
         // Weighted fusion
         val candidates = mutableMapOf<ActivityType, Float>()
-        arActivity?.let {
+        effectiveArActivity?.let {
             candidates[it] = (candidates[it] ?: 0f) + arConfidence / 100f * calibration.arWeight
         }
-        speedActivity?.let {
-            candidates[it] = (candidates[it] ?: 0f) + speedConf * calibration.speedHeuristicWeight
+        if (settings.speedHeuristicEnabled) {
+            speedActivity?.let {
+                candidates[it] = (candidates[it] ?: 0f) + speedConf * calibration.speedHeuristicWeight
+            }
         }
-        stepActivity?.let {
-            candidates[it] = (candidates[it] ?: 0f) + stepConf * calibration.stepRateWeight
+        if (settings.stepRateFusionEnabled) {
+            stepActivity?.let {
+                candidates[it] = (candidates[it] ?: 0f) + stepConf * calibration.stepRateWeight
+            }
         }
 
         val best = candidates.maxByOrNull { it.value }

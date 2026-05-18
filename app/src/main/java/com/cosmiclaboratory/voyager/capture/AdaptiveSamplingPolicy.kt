@@ -1,5 +1,8 @@
 package com.cosmiclaboratory.voyager.capture
 
+import com.cosmiclaboratory.voyager.domain.model.UserSettings
+import com.cosmiclaboratory.voyager.domain.model.enums.SamplingPreset
+import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -10,7 +13,9 @@ data class SamplingPolicy(
 )
 
 @Singleton
-class AdaptiveSamplingPolicy @Inject constructor() {
+class AdaptiveSamplingPolicy @Inject constructor(
+    private val settingsRepository: SettingsRepository
+) {
 
     enum class MotionState {
         STILL, WALKING, RUNNING, CYCLING, DRIVING, SLEEP, CHARGING,
@@ -19,23 +24,82 @@ class AdaptiveSamplingPolicy @Inject constructor() {
         DORMANT
     }
 
+    companion object {
+        /** Base sampling intervals at the BALANCED preset. */
+        private const val MOVING_BASE_MS = 10_000L
+        private const val STILL_BASE_MS = 90_000L
+        private const val CHARGING_INTERVAL_MS = 15_000L
+        /** In CUSTOM mode the STILL interval is this multiple of the MOVING interval. */
+        private const val STILL_TO_MOVING_RATIO = 6
+    }
+
     @Volatile
     private var currentMotionState: MotionState = MotionState.STILL
     @Volatile
     private var batterySaverMultiplier: Float = 1.0f
 
+    /**
+     * Sampling keys only on STILL vs MOVING — walk/drive classification is too
+     * speed-dependent to trust, but "stationary vs moving" is robust. All genuine
+     * motion states collapse to one MOVING tier.
+     */
     fun getCurrentPolicy(): SamplingPolicy {
-        val base = when (currentMotionState) {
-            MotionState.STILL -> SamplingPolicy(90_000, 0f, 102) // BALANCED
-            MotionState.WALKING -> SamplingPolicy(12_000, 5f, 100) // HIGH
-            MotionState.RUNNING -> SamplingPolicy(6_000, 5f, 100)
-            MotionState.CYCLING -> SamplingPolicy(10_000, 10f, 100)
-            MotionState.DRIVING -> SamplingPolicy(7_000, 20f, 100)
-            MotionState.SLEEP -> SamplingPolicy(300_000, 0f, 104) // LOW
-            MotionState.CHARGING -> SamplingPolicy(15_000, 5f, 100)
-            MotionState.DORMANT -> SamplingPolicy(0, 0f, -1) // GPS off — significant motion wake
+        val settings = settingsRepository.observeSettings().value
+        // Sleep window overrides motion-based sampling — within the user's sleep
+        // hours, fall back to the low-power sleep interval (DORMANT still wins,
+        // since GPS is fully off in that state).
+        val base = when {
+            currentMotionState == MotionState.DORMANT ->
+                SamplingPolicy(0, 0f, -1) // GPS off — significant motion wake
+            settings.sleepDetectionEnabled && isWithinSleepWindow(settings) ->
+                SamplingPolicy(settings.sleepSamplingIntervalMs, 0f, 104) // LOW
+            currentMotionState == MotionState.SLEEP ->
+                SamplingPolicy(settings.sleepSamplingIntervalMs, 0f, 104)
+            currentMotionState == MotionState.CHARGING ->
+                if (settings.chargingBoostEnabled) SamplingPolicy(CHARGING_INTERVAL_MS, 5f, 100)
+                else stillPolicy(settings)
+            currentMotionState == MotionState.STILL -> stillPolicy(settings)
+            else -> movingPolicy(settings) // WALKING / RUNNING / CYCLING / DRIVING
         }
         return base.copy(intervalMs = (base.intervalMs * batterySaverMultiplier).toLong())
+    }
+
+    /** True when [now] falls inside the configured sleep window
+     *  (handles windows that cross midnight, e.g. 23:00 → 07:00). */
+    internal fun isWithinSleepWindow(
+        s: UserSettings,
+        now: java.time.LocalTime = java.time.LocalTime.now()
+    ): Boolean {
+        val start = java.time.LocalTime.of(s.sleepWindowStartHour, s.sleepWindowStartMinute)
+        val end = java.time.LocalTime.of(s.sleepWindowEndHour, s.sleepWindowEndMinute)
+        return if (start <= end) now >= start && now < end
+        else now >= start || now < end
+    }
+
+    /** Preset scales the base intervals; CUSTOM uses an explicit interval instead. */
+    private fun presetMultiplier(preset: SamplingPreset): Float = when (preset) {
+        SamplingPreset.HIGH_ACCURACY -> 0.5f
+        SamplingPreset.BALANCED -> 1.0f
+        SamplingPreset.BATTERY_SAVER -> 2.0f
+        SamplingPreset.CUSTOM -> 1.0f
+    }
+
+    private fun movingPolicy(s: UserSettings): SamplingPolicy {
+        val interval = if (s.samplingPreset == SamplingPreset.CUSTOM) {
+            s.customSamplingIntervalMs
+        } else {
+            (MOVING_BASE_MS * presetMultiplier(s.samplingPreset)).toLong()
+        }
+        return SamplingPolicy(interval, 10f, 100) // HIGH
+    }
+
+    private fun stillPolicy(s: UserSettings): SamplingPolicy {
+        val interval = if (s.samplingPreset == SamplingPreset.CUSTOM) {
+            s.customSamplingIntervalMs * STILL_TO_MOVING_RATIO
+        } else {
+            (STILL_BASE_MS * presetMultiplier(s.samplingPreset)).toLong()
+        }
+        return SamplingPolicy(interval, 0f, 102) // BALANCED
     }
 
     fun getCurrentMotionState(): MotionState = currentMotionState
