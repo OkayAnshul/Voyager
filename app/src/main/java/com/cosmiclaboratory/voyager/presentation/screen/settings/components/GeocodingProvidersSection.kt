@@ -12,15 +12,35 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.cosmiclaboratory.voyager.domain.model.enums.GeocodingProviderId
 
+/** Geocode-language presets — tag to label. "" = device default. */
+private val LANGUAGE_OPTIONS: List<Pair<String, String>> = listOf(
+    "" to "Device default",
+    "en" to "English",
+    "es" to "Spanish",
+    "fr" to "French",
+    "de" to "German",
+    "it" to "Italian",
+    "pt" to "Portuguese",
+    "hi" to "Hindi",
+    "ja" to "Japanese",
+    "zh" to "Chinese"
+)
+
 /**
- * Settings section for managing geocoding providers.
+ * Settings section for managing geocoding providers, the place-name language, and
+ * the optional privacy coarsening of network geocode queries.
  *
  * Uses GeocodingProviderId enum which has displayName and isFree properties.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GeocodingProvidersSection(
     providerOrder: List<GeocodingProviderId>,
-    onToggleProvider: (id: GeocodingProviderId, enabled: Boolean) -> Unit
+    onToggleProvider: (id: GeocodingProviderId, enabled: Boolean) -> Unit,
+    geocodeLanguage: String,
+    onLanguageChange: (String) -> Unit,
+    coarsenGeocodeQueries: Boolean,
+    onCoarsenChange: (Boolean) -> Unit
 ) {
     val allProviders = GeocodingProviderId.entries
 
@@ -115,11 +135,87 @@ fun GeocodingProvidersSection(
                         modifier = Modifier.size(20.dp)
                     )
                     Text(
-                        text = "Multiple providers improve place name accuracy. Results are cached to avoid repeated network calls.",
+                        text = "Providers are tried in order; the first trustworthy result wins. Results are cached to avoid repeated network calls.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // ── Place-name language ────────────────────────────────────
+            Text(
+                text = "PLACE-NAME LANGUAGE",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            var languageExpanded by remember { mutableStateOf(false) }
+            val currentLabel = LANGUAGE_OPTIONS.firstOrNull { it.first == geocodeLanguage }?.second
+                ?: geocodeLanguage.ifBlank { "Device default" }
+
+            ExposedDropdownMenuBox(
+                expanded = languageExpanded,
+                onExpandedChange = { languageExpanded = it }
+            ) {
+                OutlinedTextField(
+                    value = currentLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Language") },
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageExpanded)
+                    },
+                    modifier = Modifier
+                        .menuAnchor()
+                        .fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = languageExpanded,
+                    onDismissRequest = { languageExpanded = false }
+                ) {
+                    LANGUAGE_OPTIONS.forEach { (tag, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                onLanguageChange(tag)
+                                languageExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // ── Coordinate-coarsening privacy toggle ───────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Approximate coordinates for lookups",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "More private — rounds your location (~110 m) before sending it " +
+                            "to online name services. May reduce naming accuracy.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Switch(checked = coarsenGeocodeQueries, onCheckedChange = onCoarsenChange)
             }
         }
     }

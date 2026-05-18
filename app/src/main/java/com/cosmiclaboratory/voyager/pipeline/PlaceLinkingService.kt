@@ -35,6 +35,7 @@ class PlaceLinkingService @Inject constructor(
     private val movementSegmentDao: MovementSegmentDao,
     private val enrichPlaceUseCase: EnrichPlaceWithDetailsUseCase,
     private val geocodingRepository: GeocodingRepository,
+    private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository,
     private val integrityRepairUseCase: IntegrityRepairUseCase,
     private val placeGeofenceManager: PlaceGeofenceManager,
     private val wifiFingerprinter: WifiFingerprinter,
@@ -169,6 +170,11 @@ class PlaceLinkingService @Inject constructor(
 
         geocodeScope.launch(Dispatchers.IO) {
             try {
+                // Skip the network lookup when auto-geocoding is off — the place
+                // keeps its coordinate name. Respects the user's privacy lever.
+                if (!settingsRepository.observeSettings().value.autoGeocodeNewPlaces) {
+                    return@launch
+                }
                 // Use refreshGeocodeForPlace which stores ALL provider candidates
                 // in geocode_candidates table, not just the best result.
                 geocodingRepository.refreshGeocodeForPlace(placeId)

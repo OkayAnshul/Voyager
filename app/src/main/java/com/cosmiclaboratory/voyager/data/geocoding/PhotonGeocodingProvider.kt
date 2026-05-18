@@ -4,6 +4,7 @@ import android.util.Log
 import com.cosmiclaboratory.voyager.domain.geocoding.GeocodingProvider
 import com.cosmiclaboratory.voyager.domain.model.ProviderGeoResult
 import com.cosmiclaboratory.voyager.domain.model.StructuredAddress
+import com.cosmiclaboratory.voyager.data.api.RateLimiter
 import com.cosmiclaboratory.voyager.domain.model.enums.GeocodingProviderId
 import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,10 @@ class PhotonGeocodingProvider @Inject constructor(
     override val priority = 2
     override val isAvailable: Boolean get() = true
 
+    // Public komoot Photon has no published hard limit — throttle conservatively
+    // (matching Nominatim) so the shared instance is not hammered.
+    private val rateLimiter = RateLimiter(minIntervalMs = 1000L)
+
     private suspend fun getBaseUrl(): String = try {
         settingsRepository.observeSettings().value.photonServerUrl
     } catch (e: Exception) {
@@ -39,10 +44,19 @@ class PhotonGeocodingProvider @Inject constructor(
         DEFAULT_BASE_URL
     }
 
+    /** `&lang=` fragment from the user's geocode-language setting, or "". */
+    private fun languageParam(): String {
+        val lang = try {
+            settingsRepository.observeSettings().value.geocodeLanguage
+        } catch (_: Exception) { "" }
+        return if (lang.isNotBlank()) "&lang=$lang" else ""
+    }
+
     override suspend fun reverseGeocode(lat: Double, lng: Double): Result<ProviderGeoResult> {
         return withContext(Dispatchers.IO) {
             try {
-                val url = "${getBaseUrl()}/reverse?lat=$lat&lon=$lng&limit=1"
+                rateLimiter.acquire()
+                val url = "${getBaseUrl()}/reverse?lat=$lat&lon=$lng&limit=1${languageParam()}"
                 val request = Request.Builder()
                     .url(url)
                     .header("User-Agent", USER_AGENT)
@@ -71,7 +85,8 @@ class PhotonGeocodingProvider @Inject constructor(
     override suspend fun forwardGeocode(query: String): Result<List<ProviderGeoResult>> {
         return withContext(Dispatchers.IO) {
             try {
-                val url = "${getBaseUrl()}/api?q=${java.net.URLEncoder.encode(query, "UTF-8")}&limit=5"
+                rateLimiter.acquire()
+                val url = "${getBaseUrl()}/api?q=${java.net.URLEncoder.encode(query, "UTF-8")}&limit=5${languageParam()}"
                 val request = Request.Builder()
                     .url(url)
                     .header("User-Agent", USER_AGENT)

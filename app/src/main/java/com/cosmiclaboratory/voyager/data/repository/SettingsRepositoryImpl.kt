@@ -40,6 +40,9 @@ class SettingsRepositoryImpl @Inject constructor(
         val SHOW_ROUTE_POLYLINES = booleanPreferencesKey("show_route_polylines")
         val SHOW_VISIT_MARKERS = booleanPreferencesKey("show_visit_markers")
         val PHOTON_SERVER_URL = stringPreferencesKey("photon_server_url")
+        val PROVIDER_ORDER = stringPreferencesKey("geocoding_provider_order")
+        val GEOCODE_LANGUAGE = stringPreferencesKey("geocode_language")
+        val COARSEN_GEOCODE_QUERIES = booleanPreferencesKey("coarsen_geocode_queries")
         // Additional keys for settings that are configurable from UI
         val CUSTOM_SAMPLING_INTERVAL_MS = longPreferencesKey("custom_sampling_interval_ms")
         val AR_CONFIDENCE_THRESHOLD = intPreferencesKey("ar_confidence_threshold")
@@ -106,6 +109,13 @@ class SettingsRepositoryImpl @Inject constructor(
                 showRoutePolylines = prefs[SHOW_ROUTE_POLYLINES] ?: true,
                 showVisitMarkers = prefs[SHOW_VISIT_MARKERS] ?: true,
                 photonServerUrl = prefs[PHOTON_SERVER_URL] ?: "https://photon.komoot.io",
+                providerOrder = prefs[PROVIDER_ORDER]
+                    ?.split(",")
+                    ?.mapNotNull { runCatching { GeocodingProviderId.valueOf(it.trim()) }.getOrNull() }
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: UserSettings().providerOrder,
+                geocodeLanguage = prefs[GEOCODE_LANGUAGE] ?: "",
+                coarsenGeocodeQueries = prefs[COARSEN_GEOCODE_QUERIES] ?: false,
                 arConfidenceThreshold = prefs[AR_CONFIDENCE_THRESHOLD] ?: 50,
                 speedHeuristicEnabled = prefs[SPEED_HEURISTIC_ENABLED] ?: true,
                 stepRateFusionEnabled = prefs[STEP_RATE_FUSION_ENABLED] ?: true,
@@ -176,6 +186,13 @@ class SettingsRepositoryImpl @Inject constructor(
                 "show_route_polylines" -> prefs[SHOW_ROUTE_POLYLINES] = value as Boolean
                 "show_visit_markers" -> prefs[SHOW_VISIT_MARKERS] = value as Boolean
                 "photon_server_url" -> prefs[PHOTON_SERVER_URL] = value as String
+                "provider_order" -> (value as? List<*>)?.let { list ->
+                    prefs[PROVIDER_ORDER] = list
+                        .filterIsInstance<GeocodingProviderId>()
+                        .joinToString(",") { it.name }
+                }
+                "geocode_language" -> prefs[GEOCODE_LANGUAGE] = value as String
+                "coarsen_geocode_queries" -> prefs[COARSEN_GEOCODE_QUERIES] = value as Boolean
                 // New keys wired from UI
                 "ar_confidence_threshold" -> prefs[AR_CONFIDENCE_THRESHOLD] = (value as Number).toInt()
                 "speed_heuristic_enabled" -> prefs[SPEED_HEURISTIC_ENABLED] = value as Boolean

@@ -40,8 +40,9 @@ class DiscoverPlacesWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
+        val settings = settingsRepository.observeSettings().value
         // Respect the user's auto-discovery toggle — skip entirely when disabled.
-        if (!settingsRepository.observeSettings().value.autoDiscoveryEnabled) {
+        if (!settings.autoDiscoveryEnabled) {
             logCompletion("Auto-discovery disabled in settings — skipped")
             return Result.success()
         }
@@ -72,10 +73,13 @@ class DiscoverPlacesWorker @AssistedInject constructor(
                         assignVisitToPlace(point.visitId, nearbyPlace.placeId)
                     }
                 } else {
-                    // Reverse geocode to get a name for the new place
-                    val displayName = try {
-                        enrichPlaceUseCase(centroidLat, centroidLng)
-                    } catch (_: Exception) { null }
+                    // Reverse geocode to get a name for the new place — skipped when
+                    // auto-geocoding is off (place keeps its coordinate name).
+                    val displayName = if (settings.autoGeocodeNewPlaces) {
+                        try {
+                            enrichPlaceUseCase(centroidLat, centroidLng)
+                        } catch (_: Exception) { null }
+                    } else null
 
                     val placeId = placeDao.insert(
                         PlaceEntity(

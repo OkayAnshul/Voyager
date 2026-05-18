@@ -34,15 +34,26 @@ class AndroidGeocodingProvider @Inject constructor(
 
             val structured = StructuredAddress(
                 street = address.streetName,
+                houseNumber = address.houseNumber,
                 city = address.locality,
+                state = address.state,
                 neighborhood = address.subLocality,
                 postalCode = address.postalCode,
                 country = address.countryCode
             )
 
+            // Prefix a genuine landmark name when the Geocoder gave one and the
+            // formatted address doesn't already include it.
+            val hint = address.landmarkHint
+            val displayName = if (hint != null && !address.formattedAddress.contains(hint, ignoreCase = true)) {
+                "$hint, ${address.formattedAddress}"
+            } else {
+                address.formattedAddress
+            }
+
             Result.success(
                 ProviderGeoResult(
-                    displayName = address.formattedAddress,
+                    displayName = displayName,
                     structuredParts = structured,
                     confidence = 0.85f
                 )

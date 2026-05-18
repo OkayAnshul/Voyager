@@ -4,6 +4,7 @@ import android.content.Context
 import android.location.Address
 import android.location.Geocoder
 import android.util.Log
+import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,13 +28,22 @@ import javax.inject.Singleton
  */
 @Singleton
 class AndroidGeocoderService @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val settingsRepository: SettingsRepository
 ) : GeocodingService {
 
-    private val geocoder: Geocoder? = if (Geocoder.isPresent()) {
-        Geocoder(context, Locale.getDefault())
-    } else {
-        null
+    /**
+     * Builds a [Geocoder] for the user's geocode-language setting (device default
+     * when unset). Cheap to construct, so it is done per call to honour live
+     * language changes.
+     */
+    private fun geocoderForCurrentLanguage(): Geocoder? {
+        if (!Geocoder.isPresent()) return null
+        val tag = try {
+            settingsRepository.observeSettings().value.geocodeLanguage
+        } catch (_: Exception) { "" }
+        val locale = if (tag.isNotBlank()) Locale.forLanguageTag(tag) else Locale.getDefault()
+        return Geocoder(context, locale)
     }
 
     override suspend fun reverseGeocode(
@@ -41,6 +51,7 @@ class AndroidGeocoderService @Inject constructor(
         longitude: Double
     ): AddressResult? = withContext(Dispatchers.IO) {
         try {
+            val geocoder = geocoderForCurrentLanguage()
             if (geocoder == null) {
                 Log.w(TAG, "Geocoder not present on this device")
                 return@withContext null
@@ -59,10 +70,13 @@ class AndroidGeocoderService @Inject constructor(
             AddressResult(
                 formattedAddress = formatAddress(address),
                 streetName = address.thoroughfare,
+                houseNumber = address.subThoroughfare,
                 locality = address.locality ?: address.subAdminArea,
                 subLocality = address.subLocality,
+                state = address.adminArea,
                 postalCode = address.postalCode,
-                countryCode = address.countryCode
+                countryCode = address.countryCode,
+                landmarkHint = extractLandmarkHint(address)
             )
         } catch (e: Exception) {
             // Coordinates omitted — never write the user's location to logcat.
@@ -80,7 +94,24 @@ class AndroidGeocoderService @Inject constructor(
     }
 
     override suspend fun isAvailable(): Boolean {
-        return geocoder != null
+        return Geocoder.isPresent()
+    }
+
+    /**
+     * Extracts a named landmark from [Address.featureName] / [Address.premises].
+     *
+     * Android frequently sets `featureName` to the bare house number, so the hint is
+     * kept only when it is a real name: non-blank, not purely numeric, and not equal
+     * to the house number. Returns null when there is no genuine landmark name.
+     */
+    private fun extractLandmarkHint(address: Address): String? {
+        val candidate = address.featureName?.takeIf { it.isNotBlank() }
+            ?: address.premises?.takeIf { it.isNotBlank() }
+            ?: return null
+        val isNumeric = candidate.all { it.isDigit() || it == '-' || it == ' ' }
+        if (isNumeric) return null
+        if (candidate.equals(address.subThoroughfare, ignoreCase = true)) return null
+        return candidate
     }
 
     /**

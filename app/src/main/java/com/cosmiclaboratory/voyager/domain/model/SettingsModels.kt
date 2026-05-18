@@ -67,6 +67,8 @@ data class UserSettings(
     val photonServerUrl: String = "https://photon.komoot.io",
     val autoGeocodeNewPlaces: Boolean = true,
     val geocodeLanguage: String = "",
+    /** Opt-in privacy: round coordinates (~110 m) before sending to network geocoders. */
+    val coarsenGeocodeQueries: Boolean = false,
 
     // Privacy
     val stripExactCoordinatesOnExport: Boolean = false,

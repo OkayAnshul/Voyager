@@ -6,6 +6,7 @@ import com.cosmiclaboratory.voyager.domain.geocoding.GeocodingProvider
 import com.cosmiclaboratory.voyager.domain.model.ProviderGeoResult
 import com.cosmiclaboratory.voyager.domain.model.StructuredAddress
 import com.cosmiclaboratory.voyager.domain.model.enums.GeocodingProviderId
+import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -24,7 +25,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class NominatimGeocodingProvider @Inject constructor(
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val settingsRepository: SettingsRepository
 ) : GeocodingProvider {
 
     override val providerId = GeocodingProviderId.NOMINATIM
@@ -33,12 +35,20 @@ class NominatimGeocodingProvider @Inject constructor(
 
     private val rateLimiter = RateLimiter(minIntervalMs = 1000L) // 1 req/sec for OSM compliance
 
+    /** `&accept-language=` fragment from the user's geocode-language setting, or "". */
+    private fun languageParam(): String {
+        val lang = try {
+            settingsRepository.observeSettings().value.geocodeLanguage
+        } catch (_: Exception) { "" }
+        return if (lang.isNotBlank()) "&accept-language=$lang" else ""
+    }
+
     override suspend fun reverseGeocode(lat: Double, lng: Double): Result<ProviderGeoResult> {
         return withContext(Dispatchers.IO) {
             try {
                 rateLimiter.acquire()
 
-                val url = "$BASE_URL/reverse?format=json&lat=$lat&lon=$lng&addressdetails=1"
+                val url = "$BASE_URL/reverse?format=json&lat=$lat&lon=$lng&addressdetails=1${languageParam()}"
                 val request = Request.Builder()
                     .url(url)
                     .header("User-Agent", USER_AGENT)
@@ -68,7 +78,7 @@ class NominatimGeocodingProvider @Inject constructor(
                 rateLimiter.acquire()
 
                 val encoded = java.net.URLEncoder.encode(query, "UTF-8")
-                val url = "$BASE_URL/search?format=json&q=$encoded&addressdetails=1&limit=5"
+                val url = "$BASE_URL/search?format=json&q=$encoded&addressdetails=1&limit=5${languageParam()}"
                 val request = Request.Builder()
                     .url(url)
                     .header("User-Agent", USER_AGENT)

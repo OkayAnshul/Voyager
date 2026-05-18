@@ -1,8 +1,6 @@
 package com.cosmiclaboratory.voyager.di
 
 import android.content.Context
-import com.cosmiclaboratory.voyager.data.api.AndroidGeocoderService
-import com.cosmiclaboratory.voyager.data.api.NominatimGeocodingService
 import com.cosmiclaboratory.voyager.data.api.OverpassApiService
 import com.cosmiclaboratory.voyager.data.api.OverpassApiServiceImpl
 import com.cosmiclaboratory.voyager.data.api.RateLimiter
@@ -42,27 +40,7 @@ object NetworkModule {
             .build()
     }
 
-    /**
-     * Provides Android Geocoder service (FREE, no API key)
-     */
-    @Provides
-    @Singleton
-    fun provideAndroidGeocoderService(
-        @ApplicationContext context: Context
-    ): AndroidGeocoderService {
-        return AndroidGeocoderService(context)
-    }
-
-    /**
-     * Provides Nominatim geocoding service (FREE OSM, rate limited)
-     */
-    @Provides
-    @Singleton
-    fun provideNominatimGeocodingService(
-        okHttpClient: OkHttpClient
-    ): NominatimGeocodingService {
-        return NominatimGeocodingService(okHttpClient)
-    }
+    // AndroidGeocoderService is provided via its @Inject constructor.
 
     /**
      * Provides Ktor HttpClient for Overpass API

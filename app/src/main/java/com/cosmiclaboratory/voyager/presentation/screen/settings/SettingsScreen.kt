@@ -783,7 +783,11 @@ private fun DetectionTabContent(
                         currentOrder.remove(id)
                     }
                     viewModel.updateSetting("providerOrder", currentOrder)
-                }
+                },
+                geocodeLanguage = uiState.settings.geocodeLanguage,
+                onLanguageChange = { viewModel.updateSetting("geocodeLanguage", it) },
+                coarsenGeocodeQueries = uiState.settings.coarsenGeocodeQueries,
+                onCoarsenChange = { viewModel.updateSetting("coarsenGeocodeQueries", it) }
             )
         }
 

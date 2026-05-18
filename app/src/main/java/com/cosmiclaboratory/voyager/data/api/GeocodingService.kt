@@ -34,10 +34,13 @@ interface GeocodingService {
 data class AddressResult(
     val formattedAddress: String,
     val streetName: String? = null,
+    val houseNumber: String? = null,      // Street number (Address.subThoroughfare)
     val locality: String? = null,         // City/town
     val subLocality: String? = null,      // Neighborhood/area
+    val state: String? = null,            // State/province (Address.adminArea)
     val postalCode: String? = null,
-    val countryCode: String? = null
+    val countryCode: String? = null,
+    val landmarkHint: String? = null      // Named feature/premises, when not just a house number
 )
 
 /**
