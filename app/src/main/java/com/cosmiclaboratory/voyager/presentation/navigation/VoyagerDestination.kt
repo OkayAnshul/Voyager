@@ -47,6 +47,7 @@ sealed class VoyagerDestination(
     object Feedback : VoyagerDestination("feedback", "Send feedback", Icons.Filled.Send)
     object Reliability : VoyagerDestination("reliability", "Reliability", Icons.Filled.HealthAndSafety)
     object Mileage : VoyagerDestination("mileage", "Mileage log", Icons.Filled.DirectionsCar)
+    object Paywall : VoyagerDestination("paywall", "Voyager Pro", Icons.Filled.WorkspacePremium)
 
     companion object {
         /** Bottom nav: 4 tabs only. Settings is push-nav from top bar gear. */
