@@ -467,6 +467,9 @@ fun VoyagerApp(
                     onNavigateToSearch = {
                         navController.navigate(VoyagerDestination.Search.route)
                     },
+                    onNavigateToDayStory = {
+                        navController.navigate(VoyagerDestination.DayStory.createRoute())
+                    },
                     onRunPlaceDetection = {
                         val wm = androidx.work.WorkManager.getInstance(context.applicationContext)
                         val request = androidx.work.OneTimeWorkRequestBuilder<com.cosmiclaboratory.voyager.platform.worker.DiscoverPlacesWorker>()
@@ -492,6 +495,9 @@ fun VoyagerApp(
                     },
                     onShowOnMap = { segmentId ->
                         navController.navigateToTab(VoyagerDestination.Map.route)
+                    },
+                    onNavigateToDayStory = { dayKey ->
+                        navController.navigate(VoyagerDestination.DayStory.createRoute(dayKey))
                     }
                 )
             }
@@ -541,6 +547,20 @@ fun VoyagerApp(
             }
             composable(VoyagerDestination.Mileage.route) {
                 com.cosmiclaboratory.voyager.presentation.screen.mileage.MileageScreen(
+                    onNavigateToPaywall = {
+                        navController.navigate(VoyagerDestination.Paywall.route)
+                    }
+                )
+            }
+            composable(
+                route = VoyagerDestination.DayStory.route,
+                arguments = listOf(navArgument("dayKey") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                })
+            ) {
+                com.cosmiclaboratory.voyager.presentation.screen.daystory.DayStoryScreen(
                     onNavigateToPaywall = {
                         navController.navigate(VoyagerDestination.Paywall.route)
                     }

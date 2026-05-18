@@ -49,6 +49,7 @@ fun DashboardScreen(
     onNavigateToInsights: () -> Unit = {},
     onNavigateToExport: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
+    onNavigateToDayStory: () -> Unit = {},
     onRunPlaceDetection: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -57,6 +58,7 @@ fun DashboardScreen(
         onNavigateToInsights = onNavigateToInsights,
         onNavigateToExport = onNavigateToExport,
         onNavigateToSearch = onNavigateToSearch,
+        onNavigateToDayStory = onNavigateToDayStory,
         onRunPlaceDetection = onRunPlaceDetection
     )
 }
@@ -71,6 +73,7 @@ fun DashboardContent(
     onNavigateToInsights: () -> Unit = {},
     onNavigateToExport: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
+    onNavigateToDayStory: () -> Unit = {},
     onRunPlaceDetection: () -> Unit = {}
 ) {
     var staggerVisible by remember { mutableStateOf(false) }
@@ -368,6 +371,14 @@ fun DashboardContent(
                     Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Export", style = MaterialTheme.typography.labelSmall)
+                }
+                VoyagerOutlinedButton(
+                    onClick = onNavigateToDayStory,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Photos", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }

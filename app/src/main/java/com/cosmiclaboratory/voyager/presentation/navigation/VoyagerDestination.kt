@@ -49,6 +49,14 @@ sealed class VoyagerDestination(
     object Mileage : VoyagerDestination("mileage", "Mileage log", Icons.Filled.DirectionsCar)
     object Paywall : VoyagerDestination("paywall", "Voyager Pro", Icons.Filled.WorkspacePremium)
 
+    /** Photo Day Story — optional `dayKey` arg deep-links from the Timeline day header. */
+    object DayStory : VoyagerDestination(
+        "day_story?dayKey={dayKey}", "Photo Day Story", Icons.Filled.PhotoLibrary
+    ) {
+        fun createRoute(dayKey: String? = null): String =
+            if (dayKey.isNullOrBlank()) "day_story" else "day_story?dayKey=$dayKey"
+    }
+
     companion object {
         /** Bottom nav: 4 tabs only. Settings is push-nav from top bar gear. */
         val bottomNavItems get() = listOf(Home, Map, Timeline, Insights)

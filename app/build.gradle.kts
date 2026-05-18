@@ -196,6 +196,10 @@ dependencies {
     // JSON
     implementation(libs.kotlinx.serialization.json)
 
+    // Photos — MediaStore image loading + EXIF (Photo Day Story)
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
+
     // Testing
     testImplementation("androidx.room:room-testing:2.6.1")
     testImplementation(libs.junit)

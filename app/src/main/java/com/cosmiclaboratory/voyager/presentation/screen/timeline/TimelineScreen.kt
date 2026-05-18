@@ -40,7 +40,8 @@ fun TimelineScreen(
     viewModel: TimelineViewModel = hiltViewModel(),
     onSegmentClick: (Long) -> Unit = {},
     onPlaceClick: (Long) -> Unit = {},
-    onShowOnMap: (segmentId: Long) -> Unit = {}
+    onShowOnMap: (segmentId: Long) -> Unit = {},
+    onNavigateToDayStory: (dayKey: String) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     TimelineContent(
@@ -48,7 +49,8 @@ fun TimelineScreen(
         onIntent = viewModel::onIntent,
         onSegmentClick = onSegmentClick,
         onPlaceClick = onPlaceClick,
-        onShowOnMap = onShowOnMap
+        onShowOnMap = onShowOnMap,
+        onNavigateToDayStory = onNavigateToDayStory
     )
 }
 
@@ -62,7 +64,8 @@ fun TimelineContent(
     onIntent: (TimelineIntent) -> Unit,
     onSegmentClick: (Long) -> Unit = {},
     onPlaceClick: (Long) -> Unit = {},
-    onShowOnMap: (segmentId: Long) -> Unit = {}
+    onShowOnMap: (segmentId: Long) -> Unit = {},
+    onNavigateToDayStory: (dayKey: String) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -75,7 +78,19 @@ fun TimelineContent(
             onPrevious = { onIntent(TimelineIntent.NavigatePrevious) },
             onNext = { onIntent(TimelineIntent.NavigateNext) },
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            isToday = uiState.dayKey == java.time.LocalDate.now().toString()
+            isToday = uiState.dayKey == java.time.LocalDate.now().toString(),
+            trailingContent = {
+                IconButton(
+                    onClick = { onNavigateToDayStory(uiState.dayKey) },
+                    enabled = uiState.dayKey.isNotBlank()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PhotoLibrary,
+                        contentDescription = "Photo Day Story",
+                        tint = VoyagerColors.Primary
+                    )
+                }
+            }
         )
 
         // ── Day Summary Bar — fixed above scroll ────────────────────────

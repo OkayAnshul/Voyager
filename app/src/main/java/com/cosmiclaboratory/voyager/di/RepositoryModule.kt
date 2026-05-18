@@ -1,6 +1,8 @@
 package com.cosmiclaboratory.voyager.di
 
+import com.cosmiclaboratory.voyager.data.media.MediaStorePhotoLibrary
 import com.cosmiclaboratory.voyager.data.repository.*
+import com.cosmiclaboratory.voyager.domain.photo.PhotoLibrary
 import com.cosmiclaboratory.voyager.domain.repository.*
 import dagger.Binds
 import dagger.Module
@@ -47,4 +49,7 @@ abstract class RepositoryModule {
 
     @Binds @Singleton
     abstract fun bindCorrectionRepository(impl: CorrectionRepositoryImpl): CorrectionRepository
+
+    @Binds @Singleton
+    abstract fun bindPhotoLibrary(impl: MediaStorePhotoLibrary): PhotoLibrary
 }
