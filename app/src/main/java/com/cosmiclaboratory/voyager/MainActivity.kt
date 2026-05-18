@@ -520,7 +520,11 @@ fun VoyagerApp(
                 com.cosmiclaboratory.voyager.presentation.screen.reliability.ReliabilityScreen()
             }
             composable(VoyagerDestination.Mileage.route) {
-                com.cosmiclaboratory.voyager.presentation.screen.mileage.MileageScreen()
+                com.cosmiclaboratory.voyager.presentation.screen.mileage.MileageScreen(
+                    onNavigateToPaywall = {
+                        navController.navigate(VoyagerDestination.Paywall.route)
+                    }
+                )
             }
             composable(VoyagerDestination.Paywall.route) {
                 com.cosmiclaboratory.voyager.presentation.billing.PaywallScreen(
