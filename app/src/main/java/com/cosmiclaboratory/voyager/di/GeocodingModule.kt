@@ -2,6 +2,7 @@ package com.cosmiclaboratory.voyager.di
 
 import com.cosmiclaboratory.voyager.data.geocoding.AndroidGeocodingProvider
 import com.cosmiclaboratory.voyager.data.geocoding.NominatimGeocodingProvider
+import com.cosmiclaboratory.voyager.data.geocoding.OverpassGeocodingProvider
 import com.cosmiclaboratory.voyager.data.geocoding.PhotonGeocodingProvider
 import com.cosmiclaboratory.voyager.domain.geocoding.GeocodingProvider
 import dagger.Module
@@ -21,10 +22,12 @@ object GeocodingModule {
     @Provides
     @Singleton
     fun provideGeocodingProviders(
+        overpassProvider: OverpassGeocodingProvider,
         androidProvider: AndroidGeocodingProvider,
         photonProvider: PhotonGeocodingProvider,
         nominatimProvider: NominatimGeocodingProvider
     ): List<GeocodingProvider> = listOf(
+        overpassProvider, // priority 0 — real POI names
         androidProvider,  // priority 1
         photonProvider,   // priority 2
         nominatimProvider // priority 3

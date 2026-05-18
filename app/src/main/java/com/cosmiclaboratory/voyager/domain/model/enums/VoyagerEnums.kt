@@ -61,6 +61,7 @@ enum class LicenseClass {
 
 enum class GeocodingProviderId(val displayName: String, val isFree: Boolean) {
     ANDROID_GEOCODER("Android Geocoder", true),
+    OVERPASS("OpenStreetMap POI", true),
     PHOTON("Photon (Komoot)", true),
     NOMINATIM("Nominatim (OSM)", true),
     GOOGLE("Google", false),

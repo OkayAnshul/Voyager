@@ -225,6 +225,7 @@ class GeocodingRepositoryImpl @Inject constructor(
     private fun licenseClassFor(providerId: GeocodingProviderId): LicenseClass {
         return when (providerId) {
             GeocodingProviderId.ANDROID_GEOCODER -> LicenseClass.FREE
+            GeocodingProviderId.OVERPASS -> LicenseClass.ATTRIBUTION
             GeocodingProviderId.PHOTON -> LicenseClass.ATTRIBUTION
             GeocodingProviderId.NOMINATIM -> LicenseClass.ATTRIBUTION
             GeocodingProviderId.GOOGLE -> LicenseClass.PAID

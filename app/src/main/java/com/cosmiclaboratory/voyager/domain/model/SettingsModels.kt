@@ -59,6 +59,7 @@ data class UserSettings(
 
     // Geocoding
     val providerOrder: List<GeocodingProviderId> = listOf(
+        GeocodingProviderId.OVERPASS,
         GeocodingProviderId.ANDROID_GEOCODER,
         GeocodingProviderId.PHOTON,
         GeocodingProviderId.NOMINATIM

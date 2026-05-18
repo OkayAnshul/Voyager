@@ -13,10 +13,12 @@ class GeocodingProviderRegistryImpl @Inject constructor(
     private val nominatimProvider: NominatimGeocodingProvider,
     private val androidGeocoderProvider: AndroidGeocodingProvider,
     private val photonProvider: PhotonGeocodingProvider,
+    private val overpassProvider: OverpassGeocodingProvider,
     private val settingsRepository: SettingsRepository
 ) : GeocodingProviderRegistry {
 
     private val allProviders: List<GeocodingProvider> = listOf(
+        overpassProvider,
         androidGeocoderProvider,
         nominatimProvider,
         photonProvider
@@ -27,7 +29,12 @@ class GeocodingProviderRegistryImpl @Inject constructor(
             settingsRepository.observeSettings().value.providerOrder.toSet()
         } catch (e: Exception) {
             Log.w("GeocodingRegistry", "Failed to read provider order from settings, using defaults", e)
-            setOf(GeocodingProviderId.ANDROID_GEOCODER, GeocodingProviderId.NOMINATIM, GeocodingProviderId.PHOTON)
+            setOf(
+                GeocodingProviderId.OVERPASS,
+                GeocodingProviderId.ANDROID_GEOCODER,
+                GeocodingProviderId.NOMINATIM,
+                GeocodingProviderId.PHOTON
+            )
         }
         return allProviders.filter { it.providerId in providerOrder }
     }
