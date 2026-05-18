@@ -42,6 +42,7 @@ import com.cosmiclaboratory.voyager.presentation.screen.dashboard.DashboardScree
 import com.cosmiclaboratory.voyager.presentation.screen.map.MapScreen
 import com.cosmiclaboratory.voyager.presentation.screen.onboarding.FeatureWalkthroughScreen
 import com.cosmiclaboratory.voyager.presentation.screen.onboarding.PermissionOnboardingScreen
+import com.cosmiclaboratory.voyager.presentation.screen.onboarding.PersonaPickScreen
 import com.cosmiclaboratory.voyager.presentation.screen.onboarding.WalkthroughPreferences
 import com.cosmiclaboratory.voyager.presentation.screen.onboarding.PermissionReminderBanner
 import com.cosmiclaboratory.voyager.presentation.screen.place.PlaceDetailScreen
@@ -65,7 +66,7 @@ import com.cosmiclaboratory.voyager.ui.theme.VoyagerTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
-private enum class AppPhase { SPLASH, ONBOARDING, WALKTHROUGH, MAIN }
+private enum class AppPhase { SPLASH, ONBOARDING, PERSONA, WALKTHROUGH, MAIN }
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -73,6 +74,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var permissionMonitor: PermissionMonitor
     @Inject lateinit var sharedUiState: SharedUiState
     @Inject lateinit var walkthroughPreferences: WalkthroughPreferences
+    @Inject lateinit var settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -107,11 +109,27 @@ class MainActivity : ComponentActivity() {
                     permissionState == PermissionState.NO_LOCATION_WITH_AR
                 val hasSeenWalkthrough by walkthroughPreferences.hasSeen
                     .collectAsState(initial = true)
+                val settings by settingsRepository.observeSettings().collectAsState()
+                val hasChosenPersona = settings.activeJob.isNotBlank()
+
+                // FLAG_SECURE — hides app content in the recents switcher and blocks
+                // screenshots when the user enables it in Privacy settings.
+                LaunchedEffect(settings.flagSecureEnabled) {
+                    if (settings.flagSecureEnabled) {
+                        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                    } else {
+                        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                    }
+                }
+
                 val coroutineScope = rememberCoroutineScope()
                 var phase by remember { mutableStateOf(AppPhase.SPLASH) }
 
-                fun nextAfterPermissions(): AppPhase =
-                    if (!hasSeenWalkthrough) AppPhase.WALKTHROUGH else AppPhase.MAIN
+                fun nextAfterPermissions(): AppPhase = when {
+                    !hasChosenPersona -> AppPhase.PERSONA
+                    !hasSeenWalkthrough -> AppPhase.WALKTHROUGH
+                    else -> AppPhase.MAIN
+                }
 
                 when (phase) {
                     AppPhase.SPLASH -> {
@@ -126,6 +144,11 @@ class MainActivity : ComponentActivity() {
                         PermissionOnboardingScreen(onComplete = {
                             permissionMonitor.refresh()
                             phase = nextAfterPermissions()
+                        })
+                    }
+                    AppPhase.PERSONA -> {
+                        PersonaPickScreen(onComplete = {
+                            phase = if (!hasSeenWalkthrough) AppPhase.WALKTHROUGH else AppPhase.MAIN
                         })
                     }
                     AppPhase.WALKTHROUGH -> {
@@ -425,6 +448,9 @@ fun VoyagerApp(
                     onNavigateToExport = {
                         navController.navigate(VoyagerDestination.Export.route)
                     },
+                    onNavigateToSearch = {
+                        navController.navigate(VoyagerDestination.Search.route)
+                    },
                     onRunPlaceDetection = {
                         val wm = androidx.work.WorkManager.getInstance(context.applicationContext)
                         val request = androidx.work.OneTimeWorkRequestBuilder<com.cosmiclaboratory.voyager.platform.worker.DiscoverPlacesWorker>()
@@ -478,8 +504,20 @@ fun VoyagerApp(
                     },
                     onNavigateToOpenSourceLicenses = {
                         navController.navigate(VoyagerDestination.OpenSourceLicenses.route)
+                    },
+                    onNavigateToReliability = {
+                        navController.navigate(VoyagerDestination.Reliability.route)
+                    },
+                    onNavigateToMileage = {
+                        navController.navigate(VoyagerDestination.Mileage.route)
                     }
                 )
+            }
+            composable(VoyagerDestination.Reliability.route) {
+                com.cosmiclaboratory.voyager.presentation.screen.reliability.ReliabilityScreen()
+            }
+            composable(VoyagerDestination.Mileage.route) {
+                com.cosmiclaboratory.voyager.presentation.screen.mileage.MileageScreen()
             }
             // PlaceReview — push-nav from top bar bell icon
             composable(VoyagerDestination.PlaceReview.route) {

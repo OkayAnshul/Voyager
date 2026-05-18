@@ -21,12 +21,42 @@ internal data class VoyagerJsonExport(
     val coordsStripped: Boolean = false,
     val places: List<PlaceWire>,
     val segments: List<SegmentWire>,
-    val visits: List<VisitWire>
+    val visits: List<VisitWire>,
+    /**
+     * Raw location samples — present only when the user opted into
+     * `exportIncludeRawSamples`. Export-only: the importer restores the derived
+     * graph (places/segments/visits) but not raw samples, which are large and
+     * tied to tracking-session foreign keys that do not survive a round trip.
+     * Defaults to empty so v1 files (which lack the field) still parse.
+     */
+    val rawSamples: List<RawSampleWire> = emptyList()
 ) {
     companion object {
-        const val CURRENT_VERSION = 1
+        /** v2 added [rawSamples]. The field is additive — v1 files import unchanged. */
+        const val CURRENT_VERSION = 2
     }
 }
+
+@Serializable
+internal data class RawSampleWire(
+    val capturedAt: Long,
+    val receivedAt: Long,
+    val lat: Double,
+    val lng: Double,
+    val accuracyM: Float,
+    val verticalAccuracyM: Float? = null,
+    val speedMps: Float? = null,
+    val bearingDeg: Float? = null,
+    val altitudeM: Double? = null,
+    val provider: String,
+    val isMock: Boolean = false,
+    val batteryPct: Int? = null,
+    val isCharging: Boolean = false,
+    val deviceIdleMode: Boolean = false,
+    val permissionSnapshot: String,
+    val localTimeZone: String,
+    val geohash: String
+)
 
 @Serializable
 internal data class PlaceWire(

@@ -41,9 +41,11 @@ import net.sqlcipher.database.SupportFactory
         WeeklyRollupEntity::class,
         PlaceRollupEntity::class,
         // Feedback
-        CorrectionFeedbackEntity::class
+        CorrectionFeedbackEntity::class,
+        // Mileage
+        MileageClassificationEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -96,6 +98,9 @@ abstract class VoyagerDatabase : RoomDatabase() {
     // Feedback DAOs
     abstract fun correctionFeedbackDao(): CorrectionFeedbackDao
 
+    // Mileage DAOs
+    abstract fun mileageClassificationDao(): MileageClassificationDao
+
     companion object {
         private const val DATABASE_NAME = "voyager_database"
 
@@ -147,8 +152,40 @@ abstract class VoyagerDatabase : RoomDatabase() {
             }
         }
 
-        private val MIGRATIONS: Array<androidx.room.migration.Migration> =
-            arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+        /**
+         * v3 → v4: mileage log + tax PDF (Pro).
+         *
+         * Adds `mileage_classifications` — a sparse, user-authored table tagging drive
+         * segments with a tax purpose (business/personal/medical/charitable). Kept
+         * separate from `movement_segments` so the hot derived-pipeline table is not
+         * bloated by an optional Pro feature. The row is keyed 1:1 to its segment and
+         * CASCADE-deletes with it. Audit columns mirror the v3 syncable tables.
+         *
+         * Purely additive — no existing table or data is touched.
+         */
+        private val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `mileage_classifications` (
+                        `segmentId` INTEGER NOT NULL,
+                        `purpose` TEXT NOT NULL,
+                        `note` TEXT,
+                        `lastModifiedAt` INTEGER NOT NULL DEFAULT 0,
+                        `revision` INTEGER NOT NULL DEFAULT 1,
+                        `deletedAt` INTEGER,
+                        PRIMARY KEY(`segmentId`),
+                        FOREIGN KEY(`segmentId`) REFERENCES `movement_segments`(`segmentId`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        /** Exposed for migration tests. Production code uses it only via [buildDatabase]. */
+        internal val MIGRATIONS: Array<androidx.room.migration.Migration> =
+            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
         /**
          * Sets WAL journal mode and runs an integrity check on every open.
@@ -180,6 +217,23 @@ abstract class VoyagerDatabase : RoomDatabase() {
         }
 
         fun create(context: Context, passphrase: ByteArray?): VoyagerDatabase {
+            val db = buildDatabase(context, passphrase)
+            return try {
+                // Probe the open now so an unreadable/undecryptable DB fails here,
+                // not later on a background coroutine (which would crash the app).
+                db.openHelper.readableDatabase
+                db
+            } catch (e: Exception) {
+                // The on-disk DB cannot be opened — wrong key, corruption, or a file
+                // from an incompatible build. Recreate it fresh rather than crash-loop.
+                Log.e("VoyagerDatabase", "Database unreadable — recreating from scratch", e)
+                runCatching { db.close() }
+                context.applicationContext.deleteDatabase(DATABASE_NAME)
+                buildDatabase(context, passphrase)
+            }
+        }
+
+        private fun buildDatabase(context: Context, passphrase: ByteArray?): VoyagerDatabase {
             val builder = Room.databaseBuilder(
                 context.applicationContext,
                 VoyagerDatabase::class.java,

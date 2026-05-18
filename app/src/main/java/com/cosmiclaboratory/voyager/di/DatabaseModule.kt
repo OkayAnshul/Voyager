@@ -18,9 +18,7 @@ object DatabaseModule {
     /**
      * Voyager's database is always encrypted at rest. The passphrase is derived from a
      * non-extractable Android Keystore key, so the database can only be opened on the
-     * device that created it. Toggling encryption off would require a sqlcipher_export
-     * migration step ([DatabaseEncryptionManager.migrateToUnencrypted]) which is deferred
-     * to a future release — for v1, encryption is mandatory.
+     * device that created it. There is no unencrypted mode.
      */
     @Provides
     @Singleton
@@ -64,4 +62,7 @@ object DatabaseModule {
 
     // Feedback
     @Provides fun provideCorrectionFeedbackDao(db: VoyagerDatabase) = db.correctionFeedbackDao()
+
+    // Mileage
+    @Provides fun provideMileageClassificationDao(db: VoyagerDatabase) = db.mileageClassificationDao()
 }
