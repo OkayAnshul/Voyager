@@ -4,6 +4,7 @@ import android.app.Application
 import android.os.StrictMode
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import com.cosmiclaboratory.voyager.pipeline.PipelineConsumer
 import com.cosmiclaboratory.voyager.platform.crash.LocalCrashHandler
 import com.cosmiclaboratory.voyager.platform.worker.WorkerScheduler
@@ -23,6 +24,7 @@ class VoyagerApplication : Application(), Configuration.Provider {
     @Inject lateinit var timelineStateStore: TimelineStateStore
     @Inject lateinit var pipelineConsumer: PipelineConsumer
     @Inject lateinit var healthLogDao: HealthLogDao
+    @Inject lateinit var settingsRepository: SettingsRepository
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -51,7 +53,10 @@ class VoyagerApplication : Application(), Configuration.Provider {
         pipelineConsumer.start(applicationScope)
 
         // Schedule all periodic workers (place discovery, geocode, rollups, etc.)
-        WorkerScheduler.scheduleAll(androidx.work.WorkManager.getInstance(this))
+        WorkerScheduler.scheduleAll(
+            androidx.work.WorkManager.getInstance(this),
+            settingsRepository.observeSettings().value
+        )
     }
 
     private fun installStrictMode() {

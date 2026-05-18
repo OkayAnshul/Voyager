@@ -28,6 +28,10 @@ data class DashboardUiState(
     val activeVisit: ActiveVisitInfo? = null,
     val pendingCandidate: PendingVisitCandidate? = null,
     val streakDays: Int = 0,
+    /** The user's chosen job — drives dashboard module ordering. */
+    val activeJob: Job = Job.MEMORY,
+    /** Whole-device discharge per day during tracking; null until measured. */
+    val batteryPercentPerDay: Int? = null,
     val isLoading: Boolean = true
 )
 
@@ -38,13 +42,16 @@ class DashboardViewModel @Inject constructor(
     private val trackingRepository: TrackingRepository,
     private val trackingSessionDao: TrackingSessionDao,
     private val timelineRepository: TimelineRepository,
-    private val dailyRollupDao: DailyRollupDao
+    private val dailyRollupDao: DailyRollupDao,
+    private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository,
+    private val batteryUsageReporter: com.cosmiclaboratory.voyager.platform.battery.BatteryUsageReporter
 ) : ViewModel() {
 
     private val todayKey = java.time.LocalDate.now().toString()
     private val todayRange = DateRange(todayKey, todayKey)
 
     private val _streakDays = kotlinx.coroutines.flow.MutableStateFlow(0)
+    private val _batteryPerDay = kotlinx.coroutines.flow.MutableStateFlow<Int?>(null)
 
     init {
         viewModelScope.launch {
@@ -58,6 +65,9 @@ class DashboardViewModel @Inject constructor(
             }
             _streakDays.value = streak
         }
+        viewModelScope.launch {
+            _batteryPerDay.value = batteryUsageReporter.estimate().percentPerDay
+        }
     }
 
     // Observe active session start time — ticks immediately when tracking begins
@@ -68,7 +78,9 @@ class DashboardViewModel @Inject constructor(
         val health: TrackingHealth,
         val sessionStart: Long?,
         val liveTimeline: LiveTimelineState,
-        val streak: Int
+        val streak: Int,
+        val activeJob: Job,
+        val batteryPerDay: Int?
     )
 
     val uiState: StateFlow<DashboardUiState> = combine(
@@ -80,8 +92,16 @@ class DashboardViewModel @Inject constructor(
             trackingRepository.observeHealth(),
             sessionStartedAt,
             timelineRepository.observeLiveTimeline(),
-            _streakDays
-        ) { h, s, live, streak -> InnerState(h, s, live, streak) }
+            combine(_streakDays, _batteryPerDay) { streak, battery -> streak to battery },
+            settingsRepository.observeSettings()
+        ) { h, s, live, streakBattery, settings ->
+            InnerState(
+                health = h, sessionStart = s, liveTimeline = live,
+                streak = streakBattery.first,
+                activeJob = Job.fromId(settings.activeJob) ?: Job.MEMORY,
+                batteryPerDay = streakBattery.second
+            )
+        }
     ) { dashboard, steps, hourly, trackingState, inner ->
         DashboardUiState(
             dailySummary = dashboard.dailySummary,
@@ -97,6 +117,8 @@ class DashboardViewModel @Inject constructor(
             activeVisit = inner.liveTimeline.activeVisit,
             pendingCandidate = inner.liveTimeline.pendingCandidate,
             streakDays = inner.streak,
+            activeJob = inner.activeJob,
+            batteryPercentPerDay = inner.batteryPerDay,
             isLoading = false
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())

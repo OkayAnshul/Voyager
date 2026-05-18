@@ -38,6 +38,7 @@ class LocationCaptureService : Service() {
     @Inject lateinit var activityCapture: ActivityCapture
     @Inject lateinit var stepCapture: StepCapture
     @Inject lateinit var coordinator: TrackingRuntimeCoordinator
+    @Inject lateinit var settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val startMutex = Mutex()
@@ -85,9 +86,11 @@ class LocationCaptureService : Service() {
                 stopSelf()
                 return@withLock
             }
+            // Respect the user's capture toggles — a disabled sensor is not registered.
+            val settings = settingsRepository.observeSettings().value
             locationCapture.start(sessionId)
-            activityCapture.start(sessionId)
-            stepCapture.start(sessionId)
+            if (settings.activityRecognitionEnabled) activityCapture.start(sessionId)
+            if (settings.stepCountingEnabled) stepCapture.start(sessionId)
             capturesStarted.set(true)
         }
     }

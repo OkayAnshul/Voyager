@@ -43,7 +43,27 @@ fun TimelineScreen(
     onShowOnMap: (segmentId: Long) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    TimelineContent(
+        uiState = uiState,
+        onIntent = viewModel::onIntent,
+        onSegmentClick = onSegmentClick,
+        onPlaceClick = onPlaceClick,
+        onShowOnMap = onShowOnMap
+    )
+}
 
+/**
+ * Stateless timeline body — takes state + an intent sink instead of the ViewModel,
+ * so it can be rendered in @Preview and exercised in tests.
+ */
+@Composable
+fun TimelineContent(
+    uiState: TimelineUiState,
+    onIntent: (TimelineIntent) -> Unit,
+    onSegmentClick: (Long) -> Unit = {},
+    onPlaceClick: (Long) -> Unit = {},
+    onShowOnMap: (segmentId: Long) -> Unit = {}
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -52,8 +72,8 @@ fun TimelineScreen(
         // ── Day Navigator ────────────────────────────────────────────────
         DayNavigator(
             dayLabel = formatDayKey(uiState.dayKey),
-            onPrevious = { viewModel.onIntent(TimelineIntent.NavigatePrevious) },
-            onNext = { viewModel.onIntent(TimelineIntent.NavigateNext) },
+            onPrevious = { onIntent(TimelineIntent.NavigatePrevious) },
+            onNext = { onIntent(TimelineIntent.NavigateNext) },
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             isToday = uiState.dayKey == java.time.LocalDate.now().toString()
         )
@@ -99,32 +119,10 @@ fun TimelineScreen(
             }
 
             uiState.errorMessage != null -> {
-                val errorMessage = uiState.errorMessage
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    VoyagerCard {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = VoyagerColors.Error,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Text(
-                                text = errorMessage ?: "",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = VoyagerColors.Error
-                            )
-                        }
-                    }
-                }
+                ErrorStateComposable(
+                    message = uiState.errorMessage ?: "",
+                    modifier = Modifier.fillMaxSize()
+                )
             }
 
             uiState.segments.isEmpty() -> {
@@ -197,9 +195,9 @@ fun TimelineScreen(
                             detectHorizontalDragGestures(
                                 onDragEnd = {
                                     if (swipeDeltaX > 80f) {
-                                        viewModel.onIntent(TimelineIntent.NavigatePrevious)
+                                        onIntent(TimelineIntent.NavigatePrevious)
                                     } else if (swipeDeltaX < -80f) {
-                                        viewModel.onIntent(TimelineIntent.NavigateNext)
+                                        onIntent(TimelineIntent.NavigateNext)
                                     }
                                     swipeDeltaX = 0f
                                 },
@@ -226,14 +224,14 @@ fun TimelineScreen(
                                 segment.place?.let { place -> onPlaceClick(place.placeId) }
                             },
                             onSelectGeocodeName = { placeId, name ->
-                                viewModel.onIntent(TimelineIntent.SelectGeocodeName(placeId, name))
+                                onIntent(TimelineIntent.SelectGeocodeName(placeId, name))
                             },
                             onShowOnMap = { segmentId ->
-                                viewModel.onIntent(TimelineIntent.SelectSegment(segmentId))
+                                onIntent(TimelineIntent.SelectSegment(segmentId))
                                 onShowOnMap(segmentId)
                             },
                             onRenamePlace = { placeId, newName ->
-                                viewModel.onIntent(TimelineIntent.RenamePlace(placeId, newName))
+                                onIntent(TimelineIntent.RenamePlace(placeId, newName))
                             },
                             nextSegmentType = uiState.segments.getOrNull(index + 1)?.type
                         )

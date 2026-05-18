@@ -17,6 +17,7 @@ class DormantModeManager @Inject constructor(
     private val adaptiveSamplingPolicy: AdaptiveSamplingPolicy,
     private val locationCapture: LocationCapture,
     private val significantMotionDetector: SignificantMotionDetector,
+    private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository,
     private val logger: ProductionLogger
 ) {
     private var consecutiveStillCount = 0
@@ -39,7 +40,11 @@ class DormantModeManager @Inject constructor(
     fun onActivityUpdate(activityType: ActivityType): Boolean {
         if (activityType == ActivityType.STILL) {
             consecutiveStillCount++
-            if (consecutiveStillCount >= DORMANT_ENTRY_THRESHOLD && !isDormant) {
+            // DORMANT turns GPS fully off and relies on the significant-motion
+            // sensor to wake. With motion detection disabled there is no wake
+            // path, so never enter DORMANT in that case.
+            val motionWakeEnabled = settingsRepository.observeSettings().value.motionDetectionEnabled
+            if (motionWakeEnabled && consecutiveStillCount >= DORMANT_ENTRY_THRESHOLD && !isDormant) {
                 enterDormant()
                 return true
             }

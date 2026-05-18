@@ -29,6 +29,7 @@ class DiscoverPlacesWorker @AssistedInject constructor(
     private val visitDao: VisitDao,
     private val healthLogDao: HealthLogDao,
     private val enrichPlaceUseCase: com.cosmiclaboratory.voyager.domain.usecase.EnrichPlaceWithDetailsUseCase,
+    private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository,
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -39,6 +40,11 @@ class DiscoverPlacesWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
+        // Respect the user's auto-discovery toggle — skip entirely when disabled.
+        if (!settingsRepository.observeSettings().value.autoDiscoveryEnabled) {
+            logCompletion("Auto-discovery disabled in settings — skipped")
+            return Result.success()
+        }
         return try {
             val unassignedVisits = collectUnassignedVisitCentroids()
             if (unassignedVisits.isEmpty()) {

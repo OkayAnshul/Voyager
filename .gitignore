@@ -20,3 +20,9 @@ local.properties
 keystore.properties
 *.jks
 *.keystore
+
+# Local tooling / agent scratch files
+/.idea/
+/.codex
+/.claude.md
+/prompt.md

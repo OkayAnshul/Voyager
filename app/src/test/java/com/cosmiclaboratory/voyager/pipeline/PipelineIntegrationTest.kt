@@ -1,11 +1,16 @@
 package com.cosmiclaboratory.voyager.pipeline
 
 import com.cosmiclaboratory.voyager.capture.AdaptiveSamplingPolicy
+import com.cosmiclaboratory.voyager.domain.model.UserSettings
 import com.cosmiclaboratory.voyager.domain.model.enums.ActivityType
+import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import com.cosmiclaboratory.voyager.domain.usecase.FuseActivityStateUseCase
 import com.cosmiclaboratory.voyager.domain.usecase.VisitDetectionResult
 import com.cosmiclaboratory.voyager.pipeline.stage.QualityScorer
 import com.cosmiclaboratory.voyager.pipeline.stage.DedupSuppressor
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -21,6 +26,20 @@ import org.junit.Test
  * 4. Dedup doesn't suppress real movement
  */
 class PipelineIntegrationTest {
+
+    /** Builds a sampling policy backed by default settings. */
+    private fun samplingPolicy() = AdaptiveSamplingPolicy(
+        mockk<SettingsRepository>().apply {
+            every { observeSettings() } returns MutableStateFlow(UserSettings())
+        }
+    )
+
+    /** Builds an activity fuser backed by default settings. */
+    private fun fuser() = FuseActivityStateUseCase(
+        mockk<SettingsRepository>().apply {
+            every { observeSettings() } returns MutableStateFlow(UserSettings())
+        }
+    )
 
     // ── effectiveMotionState logic ──
     // Reproduces PipelineConsumer lines 158-164 as a pure function
@@ -114,7 +133,7 @@ class PipelineIntegrationTest {
 
     @Test
     fun `quality filter accepts normal GPS accuracy`() {
-        val scorer = QualityScorer(AdaptiveSamplingPolicy())
+        val scorer = QualityScorer(samplingPolicy())
         val sample = RawSample(
             sampleId = 1, capturedAt = System.currentTimeMillis(),
             lat = 37.7749, lng = -122.4194, accuracyM = 15f,
@@ -127,7 +146,7 @@ class PipelineIntegrationTest {
 
     @Test
     fun `quality filter rejects accuracy over 200m`() {
-        val scorer = QualityScorer(AdaptiveSamplingPolicy())
+        val scorer = QualityScorer(samplingPolicy())
         val sample = RawSample(
             sampleId = 1, capturedAt = System.currentTimeMillis(),
             lat = 37.7749, lng = -122.4194, accuracyM = 250f,
@@ -140,7 +159,7 @@ class PipelineIntegrationTest {
 
     @Test
     fun `quality filter rejects mock locations`() {
-        val scorer = QualityScorer(AdaptiveSamplingPolicy())
+        val scorer = QualityScorer(samplingPolicy())
         val sample = RawSample(
             sampleId = 1, capturedAt = System.currentTimeMillis(),
             lat = 37.7749, lng = -122.4194, accuracyM = 5f,
@@ -223,7 +242,7 @@ class PipelineIntegrationTest {
 
     @Test
     fun `outdoor walking produces WALKING not UNKNOWN`() {
-        val fuser = FuseActivityStateUseCase()
+        val fuser = fuser()
         // Outdoor walking: GPS speed available (~1.0 m/s), no AR, no steps
         val result = fuser.fuse(arActivity = null, arConfidence = 0f, speedMps = 1.0f, stepRatePerMinute = null)
         assertEquals("Walking speed should produce WALKING", ActivityType.WALKING, result.activityType)
@@ -231,14 +250,14 @@ class PipelineIntegrationTest {
 
     @Test
     fun `driving produces IN_VEHICLE not UNKNOWN`() {
-        val fuser = FuseActivityStateUseCase()
+        val fuser = fuser()
         val result = fuser.fuse(arActivity = null, arConfidence = 0f, speedMps = 15.0f, stepRatePerMinute = null)
         assertEquals(ActivityType.IN_VEHICLE, result.activityType)
     }
 
     @Test
     fun `stationary with no sensors produces STILL`() {
-        val fuser = FuseActivityStateUseCase()
+        val fuser = fuser()
         val result = fuser.fuse(arActivity = null, arConfidence = 0f, speedMps = 0.1f, stepRatePerMinute = null)
         assertEquals(ActivityType.STILL, result.activityType)
     }

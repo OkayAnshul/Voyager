@@ -199,11 +199,19 @@ class VoyagerNotificationManager @Inject constructor(
      * Shows a daily or weekly insight notification.
      */
     fun showInsight(title: String, body: String) {
+        // Tapping the recap opens the app.
+        val launchIntent = Intent(context, com.cosmiclaboratory.voyager.MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val contentPending = PendingIntent.getActivity(
+            context, 2, launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val notification = NotificationCompat.Builder(context, CHANNEL_INSIGHTS_DAILY)
             .setContentTitle(title)
             .setContentText(body)
             .setSmallIcon(R.drawable.ic_notification_location)
             .setAutoCancel(true)
+            .setContentIntent(contentPending)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .build()
 

@@ -1,8 +1,5 @@
 package com.cosmiclaboratory.voyager.storage.encryption
 
-import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
-import kotlinx.coroutines.flow.first
-import java.nio.ByteBuffer
 import javax.crypto.Cipher
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -12,17 +9,18 @@ import javax.inject.Singleton
 /**
  * Manages SQLCipher database encryption using a key stored in Android Keystore.
  *
+ * Encryption is always on — there is no unencrypted mode. The passphrase derives
+ * from a non-extractable Keystore key, so the database can only be opened on the
+ * device that created it.
+ *
  * Flow:
  *  1. On first use, [generateOrRetrieveKey] creates an AES-256 key in the Keystore.
  *  2. [getPassphrase] derives a stable passphrase from the key (encrypt a fixed plaintext).
  *  3. The passphrase is passed to SQLCipher's SupportFactory.
- *
- * Migration between encrypted and unencrypted databases is stubbed for v1.
  */
 @Singleton
 class DatabaseEncryptionManager @Inject constructor(
-    private val keystoreManager: KeystoreManager,
-    private val settingsRepository: SettingsRepository
+    private val keystoreManager: KeystoreManager
 ) {
 
     companion object {
@@ -55,35 +53,5 @@ class DatabaseEncryptionManager @Inject constructor(
         val fixedIv = ByteArray(12) { (it + 0x42).toByte() }
         cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(GCM_TAG_LENGTH, fixedIv))
         return cipher.doFinal(PASSPHRASE_DERIVATION_INPUT.toByteArray(Charsets.UTF_8))
-    }
-
-    /**
-     * Checks whether database encryption is enabled in user settings.
-     */
-    suspend fun isEncryptionEnabled(): Boolean {
-        val settings = settingsRepository.observeSettings().first()
-        return settings.databaseEncryptionEnabled
-    }
-
-    /**
-     * Migrates an unencrypted database to an encrypted one.
-     * Stub for v1 — will use SQLCipher's sqlcipher_export in a future release.
-     */
-    suspend fun migrateToEncrypted(): Result<Unit> {
-        // TODO: Implement in v2
-        //  1. Open unencrypted DB
-        //  2. ATTACH encrypted DB with new passphrase
-        //  3. SELECT sqlcipher_export('encrypted')
-        //  4. Swap files
-        return Result.success(Unit)
-    }
-
-    /**
-     * Migrates an encrypted database back to unencrypted.
-     * Stub for v1 — will use SQLCipher's sqlcipher_export in a future release.
-     */
-    suspend fun migrateToUnencrypted(): Result<Unit> {
-        // TODO: Implement in v2
-        return Result.success(Unit)
     }
 }

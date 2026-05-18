@@ -44,8 +44,14 @@ class MapViewModel @Inject constructor(
     private val mapRepository: MapRepository,
     private val timelineRepository: TimelineRepository,
     private val dayNavigation: DayNavigationStateHolder,
-    private val rawLocationSampleDao: RawLocationSampleDao
+    private val rawLocationSampleDao: RawLocationSampleDao,
+    private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 ) : ViewModel() {
+
+    private companion object {
+        /** Route colour used when "colour by transport mode" is disabled. */
+        const val NEUTRAL_ROUTE_COLOR = 0xFF757575.toInt()
+    }
 
     private val _uiState = MutableStateFlow(MapUiState())
     val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
@@ -55,14 +61,21 @@ class MapViewModel @Inject constructor(
         viewModelScope.launch {
             dayNavigation.currentDayKey.flatMapLatest { dayKey ->
                 _uiState.update { it.copy(dayKey = dayKey, isLoading = true) }
-                timelineRepository.observeDay(dayKey).map { day -> dayKey to day }
-            }.collectLatest { (dayKey, day) ->
-                val markers = mapRepository.getVisitMarkers(dayKey)
+                // Combine with settings so visualization toggles apply reactively.
+                combine(
+                    timelineRepository.observeDay(dayKey),
+                    settingsRepository.observeSettings()
+                ) { day, settings -> Triple(dayKey, day, settings) }
+            }.collectLatest { (dayKey, day, settings) ->
+                val markers = if (settings.showVisitMarkers) {
+                    mapRepository.getVisitMarkers(dayKey)
+                } else emptyList()
                 val bounds = mapRepository.getDayBoundingBox(dayKey)
                 // Build routes from reconciled timeline segments (already merged by
                 // TimelineReconciler) so consecutive same-type movements appear as
                 // single continuous polylines instead of fragmented 5-minute chunks.
-                val routes = day.segments.mapNotNull { segment ->
+                val routes = if (!settings.showRoutePolylines) emptyList() else
+                    day.segments.mapNotNull { segment ->
                     segment.route?.let { route ->
                         val points = PolylineEncoder.decode(
                             route.simplifiedPolyline ?: route.encodedPolyline
@@ -72,7 +85,9 @@ class MapViewModel @Inject constructor(
                                 routeId = route.routeId,
                                 segmentId = segment.segmentId,
                                 polylinePoints = points,
-                                color = getTransportColor(route.transportMode),
+                                color = if (settings.routeColorByTransportMode) {
+                                    getTransportColor(route.transportMode)
+                                } else NEUTRAL_ROUTE_COLOR,
                                 transportMode = route.transportMode
                             )
                         } else null
