@@ -1062,7 +1062,8 @@ fun DayNavigator(
     modifier: Modifier = Modifier,
     summaryText: String? = null,
     onTodayClick: (() -> Unit)? = null,
-    isToday: Boolean = false
+    isToday: Boolean = false,
+    trailingContent: (@Composable () -> Unit)? = null
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -1118,6 +1119,8 @@ fun DayNavigator(
                         else VoyagerColors.Primary
                     )
                 }
+
+                trailingContent?.invoke()
             }
             if (summaryText != null) {
                 Text(
