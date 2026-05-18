@@ -38,6 +38,8 @@ import com.cosmiclaboratory.voyager.domain.model.DateRangePeriod
 import com.cosmiclaboratory.voyager.domain.model.MileageEntry
 import com.cosmiclaboratory.voyager.domain.model.MileageLog
 import com.cosmiclaboratory.voyager.domain.model.MileagePurpose
+import com.cosmiclaboratory.voyager.presentation.billing.EntitlementViewModel
+import com.cosmiclaboratory.voyager.presentation.billing.FeatureGate
 import com.cosmiclaboratory.voyager.presentation.theme.CardVariant
 import com.cosmiclaboratory.voyager.presentation.theme.SectionHeader
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerButton
@@ -62,14 +64,16 @@ private val RANGE_OPTIONS: List<DateRangePeriod> = listOf(
 /**
  * Mileage log — classify drives as business/personal/etc. and export a tax PDF.
  *
- * Pro feature: when [com.cosmiclaboratory.voyager.presentation.screen.mileage] is
- * gated (Phase 5 billing), the whole screen will be wrapped in a `FeatureGate`. Until
- * billing ships it is reachable but flagged "Pro" in the UI.
+ * A Pro feature: the screen is wrapped in a [FeatureGate], so free users see a
+ * locked card with an "Unlock Pro" path to the paywall instead of the log.
  */
 @Composable
 fun MileageScreen(
-    viewModel: MileageViewModel = hiltViewModel()
+    onNavigateToPaywall: () -> Unit = {},
+    viewModel: MileageViewModel = hiltViewModel(),
+    entitlementViewModel: EntitlementViewModel = hiltViewModel()
 ) {
+    val isPro by entitlementViewModel.isPro.collectAsStateWithLifecycle()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -84,7 +88,22 @@ fun MileageScreen(
         viewModel.onAction(MileageAction.ConsumeExportResult)
     }
 
-    MileageContent(state = state, onAction = viewModel::onAction)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .drawBehind { drawRect(brush = VoyagerGradients.screenBackground(size.width, size.height)) }
+    ) {
+        FeatureGate(
+            isPro = isPro,
+            featureName = "Mileage log",
+            description = "Classify your drives as business or personal and " +
+                "export an IRS/HMRC-ready tax PDF.",
+            modifier = Modifier.align(Alignment.Center).padding(16.dp),
+            onUnlock = onNavigateToPaywall
+        ) {
+            MileageContent(state = state, onAction = viewModel::onAction)
+        }
+    }
 }
 
 @Composable
