@@ -133,6 +133,66 @@ fun PermissionReminderBanner(
     }
 }
 
+/**
+ * Rough-timeline-mode banner — shown on the Timeline when only "Approximate" location
+ * is granted. Explains that the timeline is grouped at a city scale (rather than
+ * presenting misleadingly precise place pins) and offers a one-tap path to upgrade to
+ * "Precise" location.
+ */
+@Composable
+fun RoughLocationBanner(
+    visible: Boolean,
+    modifier: Modifier = Modifier
+) {
+    if (!visible) return
+
+    val permissionActions = LocalPermissionActions.current
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                VoyagerColors.Warning.copy(alpha = 0.12f),
+                RoundedCornerShape(12.dp)
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Default.LocationSearching,
+            contentDescription = null,
+            tint = VoyagerColors.Warning,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "City-level timeline",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = VoyagerColors.OnSurface
+            )
+            Text(
+                text = "Voyager only has approximate location, so visits are grouped " +
+                    "into broad areas. Switch to Precise location for exact places.",
+                style = MaterialTheme.typography.bodySmall,
+                color = VoyagerColors.OnSurfaceVariant
+            )
+        }
+        TextButton(
+            onClick = { permissionActions.requestLocationPermissions() },
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+        ) {
+            Text(
+                text = "Fix",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = VoyagerColors.Warning
+            )
+        }
+    }
+}
+
 @Composable
 private fun MissingPermissionRow(
     label: String,

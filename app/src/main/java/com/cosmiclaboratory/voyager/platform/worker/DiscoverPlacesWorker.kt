@@ -20,6 +20,11 @@ import kotlin.math.*
 /**
  * Runs HDBSCAN-like density clustering on unassigned visit centroids to discover new places.
  * Uniquely enqueued every 6 hours via WorkerScheduler.
+ *
+ * Rough-timeline mode: when the user granted only "Approximate" location, GPS samples
+ * land on a ~1–3 km grid, so the precise 80 m cluster radius would scatter visits to one
+ * real place across many tiny clusters (or merge unrelated places). In that mode the
+ * worker clusters at a city scale instead, producing honest broad "area" places.
  */
 @HiltWorker
 class DiscoverPlacesWorker @AssistedInject constructor(
@@ -30,14 +35,25 @@ class DiscoverPlacesWorker @AssistedInject constructor(
     private val healthLogDao: HealthLogDao,
     private val enrichPlaceUseCase: com.cosmiclaboratory.voyager.domain.usecase.EnrichPlaceWithDetailsUseCase,
     private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository,
+    private val permissionMonitor: com.cosmiclaboratory.voyager.platform.coordinator.PermissionMonitor,
 ) : CoroutineWorker(context, params) {
 
     companion object {
         const val WORK_NAME = "discover_places"
         private const val CLUSTER_RADIUS_M = 80.0
+        /** City-scale cluster radius used when only approximate location is granted. */
+        private const val ROUGH_CLUSTER_RADIUS_M = 2_000.0
         private const val MIN_CLUSTER_POINTS = 3
         private const val EARTH_RADIUS_M = 6_371_000.0
+
+        /** Cluster radius for the current permission grant — exposed for unit testing. */
+        fun clusterRadiusFor(roughMode: Boolean): Double =
+            if (roughMode) ROUGH_CLUSTER_RADIUS_M else CLUSTER_RADIUS_M
     }
+
+    /** Set once per run from the live permission snapshot; drives the cluster radius. */
+    private var roughMode = false
+    private var activeClusterRadiusM = CLUSTER_RADIUS_M
 
     override suspend fun doWork(): Result {
         val settings = settingsRepository.observeSettings().value
@@ -46,6 +62,8 @@ class DiscoverPlacesWorker @AssistedInject constructor(
             logCompletion("Auto-discovery disabled in settings — skipped")
             return Result.success()
         }
+        roughMode = permissionMonitor.snapshot.value.isApproximateLocationOnly
+        activeClusterRadiusM = clusterRadiusFor(roughMode)
         return try {
             val unassignedVisits = collectUnassignedVisitCentroids()
             if (unassignedVisits.isEmpty()) {
@@ -64,7 +82,7 @@ class DiscoverPlacesWorker @AssistedInject constructor(
                 // Check for existing nearby place to avoid duplicates
                 val existingPlaces = placeDao.getByGeohashPrefix(geohash.take(5))
                 val nearbyPlace = existingPlaces.firstOrNull { existing ->
-                    haversineM(centroidLat, centroidLng, existing.centroidLat, existing.centroidLng) < CLUSTER_RADIUS_M
+                    haversineM(centroidLat, centroidLng, existing.centroidLat, existing.centroidLng) < activeClusterRadiusM
                 }
 
                 if (nearbyPlace != null) {
@@ -81,13 +99,16 @@ class DiscoverPlacesWorker @AssistedInject constructor(
                         } catch (_: Exception) { null }
                     } else null
 
+                    // Coarse-location places are broad areas — never let one look
+                    // as trustworthy as a precisely-clustered place.
+                    val baseConfidence = (cluster.size.coerceAtMost(10) / 10f).coerceAtLeast(0.3f)
                     val placeId = placeDao.insert(
                         PlaceEntity(
                             centroidLat = centroidLat,
                             centroidLng = centroidLng,
                             radiusM = computeClusterRadius(cluster, centroidLat, centroidLng),
                             geohash = geohash,
-                            confidence = (cluster.size.coerceAtMost(10) / 10f).coerceAtLeast(0.3f),
+                            confidence = if (roughMode) baseConfidence.coerceAtMost(0.5f) else baseConfidence,
                             lifecycleStatus = PlaceLifecycleStatus.CANDIDATE.name,
                             createdAt = System.currentTimeMillis(),
                             lastVisitedAt = cluster.maxOf { it.arrivalAt },
@@ -102,7 +123,8 @@ class DiscoverPlacesWorker @AssistedInject constructor(
                 }
             }
 
-            logCompletion("Clustered ${unassignedVisits.size} visits, created $placesCreated new places")
+            val modeNote = if (roughMode) " (rough/city-level mode)" else ""
+            logCompletion("Clustered ${unassignedVisits.size} visits, created $placesCreated new places$modeNote")
             Result.success()
         } catch (e: Exception) {
             logFailure(e)
@@ -190,13 +212,15 @@ class DiscoverPlacesWorker @AssistedInject constructor(
     private fun regionQuery(points: List<VisitCentroid>, idx: Int): List<Int> {
         val center = points[idx]
         return points.indices.filter { i ->
-            i != idx && haversineM(center.lat, center.lng, points[i].lat, points[i].lng) <= CLUSTER_RADIUS_M
+            i != idx && haversineM(center.lat, center.lng, points[i].lat, points[i].lng) <= activeClusterRadiusM
         }
     }
 
     private fun computeClusterRadius(cluster: List<VisitCentroid>, centLat: Double, centLng: Double): Float {
         val maxDist = cluster.maxOfOrNull { haversineM(centLat, centLng, it.lat, it.lng) } ?: 80.0
-        return maxDist.toFloat().coerceIn(30f, 500f)
+        // Rough mode allows a far wider place footprint so coarse visits still match.
+        val upperBound = if (roughMode) 3_000f else 500f
+        return maxDist.toFloat().coerceIn(30f, upperBound)
     }
 
     private fun haversineM(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {

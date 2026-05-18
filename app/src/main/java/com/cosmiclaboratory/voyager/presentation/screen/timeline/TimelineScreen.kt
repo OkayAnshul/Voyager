@@ -72,6 +72,12 @@ fun TimelineContent(
             .fillMaxSize()
             .drawBehind { drawRect(brush = VoyagerGradients.screenBackground(size.width, size.height)) }
     ) {
+        // ── Rough-timeline-mode banner (approximate location only) ──────
+        com.cosmiclaboratory.voyager.presentation.screen.onboarding.RoughLocationBanner(
+            visible = uiState.isRoughMode,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+
         // ── Day Navigator ────────────────────────────────────────────────
         DayNavigator(
             dayLabel = formatDayKey(uiState.dayKey),

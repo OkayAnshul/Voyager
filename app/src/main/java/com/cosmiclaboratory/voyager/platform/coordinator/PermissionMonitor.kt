@@ -24,6 +24,14 @@ data class PermissionSnapshot(
     val isBatteryOptimizationExempt: Boolean = false
 ) {
     val hasAnyLocation get() = hasFineLocation || hasCoarseLocation
+
+    /**
+     * True when the user granted only "Approximate" location (Android 12+ coarse-only).
+     * Samples land on a ~1–3 km grid, so precise place clustering produces nonsense —
+     * this is the trigger for rough-timeline mode (city-level clustering + banner).
+     */
+    val isApproximateLocationOnly get() = hasCoarseLocation && !hasFineLocation
+
     val isComplete get() = hasFineLocation && hasBackgroundLocation && hasActivityRecognition && hasNotifications && isBatteryOptimizationExempt
     val missingCount get() = listOf(
         !hasFineLocation,
