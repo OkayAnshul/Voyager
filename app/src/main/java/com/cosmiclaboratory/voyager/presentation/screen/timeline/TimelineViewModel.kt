@@ -27,7 +27,9 @@ data class TimelineUiState(
     val errorMessage: String? = null,
     val activeVisit: ActiveVisitInfo? = null,
     val pendingCandidate: PendingVisitCandidate? = null,
-    val isTracking: Boolean = false
+    val isTracking: Boolean = false,
+    /** True when only "Approximate" location is granted — drives the city-level banner. */
+    val isRoughMode: Boolean = false
 )
 
 sealed interface TimelineIntent {
@@ -47,7 +49,8 @@ class TimelineViewModel @Inject constructor(
     private val evidenceRepository: EvidenceRepository,
     private val correctionRepository: CorrectionRepository,
     private val placeRepository: PlaceRepository,
-    private val dayNavigation: DayNavigationStateHolder
+    private val dayNavigation: DayNavigationStateHolder,
+    private val permissionMonitor: com.cosmiclaboratory.voyager.platform.coordinator.PermissionMonitor
 ) : ViewModel() {
 
     private val todayKey = java.time.LocalDate.now().toString()
@@ -61,8 +64,9 @@ class TimelineViewModel @Inject constructor(
             }
             combine(
                 timelineRepository.observeDay(dayKey),
-                liveFlow
-            ) { day, live ->
+                liveFlow,
+                permissionMonitor.snapshot
+            ) { day, live, permissions ->
                 // Merge DB segments with the in-progress segment from the Segmenter's
                 // in-memory buffer so the user sees real-time movement data before the
                 // 5-minute periodic flush writes it to the database.
@@ -99,7 +103,8 @@ class TimelineViewModel @Inject constructor(
                     focusedSegmentId = dayNavigation.focusedSegmentId.value,
                     activeVisit = live?.activeVisit,
                     pendingCandidate = live?.pendingCandidate,
-                    isTracking = live?.isTracking ?: false
+                    isTracking = live?.isTracking ?: false,
+                    isRoughMode = permissions.isApproximateLocationOnly
                 )
             }
         }
