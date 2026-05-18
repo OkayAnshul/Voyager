@@ -17,6 +17,8 @@ import com.cosmiclaboratory.voyager.domain.model.EvidenceBlock
 import com.cosmiclaboratory.voyager.domain.model.InferenceExplanation
 import com.cosmiclaboratory.voyager.domain.model.TimelineSegment
 import com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
+import com.cosmiclaboratory.voyager.presentation.billing.EntitlementViewModel
+import com.cosmiclaboratory.voyager.presentation.billing.FeatureGate
 import com.cosmiclaboratory.voyager.presentation.components.*
 import com.cosmiclaboratory.voyager.presentation.theme.*
 import com.cosmiclaboratory.voyager.ui.theme.MonoStatSmall
@@ -30,9 +32,12 @@ import com.cosmiclaboratory.voyager.ui.theme.MonoTimestamp
 @Composable
 fun SegmentDetailSheet(
     onDismiss: () -> Unit,
-    viewModel: SegmentDetailViewModel = hiltViewModel()
+    onNavigateToPaywall: () -> Unit = {},
+    viewModel: SegmentDetailViewModel = hiltViewModel(),
+    entitlementViewModel: EntitlementViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val isPro by entitlementViewModel.isPro.collectAsStateWithLifecycle()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -74,6 +79,8 @@ fun SegmentDetailSheet(
                         segment = segment,
                         evidence = uiState.evidence,
                         explanation = uiState.explanation,
+                        isPro = isPro,
+                        onUnlock = onNavigateToPaywall,
                         onChangeType = { newType ->
                             viewModel.onIntent(SegmentDetailIntent.ChangeType(newType))
                         },
@@ -95,6 +102,8 @@ private fun SegmentDetailContent(
     segment: TimelineSegment,
     evidence: EvidenceBlock?,
     explanation: InferenceExplanation?,
+    isPro: Boolean,
+    onUnlock: () -> Unit,
     onChangeType: (String) -> Unit,
     onSplit: (Long) -> Unit,
     onMerge: (Long) -> Unit
@@ -113,30 +122,28 @@ private fun SegmentDetailContent(
             SegmentHeader(segment)
         }
 
-        // Evidence block
-        if (evidence != null) {
+        // Evidence & inference explanation — a Pro feature, gated behind FeatureGate.
+        if (evidence != null || explanation != null) {
             item {
-                EvidenceSection(evidence)
-            }
-        }
-
-        // Inference explanation
-        if (explanation != null) {
-            item {
-                InferenceSection(explanation)
-            }
-
-            // Counter-evidence
-            if (explanation.counterEvidence.isNotEmpty()) {
-                item {
-                    CounterEvidenceSection(explanation.counterEvidence)
-                }
-            }
-
-            // Source attribution
-            if (explanation.sourceSet.isNotEmpty()) {
-                item {
-                    SourceAttributionSection(explanation.sourceSet)
+                FeatureGate(
+                    isPro = isPro,
+                    featureName = "Evidence",
+                    description = "See why Voyager inferred this segment — metrics, " +
+                        "activity votes, inference explanation and counter-evidence.",
+                    onUnlock = onUnlock
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        evidence?.let { EvidenceSection(it) }
+                        explanation?.let { exp ->
+                            InferenceSection(exp)
+                            if (exp.counterEvidence.isNotEmpty()) {
+                                CounterEvidenceSection(exp.counterEvidence)
+                            }
+                            if (exp.sourceSet.isNotEmpty()) {
+                                SourceAttributionSection(exp.sourceSet)
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -14,6 +14,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cosmiclaboratory.voyager.domain.model.ConfidenceBlock
 import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
+import com.cosmiclaboratory.voyager.presentation.billing.EntitlementViewModel
+import com.cosmiclaboratory.voyager.presentation.billing.FeatureGate
 import com.cosmiclaboratory.voyager.presentation.components.*
 import com.cosmiclaboratory.voyager.presentation.theme.*
 import com.cosmiclaboratory.voyager.storage.database.entity.PlaceEntity
@@ -30,9 +32,12 @@ import java.util.Locale
 fun VisitDetailSheet(
     viewModel: VisitDetailViewModel = hiltViewModel(),
     onDismiss: () -> Unit,
-    onNavigateToPlace: (Long) -> Unit = {}
+    onNavigateToPlace: (Long) -> Unit = {},
+    onNavigateToPaywall: () -> Unit = {},
+    entitlementViewModel: EntitlementViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val isPro by entitlementViewModel.isPro.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     LaunchedEffect(uiState.isDeleted) {
@@ -84,6 +89,8 @@ fun VisitDetailSheet(
                         place = place,
                         evidence = uiState.evidence,
                         confidenceBlock = uiState.confidenceBlock,
+                        isPro = isPro,
+                        onUnlock = onNavigateToPaywall,
                         onIntent = viewModel::onIntent,
                         onNavigateToPlace = onNavigateToPlace
                     )
@@ -101,6 +108,8 @@ private fun VisitDetailContent(
     place: PlaceEntity,
     evidence: VisitEvidenceEntity?,
     confidenceBlock: ConfidenceBlock?,
+    isPro: Boolean,
+    onUnlock: () -> Unit,
     onIntent: (VisitDetailIntent) -> Unit,
     onNavigateToPlace: (Long) -> Unit
 ) {
@@ -155,7 +164,15 @@ private fun VisitDetailContent(
         TimeSection(visit)
         ConfidenceSection(visit, confidenceBlock)
         if (evidence != null) {
-            EvidenceSection(evidence)
+            FeatureGate(
+                isPro = isPro,
+                featureName = "Visit evidence",
+                description = "See the inside/outside sample counts and confirmation " +
+                    "rule behind this visit.",
+                onUnlock = onUnlock
+            ) {
+                EvidenceSection(evidence)
+            }
         }
         ActionRow(
             visit = visit,

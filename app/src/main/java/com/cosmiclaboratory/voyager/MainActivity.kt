@@ -578,7 +578,13 @@ fun VoyagerApp(
                 route = VoyagerDestination.SegmentDetail.route,
                 arguments = listOf(navArgument("segmentId") { type = NavType.LongType })
             ) {
-                SegmentDetailSheet(onDismiss = { navController.popBackStack() })
+                SegmentDetailSheet(
+                    onDismiss = { navController.popBackStack() },
+                    onNavigateToPaywall = {
+                        navController.popBackStack()
+                        navController.navigate(VoyagerDestination.Paywall.route)
+                    }
+                )
             }
             composable(
                 route = VoyagerDestination.VisitDetail.route,
@@ -588,6 +594,10 @@ fun VoyagerApp(
                     onDismiss = { navController.popBackStack() },
                     onNavigateToPlace = { placeId ->
                         navController.navigate(VoyagerDestination.PlaceDetail.createRoute(placeId))
+                    },
+                    onNavigateToPaywall = {
+                        navController.popBackStack()
+                        navController.navigate(VoyagerDestination.Paywall.route)
                     }
                 )
             }
