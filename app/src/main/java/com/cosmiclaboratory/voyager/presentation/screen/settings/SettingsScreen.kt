@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.cosmiclaboratory.voyager.BuildConfig
 import com.cosmiclaboratory.voyager.domain.model.enums.ExportFormat
 import com.cosmiclaboratory.voyager.domain.model.enums.GeocodingProviderId
 import com.cosmiclaboratory.voyager.presentation.components.*
@@ -38,6 +39,16 @@ import dagger.hilt.components.SingletonComponent
 @InstallIn(SingletonComponent::class)
 interface DeveloperModeManagerEntryPoint {
     fun developerModeManager(): DeveloperModeManager
+}
+
+/**
+ * EntryPoint for accessing ProEntitlementManager from Composables — used by the
+ * developer-mode Pro override toggle.
+ */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface ProEntitlementManagerEntryPoint {
+    fun proEntitlementManager(): com.cosmiclaboratory.voyager.domain.billing.ProEntitlementManager
 }
 
 enum class SettingsTab(val title: String) {
@@ -75,8 +86,15 @@ fun SettingsScreen(
         ).developerModeManager()
     }
 
+    val proEntitlementManager = remember {
+        EntryPointAccessors.fromApplication<ProEntitlementManagerEntryPoint>(
+            context.applicationContext
+        ).proEntitlementManager()
+    }
+
     val uiState by viewModel.uiState.collectAsState()
     val isDeveloperMode by developerModeManager.isDeveloperModeEnabled.collectAsState()
+    val proOverrideEnabled by proEntitlementManager.debugProOverride.collectAsState()
 
     var selectedTab by remember { mutableStateOf(SettingsTab.GENERAL) }
     var showClearDataDialog by remember { mutableStateOf(false) }
@@ -163,7 +181,9 @@ fun SettingsScreen(
                 onVersionTapMessage = { versionTapMessage = it },
                 onNavigateToDebugDataInsertion = onNavigateToDebugDataInsertion,
                 onNavigateToDeveloperProfile = onNavigateToDeveloperProfile,
-                onNavigateToPipelineDebug = onNavigateToPipelineDebug
+                onNavigateToPipelineDebug = onNavigateToPipelineDebug,
+                proOverrideEnabled = proOverrideEnabled,
+                onProOverrideChange = proEntitlementManager::setDebugProOverride
             )
         }
     }
@@ -968,7 +988,9 @@ private fun AdvancedTabContent(
     onVersionTapMessage: (String?) -> Unit,
     onNavigateToDebugDataInsertion: () -> Unit,
     onNavigateToDeveloperProfile: () -> Unit,
-    onNavigateToPipelineDebug: () -> Unit = {}
+    onNavigateToPipelineDebug: () -> Unit = {},
+    proOverrideEnabled: Boolean = false,
+    onProOverrideChange: (Boolean) -> Unit = {}
 ) {
     LazyColumn(
         modifier = Modifier
@@ -1145,6 +1167,18 @@ private fun AdvancedTabContent(
                         checked = uiState.settings.exportDiagnostics,
                         onCheckedChange = { viewModel.updateSetting("exportDiagnostics", it) }
                     )
+
+                    // Debug builds only: unlock Pro surfaces without a Play purchase.
+                    if (BuildConfig.DEBUG) {
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        SettingsToggleRow(
+                            title = "Pro override (debug)",
+                            subtitle = "Force Voyager Pro on without a purchase",
+                            checked = proOverrideEnabled,
+                            onCheckedChange = onProOverrideChange
+                        )
+                    }
                 }
             }
 
