@@ -17,6 +17,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.cosmiclaboratory.voyager.domain.model.DateRangePeriod
+import com.cosmiclaboratory.voyager.presentation.billing.EntitlementViewModel
+import com.cosmiclaboratory.voyager.presentation.billing.FeatureGate
 import com.cosmiclaboratory.voyager.presentation.components.*
 import com.cosmiclaboratory.voyager.presentation.theme.*
 import com.cosmiclaboratory.voyager.ui.theme.MonoStatLarge
@@ -30,14 +32,19 @@ import com.cosmiclaboratory.voyager.ui.theme.MonoStatSmall
  */
 @Composable
 fun StatisticsScreen(
-    viewModel: StatisticsViewModel = hiltViewModel()
+    onNavigateToPaywall: () -> Unit = {},
+    viewModel: StatisticsViewModel = hiltViewModel(),
+    entitlementViewModel: EntitlementViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val selectedPeriod by viewModel.selectedPeriod.collectAsState()
+    val isPro by entitlementViewModel.isPro.collectAsState()
     StatisticsContent(
         uiState = uiState,
         selectedPeriod = selectedPeriod,
-        onSelectPeriod = viewModel::selectPeriod
+        onSelectPeriod = viewModel::selectPeriod,
+        isPro = isPro,
+        onUnlock = onNavigateToPaywall
     )
 }
 
@@ -49,7 +56,9 @@ fun StatisticsScreen(
 fun StatisticsContent(
     uiState: StatisticsUiState,
     selectedPeriod: DateRangePeriod,
-    onSelectPeriod: (DateRangePeriod) -> Unit
+    onSelectPeriod: (DateRangePeriod) -> Unit,
+    isPro: Boolean = false,
+    onUnlock: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableStateOf(StatisticsTab.OVERVIEW) }
 
@@ -91,16 +100,47 @@ fun StatisticsContent(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
 
-        // Content based on selected tab
+        // Content based on selected tab. Overview is free; the advanced tabs are Pro.
         when (selectedTab) {
             StatisticsTab.OVERVIEW -> OverviewContent(uiState)
-            StatisticsTab.WEEKLY -> WeeklyComparisonContent(uiState.weeklyComparison, uiState.periodLabel)
-            StatisticsTab.PATTERNS -> PlacePatternSummaryContent(uiState.placePatterns, uiState.periodLabel)
-            StatisticsTab.MOVEMENT -> MovementAnalyticsContent(uiState.movementStats, uiState.periodLabel)
-            StatisticsTab.SOCIAL -> SocialHealthContent(uiState.socialStats, uiState.periodLabel)
-            StatisticsTab.ANOMALIES -> AnomaliesContent(uiState.anomalies, uiState.periodLabel)
+            StatisticsTab.WEEKLY -> ProInsight(isPro, onUnlock) {
+                WeeklyComparisonContent(uiState.weeklyComparison, uiState.periodLabel)
+            }
+            StatisticsTab.PATTERNS -> ProInsight(isPro, onUnlock) {
+                PlacePatternSummaryContent(uiState.placePatterns, uiState.periodLabel)
+            }
+            StatisticsTab.MOVEMENT -> ProInsight(isPro, onUnlock) {
+                MovementAnalyticsContent(uiState.movementStats, uiState.periodLabel)
+            }
+            StatisticsTab.SOCIAL -> ProInsight(isPro, onUnlock) {
+                SocialHealthContent(uiState.socialStats, uiState.periodLabel)
+            }
+            StatisticsTab.ANOMALIES -> ProInsight(isPro, onUnlock) {
+                AnomaliesContent(uiState.anomalies, uiState.periodLabel)
+            }
         }
     }
+}
+
+/**
+ * Gates an advanced Insights tab. Pro users see the tab content unchanged; free
+ * users get the locked card with a path to the paywall.
+ */
+@Composable
+private fun ProInsight(
+    isPro: Boolean,
+    onUnlock: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    FeatureGate(
+        isPro = isPro,
+        featureName = "Advanced insights",
+        description = "Weekly comparisons, place patterns, movement analytics and " +
+            "anomaly detection across your timeline.",
+        modifier = Modifier.padding(16.dp),
+        onUnlock = onUnlock,
+        content = content
+    )
 }
 
 enum class StatisticsTab(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
