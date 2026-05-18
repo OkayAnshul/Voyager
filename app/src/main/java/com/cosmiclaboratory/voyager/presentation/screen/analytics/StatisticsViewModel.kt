@@ -23,7 +23,8 @@ class StatisticsViewModel @Inject constructor(
     private val analyticsRepository: AnalyticsRepository,
     private val placeRepository: com.cosmiclaboratory.voyager.domain.repository.PlaceRepository,
     private val visitDao: com.cosmiclaboratory.voyager.storage.database.dao.VisitDao,
-    private val placeDao: com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
+    private val placeDao: com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao,
+    private val buildCarbonFootprint: com.cosmiclaboratory.voyager.domain.usecase.BuildCarbonFootprintUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StatisticsUiState())
@@ -104,12 +105,18 @@ class StatisticsViewModel @Inject constructor(
                 // Social health stats
                 val socialStats = computeSocialStats(range)
 
+                // Carbon footprint — per-transport-mode CO2 estimate
+                val carbonFootprint = withTimeoutOrNull(5_000) {
+                    buildCarbonFootprint.build(range, period.displayLabel())
+                }
+
                 _uiState.value = StatisticsUiState(
                     weeklyComparison = weeklyData,
                     placePatterns = placePatterns,
                     movementStats = movementStats,
                     socialStats = socialStats,
                     anomalies = anomalies,
+                    carbonFootprint = carbonFootprint,
                     periodLabel = period.displayLabel(),
                     isLoading = false
                 )
@@ -216,6 +223,7 @@ data class StatisticsUiState(
     val movementStats: MovementStats? = null,
     val socialStats: SocialHealthStats? = null,
     val anomalies: List<Anomaly> = emptyList(),
+    val carbonFootprint: com.cosmiclaboratory.voyager.domain.model.CarbonFootprint? = null,
     val periodLabel: String = "This Week",
     val isLoading: Boolean = false,
     val errorMessage: String? = null

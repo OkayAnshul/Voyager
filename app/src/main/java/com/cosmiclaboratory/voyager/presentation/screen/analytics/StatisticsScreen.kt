@@ -26,9 +26,9 @@ import com.cosmiclaboratory.voyager.ui.theme.MonoStatMedium
 import com.cosmiclaboratory.voyager.ui.theme.MonoStatSmall
 
 /**
- * Insights Screen — unified 6-tab analytics hub.
+ * Insights Screen — unified 7-tab analytics hub.
  *
- * Tabs: Overview, Weekly, Patterns, Movement, Social, Anomalies
+ * Tabs: Overview, Weekly, Patterns, Movement, Social, Carbon, Anomalies
  */
 @Composable
 fun StatisticsScreen(
@@ -115,6 +115,9 @@ fun StatisticsContent(
             StatisticsTab.SOCIAL -> ProInsight(isPro, onUnlock) {
                 SocialHealthContent(uiState.socialStats, uiState.periodLabel)
             }
+            StatisticsTab.CARBON -> ProInsight(isPro, onUnlock) {
+                CarbonFootprintContent(uiState.carbonFootprint, uiState.periodLabel)
+            }
             StatisticsTab.ANOMALIES -> ProInsight(isPro, onUnlock) {
                 AnomaliesContent(uiState.anomalies, uiState.periodLabel)
             }
@@ -149,6 +152,7 @@ enum class StatisticsTab(val title: String, val icon: androidx.compose.ui.graphi
     PATTERNS("Patterns", Icons.Default.Place),
     MOVEMENT("Movement", Icons.AutoMirrored.Filled.TrendingUp),
     SOCIAL("Social", Icons.Default.Person),
+    CARBON("Carbon", Icons.Default.Eco),
     ANOMALIES("Anomalies", Icons.Default.Warning)
 }
 
@@ -561,6 +565,123 @@ private fun MovementAnalyticsContent(movementStats: MovementStats?, periodLabel:
             }
         }
     }
+}
+
+// ============================================================================
+// CARBON TAB — per-transport-mode CO2 estimate
+// ============================================================================
+
+@Composable
+private fun CarbonFootprintContent(
+    footprint: com.cosmiclaboratory.voyager.domain.model.CarbonFootprint?,
+    periodLabel: String
+) {
+    if (footprint == null || footprint.isEmpty) {
+        EmptyStateMessage(
+            icon = Icons.Default.Eco,
+            title = "No Travel Yet",
+            message = "Your carbon footprint appears once you've recorded some trips."
+        )
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item { SectionHeader(title = "Carbon — $periodLabel") }
+
+        item {
+            VoyagerCard(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Estimated CO₂e",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "%.1f kg".format(footprint.totalKgCo2),
+                    style = MonoStatLarge,
+                    color = VoyagerColors.Primary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "≈ %.0f tree-years to absorb · %.0f km travelled".format(
+                        footprint.treeYearEquivalent, footprint.totalDistanceKm
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VoyagerColors.OnSurfaceVariant
+                )
+            }
+        }
+
+        item { SectionHeader(title = "By transport mode") }
+
+        items(footprint.modes) { mode ->
+            CarbonModeRow(mode, footprint.totalKgCo2)
+        }
+
+        item {
+            Text(
+                text = "Estimates use average emission factors per kilometre — " +
+                    "a guide, not an audit.",
+                style = MaterialTheme.typography.bodySmall,
+                color = VoyagerColors.OnSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun CarbonModeRow(
+    mode: com.cosmiclaboratory.voyager.domain.model.ModeFootprint,
+    totalKg: Double
+) {
+    val zeroEmission = mode.kgCo2 == 0.0
+    val accent = if (zeroEmission) VoyagerColors.Success else VoyagerColors.Warning
+    VoyagerCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = carbonModeLabel(mode.mode),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = if (zeroEmission) "0 kg" else "%.1f kg".format(mode.kgCo2),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = accent
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        LinearProgressIndicator(
+            progress = { mode.shareOf(totalKg).coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth(),
+            color = accent,
+            trackColor = VoyagerColors.SurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "%.1f km · %.0f g/km".format(mode.distanceKm, mode.gramsPerKm),
+            style = MaterialTheme.typography.bodySmall,
+            color = VoyagerColors.OnSurfaceVariant
+        )
+    }
+}
+
+private fun carbonModeLabel(
+    mode: com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
+): String = when (mode) {
+    com.cosmiclaboratory.voyager.domain.model.enums.SegmentType.WALK -> "Walking"
+    com.cosmiclaboratory.voyager.domain.model.enums.SegmentType.RUN -> "Running"
+    com.cosmiclaboratory.voyager.domain.model.enums.SegmentType.CYCLE -> "Cycling"
+    com.cosmiclaboratory.voyager.domain.model.enums.SegmentType.TRANSIT -> "Transit"
+    com.cosmiclaboratory.voyager.domain.model.enums.SegmentType.DRIVE -> "Driving"
+    com.cosmiclaboratory.voyager.domain.model.enums.SegmentType.FLIGHT -> "Flights"
+    else -> mode.name
 }
 
 // ============================================================================
