@@ -36,7 +36,7 @@ class VoyagerDatabaseMigrationTest {
      */
     @Test
     @Throws(IOException::class)
-    fun migrate1To5_preservesData() {
+    fun migrate1To6_preservesData() {
         helper.createDatabase(testDb, 1).apply {
             execSQL(
                 """
@@ -58,7 +58,7 @@ class VoyagerDatabaseMigrationTest {
         }
 
         val db = helper.runMigrationsAndValidate(
-            testDb, 5, true, *VoyagerDatabase.MIGRATIONS
+            testDb, 6, true, *VoyagerDatabase.MIGRATIONS
         )
 
         db.query("SELECT segmentId, segmentType, distanceM FROM movement_segments").use { c ->
@@ -97,6 +97,52 @@ class VoyagerDatabaseMigrationTest {
         db.query("SELECT title FROM trips WHERE startDayKey = '2026-05-01'").use { c ->
             assertThat(c.moveToFirst()).isTrue()
             assertThat(c.getString(0)).isEqualTo("Trip to Paris")
+        }
+
+        // The v6 user-authored trip columns exist and are writable.
+        db.execSQL(
+            "UPDATE trips SET userTitle = 'My Paris trip', notes = 'great food' " +
+                "WHERE startDayKey = '2026-05-01'"
+        )
+        db.query("SELECT userTitle, notes FROM trips WHERE startDayKey = '2026-05-01'").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("My Paris trip")
+            assertThat(c.getString(1)).isEqualTo("great food")
+        }
+    }
+
+    /**
+     * Direct v5 → v6 hop: the user-authored trip columns are purely additive and
+     * a trip row written at v5 survives intact with the new columns NULL.
+     */
+    @Test
+    @Throws(IOException::class)
+    fun migrate5To6_addsTripUserFields() {
+        helper.createDatabase(testDb, 5).apply {
+            execSQL(
+                """
+                INSERT INTO trips
+                    (startDayKey, endDayKey, title, placeCount, visitCount, distanceMeters,
+                     isOngoing, detectedAt, lastModifiedAt, revision)
+                VALUES ('2026-06-01', '2026-06-03', 'Trip to Goa', 4, 9, 60000.0, 0, 7000, 0, 1)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(testDb, 6, true, *VoyagerDatabase.MIGRATIONS)
+
+        // The v5 row survives; the new columns default to NULL.
+        db.query(
+            "SELECT title, userTitle, notes, coverPhotoUri, dayCaptionsJson " +
+                "FROM trips WHERE startDayKey = '2026-06-01'"
+        ).use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(c.getColumnIndexOrThrow("title"))).isEqualTo("Trip to Goa")
+            assertThat(c.isNull(c.getColumnIndexOrThrow("userTitle"))).isTrue()
+            assertThat(c.isNull(c.getColumnIndexOrThrow("notes"))).isTrue()
+            assertThat(c.isNull(c.getColumnIndexOrThrow("coverPhotoUri"))).isTrue()
+            assertThat(c.isNull(c.getColumnIndexOrThrow("dayCaptionsJson"))).isTrue()
         }
     }
 

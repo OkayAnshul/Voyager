@@ -47,7 +47,7 @@ import net.sqlcipher.database.SupportFactory
         // Trips
         TripEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -223,9 +223,25 @@ abstract class VoyagerDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v5 → v6: user-authored trip fields.
+         *
+         * Adds `userTitle`, `notes`, `coverPhotoUri`, `dayCaptionsJson` to `trips`
+         * so a user can name and annotate a detected trip. All nullable — purely
+         * additive. `TripDao.replaceAll` preserves these across detection rebuilds.
+         */
+        private val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `trips` ADD COLUMN `userTitle` TEXT")
+                db.execSQL("ALTER TABLE `trips` ADD COLUMN `notes` TEXT")
+                db.execSQL("ALTER TABLE `trips` ADD COLUMN `coverPhotoUri` TEXT")
+                db.execSQL("ALTER TABLE `trips` ADD COLUMN `dayCaptionsJson` TEXT")
+            }
+        }
+
         /** Exposed for migration tests. Production code uses it only via [buildDatabase]. */
         internal val MIGRATIONS: Array<androidx.room.migration.Migration> =
-            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 
         /**
          * Sets WAL journal mode and runs an integrity check on every open.
