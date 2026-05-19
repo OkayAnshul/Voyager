@@ -157,7 +157,7 @@ class VoyagerDatabaseMigrationTest {
             close()
         }
 
-        val db = helper.runMigrationsAndValidate(testDb, 4, true, VoyagerDatabase.MIGRATIONS.last())
+        val db = helper.runMigrationsAndValidate(testDb, 4, true, *VoyagerDatabase.MIGRATIONS)
 
         // CASCADE delete: removing the parent segment removes its classification.
         db.execSQL("PRAGMA foreign_keys = ON")
