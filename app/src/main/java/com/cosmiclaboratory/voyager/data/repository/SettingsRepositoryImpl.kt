@@ -34,6 +34,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val ACTIVE_JOB = stringPreferencesKey("active_job")
         val FLAG_SECURE_ENABLED = booleanPreferencesKey("flag_secure_enabled")
         val BATTERY_SAVER_THRESHOLD = intPreferencesKey("battery_saver_threshold")
+        val BATTERY_BUDGET_PCT_PER_DAY = intPreferencesKey("battery_budget_pct_per_day")
         val AUTO_GEOCODE = booleanPreferencesKey("auto_geocode_new_places")
         val DAILY_INSIGHTS_ENABLED = booleanPreferencesKey("daily_insights_enabled")
         val WEEKLY_INSIGHTS_ENABLED = booleanPreferencesKey("weekly_insights_enabled")
@@ -104,6 +105,7 @@ class SettingsRepositoryImpl @Inject constructor(
                 activePreset = prefs[ACTIVE_PRESET] ?: "DAILY_COMMUTER",
                 activeJob = prefs[ACTIVE_JOB] ?: "",
                 batterySaverThresholdPct = prefs[BATTERY_SAVER_THRESHOLD] ?: 20,
+                batteryBudgetPctPerDay = prefs[BATTERY_BUDGET_PCT_PER_DAY] ?: 0,
                 autoGeocodeNewPlaces = prefs[AUTO_GEOCODE] ?: true,
                 dailyInsightsEnabled = prefs[DAILY_INSIGHTS_ENABLED] ?: true,
                 weeklyInsightsEnabled = prefs[WEEKLY_INSIGHTS_ENABLED] ?: true,
@@ -182,6 +184,7 @@ class SettingsRepositoryImpl @Inject constructor(
                 "active_preset" -> prefs[ACTIVE_PRESET] = value as String
                 "active_job" -> prefs[ACTIVE_JOB] = value as String
                 "battery_saver_threshold", "battery_saver_threshold_pct" -> prefs[BATTERY_SAVER_THRESHOLD] = (value as Number).toInt()
+                "battery_budget_pct_per_day" -> prefs[BATTERY_BUDGET_PCT_PER_DAY] = (value as Number).toInt()
                 "auto_geocode_new_places" -> prefs[AUTO_GEOCODE] = value as Boolean
                 "daily_insights_enabled" -> prefs[DAILY_INSIGHTS_ENABLED] = value as Boolean
                 "weekly_insights_enabled" -> prefs[WEEKLY_INSIGHTS_ENABLED] = value as Boolean

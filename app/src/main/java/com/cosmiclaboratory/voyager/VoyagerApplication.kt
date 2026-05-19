@@ -52,11 +52,14 @@ class VoyagerApplication : Application(), Configuration.Provider {
         // Start pipeline consumer — processes location samples through segmentation pipeline
         pipelineConsumer.start(applicationScope)
 
-        // Schedule all periodic workers (place discovery, geocode, rollups, etc.)
-        WorkerScheduler.scheduleAll(
-            androidx.work.WorkManager.getInstance(this),
-            settingsRepository.observeSettings().value
-        )
+        // Schedule all periodic workers (place discovery, geocode, rollups, etc.).
+        // WorkManager enqueue is disk I/O — keep it off the cold-start critical path.
+        applicationScope.launch {
+            WorkerScheduler.scheduleAll(
+                androidx.work.WorkManager.getInstance(this@VoyagerApplication),
+                settingsRepository.observeSettings().value
+            )
+        }
     }
 
     private fun installStrictMode() {

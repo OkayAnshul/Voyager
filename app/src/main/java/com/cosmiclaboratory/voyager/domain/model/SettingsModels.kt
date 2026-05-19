@@ -18,6 +18,9 @@ data class UserSettings(
     val batterySaverThresholdPct: Int = 20,
     val batterySaverAction: BatterySaverAction = BatterySaverAction.INCREASE_INTERVAL,
     val chargingBoostEnabled: Boolean = true,
+    /** Whole-day discharge ceiling; the budget controller steps the tracking
+     *  tier down to honour it. 0 = no budget (feature off). */
+    val batteryBudgetPctPerDay: Int = 0,
 
     // Sleep
     val sleepDetectionEnabled: Boolean = true,
