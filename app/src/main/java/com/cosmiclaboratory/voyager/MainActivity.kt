@@ -66,7 +66,7 @@ import com.cosmiclaboratory.voyager.ui.theme.VoyagerTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
-private enum class AppPhase { SPLASH, RESTORE, ONBOARDING, PERSONA, WALKTHROUGH, MAIN }
+private enum class AppPhase { SPLASH, RESTORE, GOOGLE_IMPORT, ONBOARDING, PERSONA, WALKTHROUGH, MAIN }
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -75,6 +75,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var sharedUiState: SharedUiState
     @Inject lateinit var walkthroughPreferences: WalkthroughPreferences
     @Inject lateinit var restorePreferences: com.cosmiclaboratory.voyager.presentation.screen.onboarding.RestorePreferences
+    @Inject lateinit var googleTimelineImportPreferences: com.cosmiclaboratory.voyager.presentation.screen.onboarding.GoogleTimelineImportPreferences
     @Inject lateinit var settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 
     private val locationPermissionLauncher = registerForActivityResult(
@@ -112,6 +113,8 @@ class MainActivity : ComponentActivity() {
                     .collectAsState(initial = true)
                 val hasSeenRestore by restorePreferences.hasSeen
                     .collectAsState(initial = true)
+                val hasSeenGoogleImport by googleTimelineImportPreferences.hasSeen
+                    .collectAsState(initial = true)
                 val settings by settingsRepository.observeSettings().collectAsState()
                 val hasChosenPersona = settings.activeJob.isNotBlank()
 
@@ -138,8 +141,10 @@ class MainActivity : ComponentActivity() {
                     AppPhase.SPLASH -> {
                         AnimatedSplashContent(onComplete = {
                             phase = when {
-                                // Fresh install: offer a one-time restore before onboarding.
+                                // Fresh install: offer a one-time restore, then a
+                                // one-time Google Timeline import, before onboarding.
                                 needsOnboarding && !hasSeenRestore -> AppPhase.RESTORE
+                                needsOnboarding && !hasSeenGoogleImport -> AppPhase.GOOGLE_IMPORT
                                 needsOnboarding -> AppPhase.ONBOARDING
                                 else -> nextAfterPermissions()
                             }
@@ -147,6 +152,17 @@ class MainActivity : ComponentActivity() {
                     }
                     AppPhase.RESTORE -> {
                         com.cosmiclaboratory.voyager.presentation.screen.onboarding.RestoreScreen(
+                            onComplete = {
+                                phase = when {
+                                    needsOnboarding && !hasSeenGoogleImport -> AppPhase.GOOGLE_IMPORT
+                                    needsOnboarding -> AppPhase.ONBOARDING
+                                    else -> nextAfterPermissions()
+                                }
+                            }
+                        )
+                    }
+                    AppPhase.GOOGLE_IMPORT -> {
+                        com.cosmiclaboratory.voyager.presentation.screen.onboarding.GoogleTimelineImportScreen(
                             onComplete = {
                                 phase = if (needsOnboarding) {
                                     AppPhase.ONBOARDING
