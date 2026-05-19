@@ -2,6 +2,7 @@ package com.cosmiclaboratory.voyager.capture
 
 import com.cosmiclaboratory.voyager.domain.model.UserSettings
 import com.cosmiclaboratory.voyager.domain.model.enums.SamplingPreset
+import com.cosmiclaboratory.voyager.domain.model.enums.TrackingTier
 import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -45,6 +46,15 @@ class AdaptiveSamplingPolicy @Inject constructor(
      */
     fun getCurrentPolicy(): SamplingPolicy {
         val settings = settingsRepository.observeSettings().value
+        // The tracking tier sets the structural mode. OFF/PASSIVE run no active
+        // GPS request (interval 0) — capture relies on the always-on passive
+        // listener plus motion/step sensors. WORKOUT is a fixed 1 Hz high-accuracy
+        // recording mode. BALANCED/ACCURATE fall through to motion-based sampling.
+        when (settings.trackingTier) {
+            TrackingTier.OFF, TrackingTier.PASSIVE -> return SamplingPolicy(0L, 0f, -1)
+            TrackingTier.WORKOUT -> return SamplingPolicy(1_000L, 0f, 100)
+            TrackingTier.BALANCED, TrackingTier.ACCURATE -> { /* motion-based, below */ }
+        }
         // Sleep window overrides motion-based sampling — within the user's sleep
         // hours, fall back to the low-power sleep interval (DORMANT still wins,
         // since GPS is fully off in that state).
@@ -61,7 +71,11 @@ class AdaptiveSamplingPolicy @Inject constructor(
             currentMotionState == MotionState.STILL -> stillPolicy(settings)
             else -> movingPolicy(settings) // WALKING / RUNNING / CYCLING / DRIVING
         }
-        return base.copy(intervalMs = (base.intervalMs * batterySaverMultiplier).toLong())
+        // ACCURATE tightens the motion-based cadence; BALANCED is the baseline.
+        val tierMultiplier = if (settings.trackingTier == TrackingTier.ACCURATE) 0.5f else 1.0f
+        return base.copy(
+            intervalMs = (base.intervalMs * batterySaverMultiplier * tierMultiplier).toLong()
+        )
     }
 
     /** True when [now] falls inside the configured sleep window

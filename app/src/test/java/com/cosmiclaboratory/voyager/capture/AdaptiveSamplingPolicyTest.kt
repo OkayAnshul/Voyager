@@ -2,6 +2,7 @@ package com.cosmiclaboratory.voyager.capture
 
 import com.cosmiclaboratory.voyager.domain.model.UserSettings
 import com.cosmiclaboratory.voyager.domain.model.enums.SamplingPreset
+import com.cosmiclaboratory.voyager.domain.model.enums.TrackingTier
 import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import io.mockk.every
 import io.mockk.mockk
@@ -82,5 +83,46 @@ class AdaptiveSamplingPolicyTest {
             sleepDetectionEnabled = false
         )
         assertEquals(25_000L, policy.getCurrentPolicy().intervalMs)
+    }
+
+    // ── Tracking-tier behaviour ──
+
+    @Test
+    fun `OFF and PASSIVE tiers run no active GPS request`() {
+        policy.forceMotionState(AdaptiveSamplingPolicy.MotionState.WALKING)
+        settingsFlow.value = UserSettings(
+            trackingTier = TrackingTier.OFF, sleepDetectionEnabled = false
+        )
+        assertEquals("OFF tier must request no active GPS", 0L, policy.getCurrentPolicy().intervalMs)
+        settingsFlow.value = UserSettings(
+            trackingTier = TrackingTier.PASSIVE, sleepDetectionEnabled = false
+        )
+        assertEquals("PASSIVE tier must request no active GPS", 0L, policy.getCurrentPolicy().intervalMs)
+    }
+
+    @Test
+    fun `WORKOUT tier samples at 1 Hz regardless of motion state`() {
+        settingsFlow.value = UserSettings(
+            trackingTier = TrackingTier.WORKOUT, sleepDetectionEnabled = false
+        )
+        policy.forceMotionState(AdaptiveSamplingPolicy.MotionState.STILL)
+        assertEquals(1_000L, policy.getCurrentPolicy().intervalMs)
+        policy.forceMotionState(AdaptiveSamplingPolicy.MotionState.DRIVING)
+        assertEquals(1_000L, policy.getCurrentPolicy().intervalMs)
+    }
+
+    @Test
+    fun `ACCURATE tier samples more often than BALANCED`() {
+        policy.forceMotionState(AdaptiveSamplingPolicy.MotionState.WALKING)
+        settingsFlow.value = UserSettings(
+            trackingTier = TrackingTier.BALANCED, sleepDetectionEnabled = false
+        )
+        val balanced = policy.getCurrentPolicy().intervalMs
+        settingsFlow.value = UserSettings(
+            trackingTier = TrackingTier.ACCURATE, sleepDetectionEnabled = false
+        )
+        val accurate = policy.getCurrentPolicy().intervalMs
+        assertTrue("ACCURATE ($accurate) must sample more often than BALANCED ($balanced)",
+            accurate < balanced)
     }
 }
