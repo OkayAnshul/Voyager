@@ -9,7 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -22,18 +22,22 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest --stacktrace
+      # Flavored project: tasks are per-flavor (no bare testDebugUnitTest).
+      - name: Unit tests (Play + F-Droid)
+        run: ./gradlew :app:testPlayDebugUnitTest :app:testFdroidDebugUnitTest --stacktrace
+
+      - name: Assemble both flavors
+        run: ./gradlew :app:assemblePlayDebug :app:assembleFdroidDebug --stacktrace
 
       - name: Lint
-        run: ./gradlew :app:lintDebug --stacktrace
+        run: ./gradlew :app:lintPlayDebug --stacktrace
 
       - name: Upload lint report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lint-report
-          path: app/build/reports/lint-results-debug.html
+          path: app/build/reports/lint-results-playDebug.html
 
       - name: Upload test reports
         if: always()

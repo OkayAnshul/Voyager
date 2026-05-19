@@ -99,9 +99,9 @@ fun RestoreScreen(
 
         Spacer(Modifier.height(8.dp))
 
+        val summary = state.summary
         when {
-            state.summary != null -> {
-                val summary = state.summary!!
+            summary != null -> {
                 VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.HIGHLIGHTED) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),

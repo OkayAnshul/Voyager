@@ -1,0 +1,33 @@
+name: Dependency Security Scan
+
+# Monthly OWASP dependency scan for known CVEs in third-party libraries
+# (MapLibre, SQLCipher, OkHttp, Compose, etc.). Also runnable on demand.
+on:
+  schedule:
+    - cron: '0 6 1 * *'   # 06:00 UTC on the 1st of each month
+  workflow_dispatch:
+
+jobs:
+  owasp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: Voyager
+          path: '.'
+          format: 'HTML'
+          # Fail the run on any high/critical CVE (CVSS >= 7).
+          args: >
+            --failOnCVSS 7
+            --enableExperimental
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: ${{ github.workspace }}/reports
