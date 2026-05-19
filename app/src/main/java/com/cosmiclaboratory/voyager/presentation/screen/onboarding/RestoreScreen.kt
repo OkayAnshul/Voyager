@@ -131,6 +131,14 @@ fun RestoreScreen(
                             color = VoyagerColors.OnSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
+                        if (summary.rawSamplesImported > 0) {
+                            Text(
+                                text = "${summary.rawSamplesImported} raw GPS samples restored",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = VoyagerColors.OnSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 }
                 VoyagerButton(

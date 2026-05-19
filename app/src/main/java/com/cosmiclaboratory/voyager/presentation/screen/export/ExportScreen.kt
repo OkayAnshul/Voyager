@@ -88,14 +88,14 @@ fun ExportScreen(
             Spacer(Modifier.height(4.dp))
 
             // ── Export ───────────────────────────────────────────────────
-            Text("Export a day", style = MaterialTheme.typography.titleMedium)
+            Text("Export your timeline", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Save one day of your timeline as a file you can keep, share, or re-import later.",
+                "Save a day or a range of your timeline as a file you can keep, share, or re-import later.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            // Date picker
+            // Date-range picker
             OutlinedCard(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { showDatePicker = true }
@@ -109,10 +109,13 @@ fun ExportScreen(
                     Icon(Icons.Default.CalendarToday, contentDescription = null)
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Day", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(
-                            state.date.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy")),
+                            if (state.isSingleDay) "Day" else "Date range",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            formatRangeLabel(state.startDate, state.endDate),
                             style = MaterialTheme.typography.bodyLarge
                         )
                     }
@@ -221,6 +224,10 @@ fun ExportScreen(
                             style = MaterialTheme.typography.bodySmall)
                         Text("Duplicates skipped: ${summary.duplicatesSkipped}",
                             style = MaterialTheme.typography.bodySmall)
+                        if (summary.rawSamplesImported > 0) {
+                            Text("Raw samples imported: ${summary.rawSamplesImported}",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
                         Spacer(Modifier.height(8.dp))
                         TextButton(onClick = { viewModel.consumeResult() }) {
                             Text("Dismiss")
@@ -254,22 +261,25 @@ fun ExportScreen(
     }
 
     if (showDatePicker) {
-        val pickerState = rememberDatePickerState(
-            initialSelectedDateMillis = state.date
-                .atStartOfDay(ZoneId.systemDefault())
-                .toInstant()
-                .toEpochMilli()
+        fun LocalDate.toUtcMillis(): Long =
+            atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
+        fun Long.toLocalDate(): LocalDate =
+            Instant.ofEpochMilli(this).atZone(ZoneId.of("UTC")).toLocalDate()
+
+        val pickerState = rememberDateRangePickerState(
+            initialSelectedStartDateMillis = state.startDate.toUtcMillis(),
+            initialSelectedEndDateMillis = state.endDate.toUtcMillis()
         )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        pickerState.selectedDateMillis?.let { millis ->
-                            val picked = Instant.ofEpochMilli(millis)
-                                .atZone(ZoneId.systemDefault())
-                                .toLocalDate()
-                            viewModel.setDate(picked)
+                        val startMs = pickerState.selectedStartDateMillis
+                        if (startMs != null) {
+                            val start = startMs.toLocalDate()
+                            val end = pickerState.selectedEndDateMillis?.toLocalDate() ?: start
+                            viewModel.setDateRange(start, end)
                         }
                         showDatePicker = false
                     }
@@ -279,8 +289,20 @@ fun ExportScreen(
                 TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
             }
         ) {
-            DatePicker(state = pickerState)
+            DateRangePicker(state = pickerState)
         }
+    }
+}
+
+private fun formatRangeLabel(start: LocalDate, end: LocalDate): String {
+    val full = DateTimeFormatter.ofPattern("EEE, MMM d, yyyy")
+    val short = DateTimeFormatter.ofPattern("MMM d")
+    return if (start == end) {
+        start.format(full)
+    } else if (start.year == end.year) {
+        "${start.format(short)} – ${end.format(short)}, ${end.year}"
+    } else {
+        "${start.format(short)}, ${start.year} – ${end.format(short)}, ${end.year}"
     }
 }
 

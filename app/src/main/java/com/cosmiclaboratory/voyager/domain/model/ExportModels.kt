@@ -14,5 +14,7 @@ data class ImportSummary(
     val segmentsImported: Int,
     val visitsImported: Int,
     val placesImported: Int,
-    val duplicatesSkipped: Int
+    val duplicatesSkipped: Int,
+    /** Raw GPS samples restored — only VoyagerJSON v2+ imports carry these. */
+    val rawSamplesImported: Int = 0
 )
