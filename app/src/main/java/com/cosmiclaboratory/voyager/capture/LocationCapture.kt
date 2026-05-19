@@ -64,10 +64,6 @@ class LocationCapture @Inject constructor(
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
 
         val policy = adaptiveSamplingPolicy.getCurrentPolicy()
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, policy.intervalMs)
-            .setMinUpdateDistanceMeters(policy.minDistanceM)
-            .setMaxUpdateDelayMillis(policy.intervalMs * 2)
-            .build()
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
@@ -77,9 +73,18 @@ class LocationCapture @Inject constructor(
             }
         }
 
-        fusedLocationClient?.requestLocationUpdates(
-            request, locationCallback!!, Looper.getMainLooper()
-        )
+        // OFF / PASSIVE tier (interval <= 0): run no active GPS request — rely on
+        // the always-on passive listener below plus motion/step sensors. A later
+        // tier change is picked up by the policy-update path.
+        if (policy.intervalMs > 0) {
+            val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, policy.intervalMs)
+                .setMinUpdateDistanceMeters(policy.minDistanceM)
+                .setMaxUpdateDelayMillis(policy.intervalMs * 2)
+                .build()
+            fusedLocationClient?.requestLocationUpdates(
+                request, locationCallback!!, Looper.getMainLooper()
+            )
+        }
 
         // Passive location: piggyback on other apps' location requests for free data.
         passiveCallback = object : LocationCallback() {

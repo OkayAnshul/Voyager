@@ -22,6 +22,7 @@ class SettingsRepositoryImpl @Inject constructor(
 
     companion object {
         val TRACKING_ENABLED = booleanPreferencesKey("tracking_enabled")
+        val TRACKING_TIER = stringPreferencesKey("tracking_tier")
         val SAMPLING_PRESET = stringPreferencesKey("sampling_preset")
         val MIN_DWELL_MINUTES = intPreferencesKey("min_dwell_minutes")
         val PLACE_RADIUS_M = intPreferencesKey("place_radius_m")
@@ -91,6 +92,7 @@ class SettingsRepositoryImpl @Inject constructor(
         dataStore.data.map { prefs ->
             UserSettings(
                 trackingEnabled = prefs[TRACKING_ENABLED] ?: true,
+                trackingTier = TrackingTier.fromName(prefs[TRACKING_TIER]),
                 samplingPreset = prefs[SAMPLING_PRESET]?.let { try { SamplingPreset.valueOf(it) } catch (_: Exception) { null } } ?: SamplingPreset.BALANCED,
                 customSamplingIntervalMs = prefs[CUSTOM_SAMPLING_INTERVAL_MS] ?: 15000L,
                 minDwellMinutes = prefs[MIN_DWELL_MINUTES] ?: 5,
@@ -168,6 +170,7 @@ class SettingsRepositoryImpl @Inject constructor(
         dataStore.edit { prefs ->
             when (normalizedKey) {
                 "tracking_enabled" -> prefs[TRACKING_ENABLED] = value as Boolean
+                "tracking_tier" -> prefs[TRACKING_TIER] = value as String
                 "sampling_preset" -> prefs[SAMPLING_PRESET] = value as String
                 "custom_sampling_interval_ms" -> prefs[CUSTOM_SAMPLING_INTERVAL_MS] = (value as Number).toLong()
                 "min_dwell_minutes" -> prefs[MIN_DWELL_MINUTES] = (value as Number).toInt()

@@ -5,6 +5,8 @@ import com.cosmiclaboratory.voyager.domain.model.enums.*
 data class UserSettings(
     // Tracking
     val trackingEnabled: Boolean = true,
+    /** Primary tracking mode — sets structural GPS behaviour (see [TrackingTier]). */
+    val trackingTier: TrackingTier = TrackingTier.BALANCED,
     val samplingPreset: SamplingPreset = SamplingPreset.BALANCED,
     val customSamplingIntervalMs: Long = 15000,
     val motionDetectionEnabled: Boolean = true,
