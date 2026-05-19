@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cosmiclaboratory.voyager.data.imports.GoogleTimelineImporter
+import com.cosmiclaboratory.voyager.domain.model.DateRange
 import com.cosmiclaboratory.voyager.domain.model.ImportSummary
 import com.cosmiclaboratory.voyager.domain.model.enums.ExportFormat
 import com.cosmiclaboratory.voyager.domain.repository.ExportRepository
@@ -18,12 +19,16 @@ import javax.inject.Inject
 
 data class ExportUiState(
     val format: ExportFormat = ExportFormat.VOYAGER_JSON,
-    val date: LocalDate = LocalDate.now(),
+    val startDate: LocalDate = LocalDate.now(),
+    val endDate: LocalDate = LocalDate.now(),
     val isWorking: Boolean = false,
     val resultUri: Uri? = null,
     val importSummary: ImportSummary? = null,
     val error: String? = null
-)
+) {
+    /** True when the selected range is a single day. */
+    val isSingleDay: Boolean get() = startDate == endDate
+}
 
 @HiltViewModel
 class ExportViewModel @Inject constructor(
@@ -38,16 +43,18 @@ class ExportViewModel @Inject constructor(
         _uiState.update { it.copy(format = format) }
     }
 
-    fun setDate(date: LocalDate) {
-        _uiState.update { it.copy(date = date) }
+    /** Sets the export range. A single-day export is just [start] == [end]. */
+    fun setDateRange(start: LocalDate, end: LocalDate) {
+        val (lo, hi) = if (start <= end) start to end else end to start
+        _uiState.update { it.copy(startDate = lo, endDate = hi) }
     }
 
     fun export() {
         val state = _uiState.value
         _uiState.update { it.copy(isWorking = true, resultUri = null, error = null) }
         viewModelScope.launch {
-            val dayKey = state.date.toString() // YYYY-MM-DD
-            val result = exportRepository.exportDay(dayKey, state.format)
+            val range = DateRange(state.startDate.toString(), state.endDate.toString())
+            val result = exportRepository.exportRange(range, state.format)
             _uiState.update {
                 it.copy(
                     isWorking = false,

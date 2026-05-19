@@ -16,11 +16,13 @@ import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.RawLocationSampleDao
 import com.cosmiclaboratory.voyager.storage.database.dao.RouteDao
+import com.cosmiclaboratory.voyager.storage.database.dao.TrackingSessionDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
 import com.cosmiclaboratory.voyager.storage.database.entity.RawLocationSampleEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.PlaceEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.RouteEntity
+import com.cosmiclaboratory.voyager.storage.database.entity.TrackingSessionEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.displayName
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -38,6 +40,7 @@ class ExportRepositoryImpl @Inject constructor(
     private val routeDao: RouteDao,
     private val placeDao: PlaceDao,
     private val rawLocationSampleDao: RawLocationSampleDao,
+    private val trackingSessionDao: TrackingSessionDao,
     private val settingsRepository: SettingsRepository
 ) : ExportRepository {
 
@@ -124,6 +127,7 @@ class ExportRepositoryImpl @Inject constructor(
         val placeIdMap = mutableMapOf<Long, Long>()
         val segmentIdMap = mutableMapOf<Long, Long>()
         var duplicates = 0
+        var rawSamplesImported = 0
 
         database.withTransaction {
             for (place in parsed.places) {
@@ -223,13 +227,35 @@ class ExportRepositoryImpl @Inject constructor(
                     )
                 )
             }
+
+            // Raw GPS samples (VoyagerJSON v2+). Every sample needs a parent
+            // tracking session (non-null FK), so all imported samples are parented
+            // to one synthetic "IMPORT" session — no schema change required.
+            if (parsed.rawSamples.isNotEmpty()) {
+                val first = parsed.rawSamples.first()
+                val sessionId = trackingSessionDao.insert(
+                    TrackingSessionEntity(
+                        startedAt = parsed.rawSamples.minOf { it.capturedAt },
+                        endedAt = parsed.rawSamples.maxOf { it.capturedAt },
+                        startedBy = "IMPORT",
+                        endedBy = "IMPORT",
+                        localTimeZone = first.localTimeZone,
+                        totalSamples = parsed.rawSamples.size
+                    )
+                )
+                for (sample in parsed.rawSamples) {
+                    rawLocationSampleDao.insert(sample.toEntity(sessionId))
+                    rawSamplesImported++
+                }
+            }
         }
 
         ImportSummary(
             segmentsImported = segmentIdMap.size,
             visitsImported = parsed.visits.size - duplicates.coerceAtMost(parsed.visits.size),
             placesImported = placeIdMap.size,
-            duplicatesSkipped = duplicates
+            duplicatesSkipped = duplicates,
+            rawSamplesImported = rawSamplesImported
         )
     }
 
@@ -417,6 +443,28 @@ class ExportRepositoryImpl @Inject constructor(
         isCharging = isCharging,
         deviceIdleMode = deviceIdleMode,
         permissionSnapshot = permissionSnapshot,
+        localTimeZone = localTimeZone,
+        geohash = geohash
+    )
+
+    /** Inverse of [toWire] — rebuilds a raw sample under an imported tracking session. */
+    private fun RawSampleWire.toEntity(sessionId: Long) = RawLocationSampleEntity(
+        capturedAt = capturedAt,
+        receivedAt = receivedAt,
+        lat = lat,
+        lng = lng,
+        accuracyM = accuracyM,
+        verticalAccuracyM = verticalAccuracyM,
+        speedMps = speedMps,
+        bearingDeg = bearingDeg,
+        altitudeM = altitudeM,
+        provider = provider,
+        isMock = isMock,
+        batteryPct = batteryPct,
+        isCharging = isCharging,
+        deviceIdleMode = deviceIdleMode,
+        permissionSnapshot = permissionSnapshot,
+        trackingSessionId = sessionId,
         localTimeZone = localTimeZone,
         geohash = geohash
     )
