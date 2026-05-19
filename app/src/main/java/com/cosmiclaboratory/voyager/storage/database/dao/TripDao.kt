@@ -25,14 +25,43 @@ interface TripDao {
     @Query("DELETE FROM trips")
     suspend fun deleteAll()
 
+    /** Persists the user-authored fields for one trip (the rest is derived). */
+    @Query(
+        "UPDATE trips SET userTitle = :userTitle, notes = :notes, " +
+            "coverPhotoUri = :coverPhotoUri, dayCaptionsJson = :dayCaptionsJson, " +
+            "lastModifiedAt = :modifiedAt WHERE tripId = :tripId"
+    )
+    suspend fun updateUserFields(
+        tripId: Long,
+        userTitle: String?,
+        notes: String?,
+        coverPhotoUri: String?,
+        dayCaptionsJson: String?,
+        modifiedAt: Long
+    )
+
     /**
-     * Replaces the whole table with a freshly detected set. Trips are pure derived
-     * data with no user-authored fields, so [DetectTripsUseCase] rebuilds them
-     * wholesale rather than diffing — the transaction keeps the swap atomic.
+     * Replaces the whole table with a freshly detected set. The summary fields are
+     * pure derived data, so detection rebuilds them wholesale; but user-authored
+     * fields (title/notes/cover/captions) are carried over from the prior row with
+     * the same [TripEntity.startDayKey] so an edited trip survives re-detection.
+     * The transaction keeps the swap atomic.
      */
     @Transaction
     suspend fun replaceAll(trips: List<TripEntity>) {
+        val priorByStartDay = getAll().associateBy { it.startDayKey }
         deleteAll()
-        for (trip in trips) insert(trip)
+        for (trip in trips) {
+            val prior = priorByStartDay[trip.startDayKey]
+            insert(
+                if (prior == null) trip
+                else trip.copy(
+                    userTitle = prior.userTitle,
+                    notes = prior.notes,
+                    coverPhotoUri = prior.coverPhotoUri,
+                    dayCaptionsJson = prior.dayCaptionsJson
+                )
+            )
+        }
     }
 }

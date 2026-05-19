@@ -73,7 +73,7 @@ class TripBookPdfExporter @Inject constructor(
 
         // ── Cover ─────────────────────────────────────────────────────
         canvas.drawText("TRIP BOOK", MARGIN, y, muted); y += LINE * 2.2f
-        canvas.drawText(trip.title, MARGIN, y, cover); y += LINE * 2.4f
+        canvas.drawText(trip.displayTitle, MARGIN, y, cover); y += LINE * 2.4f
 
         val start = LocalDate.parse(trip.startDayKey)
         val end = LocalDate.parse(trip.endDayKey)

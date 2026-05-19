@@ -10,7 +10,9 @@ import androidx.room.PrimaryKey
  * Trips are derived data — [com.cosmiclaboratory.voyager.domain.usecase.DetectTripsUseCase]
  * recomputes the whole table from visits on each run, so a row is a denormalized summary
  * that powers the trip list cheaply; the day-by-day detail is re-derived from visits on
- * demand. There are no user-authored fields yet, so a full rebuild loses nothing.
+ * demand. The summary fields are recomputed on every detection run; the
+ * user-authored fields ([userTitle], [notes], [coverPhotoUri], [dayCaptionsJson])
+ * are preserved across rebuilds by `TripDao.replaceAll`, matched on [startDayKey].
  *
  * Keyed by [startDayKey] (unique) — a trip is identified by the day it began.
  * Audit columns mirror the v3 syncable tables — inert until cloud sync ships.
@@ -33,6 +35,13 @@ data class TripEntity(
     /** True while the trip may still be in progress (ended today or yesterday). */
     val isOngoing: Boolean,
     val detectedAt: Long,
+    // User-authored fields (v6) — survive a detection rebuild via replaceAll.
+    /** Overrides the derived [title] when set. */
+    val userTitle: String? = null,
+    val notes: String? = null,
+    val coverPhotoUri: String? = null,
+    /** JSON map of `dayKey` → caption; null until the user writes one. */
+    val dayCaptionsJson: String? = null,
     // Cloud-ready audit columns (v3). Inert until sync ships — see MIGRATION_2_3.
     val lastModifiedAt: Long = 0L,
     val revision: Long = 1L,

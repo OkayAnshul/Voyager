@@ -72,5 +72,8 @@ fun TripEntity.toDomain(): Trip = Trip(
     visitCount = visitCount,
     distanceMeters = distanceMeters,
     isOngoing = isOngoing,
-    detectedAt = detectedAt
+    detectedAt = detectedAt,
+    userTitle = userTitle,
+    notes = notes,
+    coverPhotoUri = coverPhotoUri
 )

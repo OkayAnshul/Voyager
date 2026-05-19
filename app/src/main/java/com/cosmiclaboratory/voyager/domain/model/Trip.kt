@@ -11,12 +11,17 @@ data class Trip(
     val id: Long,
     val startDayKey: String,
     val endDayKey: String,
+    /** The auto-derived title. Prefer [displayTitle] for anything user-facing. */
     val title: String,
     val placeCount: Int,
     val visitCount: Int,
     val distanceMeters: Double,
     val isOngoing: Boolean,
-    val detectedAt: Long
+    val detectedAt: Long,
+    /** User-authored override for [title]; null/blank means use the derived title. */
+    val userTitle: String? = null,
+    val notes: String? = null,
+    val coverPhotoUri: String? = null
 ) {
     /** Inclusive calendar length of the trip, e.g. Mon→Wed is 3 days. */
     val durationDays: Int
@@ -25,6 +30,9 @@ data class Trip(
         ) + 1).toInt()
 
     val distanceKm: Double get() = distanceMeters / 1000.0
+
+    /** What to show the user — the user's title if they set one, else the derived title. */
+    val displayTitle: String get() = userTitle?.takeIf { it.isNotBlank() } ?: title
 }
 
 /** A trip plus its day-by-day breakdown — built on demand for the detail screen. */
