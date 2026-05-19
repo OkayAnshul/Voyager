@@ -73,19 +73,20 @@ fun TripDetailScreen(
             .fillMaxSize()
             .drawBehind { drawRect(brush = VoyagerGradients.screenBackground(size.width, size.height)) }
     ) {
+        val detail = state.detail
         when {
             state.isLoading -> CircularProgressIndicator(
                 modifier = Modifier.align(Alignment.Center),
                 color = VoyagerColors.Primary
             )
-            state.detail == null -> Text(
+            detail == null -> Text(
                 text = "This trip is no longer available.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = VoyagerColors.OnSurfaceVariant,
                 modifier = Modifier.align(Alignment.Center).padding(24.dp)
             )
             else -> TripDetailContent(
-                detail = state.detail!!,
+                detail = detail,
                 isExporting = state.isExporting,
                 error = state.error,
                 onExport = { viewModel.onAction(TripDetailAction.ExportBook) }
