@@ -45,9 +45,11 @@ import net.sqlcipher.database.SupportFactory
         // Mileage
         MileageClassificationEntity::class,
         // Trips
-        TripEntity::class
+        TripEntity::class,
+        // Activities (recorded workouts)
+        ActivityEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -105,6 +107,9 @@ abstract class VoyagerDatabase : RoomDatabase() {
 
     // Trip DAOs
     abstract fun tripDao(): TripDao
+
+    // Activity (workout) DAOs
+    abstract fun activityDao(): ActivityDao
 
     companion object {
         private const val DATABASE_NAME = "voyager_database"
@@ -239,9 +244,49 @@ abstract class VoyagerDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6 → v7: recorded workouts (Athlete persona, Pro).
+         *
+         * Adds `activities` — user-initiated workout recordings (run/ride/walk) with
+         * a precomputed summary and an encoded-polyline route. Separate from
+         * `movement_segments` (passive detection). Purely additive — no existing
+         * table is touched.
+         */
+        private val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `activities` (
+                        `activityId` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        `activityType` TEXT NOT NULL,
+                        `startedAt` INTEGER NOT NULL,
+                        `endedAt` INTEGER NOT NULL,
+                        `distanceMeters` REAL NOT NULL,
+                        `durationMs` INTEGER NOT NULL,
+                        `avgSpeedMps` REAL NOT NULL,
+                        `maxSpeedMps` REAL NOT NULL,
+                        `steps` INTEGER,
+                        `encodedPolyline` TEXT NOT NULL,
+                        `dayKey` TEXT NOT NULL,
+                        `title` TEXT,
+                        `notes` TEXT,
+                        `lastModifiedAt` INTEGER NOT NULL DEFAULT 0,
+                        `revision` INTEGER NOT NULL DEFAULT 1,
+                        `deletedAt` INTEGER
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_activities_dayKey` ON `activities` (`dayKey`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_activities_startedAt` ON `activities` (`startedAt`)")
+            }
+        }
+
         /** Exposed for migration tests. Production code uses it only via [buildDatabase]. */
         internal val MIGRATIONS: Array<androidx.room.migration.Migration> =
-            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+            arrayOf(
+                MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+                MIGRATION_5_6, MIGRATION_6_7
+            )
 
         /**
          * Sets WAL journal mode and runs an integrity check on every open.

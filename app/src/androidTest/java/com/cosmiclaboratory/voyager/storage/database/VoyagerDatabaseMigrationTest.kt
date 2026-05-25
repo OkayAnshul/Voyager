@@ -36,7 +36,7 @@ class VoyagerDatabaseMigrationTest {
      */
     @Test
     @Throws(IOException::class)
-    fun migrate1To6_preservesData() {
+    fun migrate1To7_preservesData() {
         helper.createDatabase(testDb, 1).apply {
             execSQL(
                 """
@@ -58,7 +58,7 @@ class VoyagerDatabaseMigrationTest {
         }
 
         val db = helper.runMigrationsAndValidate(
-            testDb, 6, true, *VoyagerDatabase.MIGRATIONS
+            testDb, 7, true, *VoyagerDatabase.MIGRATIONS
         )
 
         db.query("SELECT segmentId, segmentType, distanceM FROM movement_segments").use { c ->
@@ -108,6 +108,59 @@ class VoyagerDatabaseMigrationTest {
             assertThat(c.moveToFirst()).isTrue()
             assertThat(c.getString(0)).isEqualTo("My Paris trip")
             assertThat(c.getString(1)).isEqualTo("great food")
+        }
+
+        // The v7 activities table exists and accepts a recorded workout.
+        db.execSQL(
+            """
+            INSERT INTO activities
+                (activityType, startedAt, endedAt, distanceMeters, durationMs,
+                 avgSpeedMps, maxSpeedMps, encodedPolyline, dayKey)
+            VALUES ('RUN', 1000, 2000, 5000.0, 1000, 5.0, 7.0, 'abc', '2026-05-19')
+            """.trimIndent()
+        )
+        db.query("SELECT activityType, distanceMeters FROM activities").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("RUN")
+            assertThat(c.getDouble(1)).isEqualTo(5000.0)
+        }
+    }
+
+    /**
+     * Direct v6 → v7 hop: the activities table is purely additive and an existing
+     * v6 trip row is untouched.
+     */
+    @Test
+    @Throws(IOException::class)
+    fun migrate6To7_addsActivitiesTable() {
+        helper.createDatabase(testDb, 6).apply {
+            execSQL(
+                """
+                INSERT INTO trips
+                    (startDayKey, endDayKey, title, placeCount, visitCount, distanceMeters,
+                     isOngoing, detectedAt, lastModifiedAt, revision)
+                VALUES ('2026-07-01', '2026-07-03', 'Trip to Ooty', 3, 6, 40000.0, 0, 8000, 0, 1)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(testDb, 7, true, *VoyagerDatabase.MIGRATIONS)
+
+        // The v6 trip survives.
+        db.query("SELECT COUNT(*) FROM trips").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(1)
+        }
+        // The new activities table is present and writable.
+        db.execSQL(
+            "INSERT INTO activities (activityType, startedAt, endedAt, distanceMeters, " +
+                "durationMs, avgSpeedMps, maxSpeedMps, encodedPolyline, dayKey) " +
+                "VALUES ('CYCLE', 10, 20, 12000.0, 10, 6.0, 9.0, 'xyz', '2026-07-02')"
+        )
+        db.query("SELECT COUNT(*) FROM activities").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(1)
         }
     }
 
