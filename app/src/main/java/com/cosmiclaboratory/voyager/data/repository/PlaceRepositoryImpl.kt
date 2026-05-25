@@ -3,6 +3,8 @@ package com.cosmiclaboratory.voyager.data.repository
 import com.cosmiclaboratory.voyager.domain.model.TimelinePlace
 import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
 import com.cosmiclaboratory.voyager.domain.model.enums.PlaceLifecycleStatus
+import com.cosmiclaboratory.voyager.domain.model.ids.PlaceId
+import com.cosmiclaboratory.voyager.domain.model.ids.VisitId
 import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
 import com.cosmiclaboratory.voyager.storage.database.VoyagerDatabase
 import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
@@ -29,32 +31,34 @@ class PlaceRepositoryImpl @Inject constructor(
         }
     }
 
-    override fun observePlace(placeId: Long): Flow<TimelinePlace?> {
-        return placeDao.observeById(placeId).map { it?.toTimelinePlace() }
+    override fun observePlace(placeId: PlaceId): Flow<TimelinePlace?> {
+        return placeDao.observeById(placeId.raw).map { it?.toTimelinePlace() }
     }
 
-    override suspend fun renamePlace(placeId: Long, name: String): Result<Unit> = runCatching {
-        placeDao.updateDisplayName(placeId, name)
+    override suspend fun renamePlace(placeId: PlaceId, name: String): Result<Unit> = runCatching {
+        placeDao.updateDisplayName(placeId.raw, name)
     }
 
-    override suspend fun mergePlaces(sourceIds: List<Long>, targetId: Long): Result<Unit> = runCatching {
+    override suspend fun mergePlaces(sourceIds: List<PlaceId>, targetId: PlaceId): Result<Unit> = runCatching {
+        val target = targetId.raw
         database.withTransaction {
-            for (sourceId in sourceIds) {
-                if (sourceId != targetId) {
+            for (source in sourceIds) {
+                val src = source.raw
+                if (src != target) {
                     // Re-point history to the target before hiding the source. Without
                     // this, visits/segments keep the merged-away placeId and the
                     // timeline still resolves them to the now-hidden source place.
-                    visitDao.reassignPlace(sourceId, targetId)
-                    movementSegmentDao.reassignPlace(sourceId, targetId)
-                    placeDao.markMerged(sourceId, targetId)
+                    visitDao.reassignPlace(src, target)
+                    movementSegmentDao.reassignPlace(src, target)
+                    placeDao.markMerged(src, target)
                 }
             }
         }
     }
 
-    override suspend fun splitPlace(placeId: Long, visitIds: List<Long>): Result<Long> = runCatching {
-        val original = placeDao.getById(placeId)
-            ?: throw IllegalArgumentException("Place $placeId not found")
+    override suspend fun splitPlace(placeId: PlaceId, visitIds: List<VisitId>): Result<PlaceId> = runCatching {
+        val original = placeDao.getById(placeId.raw)
+            ?: throw IllegalArgumentException("Place ${placeId.raw} not found")
 
         val newPlace = PlaceEntity(
             centroidLat = original.centroidLat,
@@ -77,20 +81,20 @@ class PlaceRepositoryImpl @Inject constructor(
 
         // Reassign specified visits to the new place
         for (visitId in visitIds) {
-            val visit = visitDao.getById(visitId) ?: continue
+            val visit = visitDao.getById(visitId.raw) ?: continue
             visitDao.update(visit.copy(placeId = newPlaceId))
         }
 
-        newPlaceId
+        PlaceId(newPlaceId)
     }
 
-    override suspend fun setPlaceCategory(placeId: Long, category: PlaceCategory): Result<Unit> = runCatching {
-        placeDao.updateCategory(placeId, category.name, category.name)
+    override suspend fun setPlaceCategory(placeId: PlaceId, category: PlaceCategory): Result<Unit> = runCatching {
+        placeDao.updateCategory(placeId.raw, category.name, category.name)
     }
 
-    override suspend fun confirmPlace(placeId: Long): Result<Unit> = runCatching {
-        val place = placeDao.getById(placeId)
-            ?: throw IllegalArgumentException("Place $placeId not found")
+    override suspend fun confirmPlace(placeId: PlaceId): Result<Unit> = runCatching {
+        val place = placeDao.getById(placeId.raw)
+            ?: throw IllegalArgumentException("Place ${placeId.raw} not found")
         placeDao.update(
             place.copy(
                 lifecycleStatus = PlaceLifecycleStatus.CONFIRMED.name,
@@ -107,8 +111,8 @@ class PlaceRepositoryImpl @Inject constructor(
         return placeDao.getHomePlace()?.toTimelinePlace()
     }
 
-    override suspend fun setPlaceEmoji(placeId: Long, emoji: String?): Result<Unit> = runCatching {
-        placeDao.updateEmoji(placeId, emoji)
+    override suspend fun setPlaceEmoji(placeId: PlaceId, emoji: String?): Result<Unit> = runCatching {
+        placeDao.updateEmoji(placeId.raw, emoji)
     }
 
     private fun PlaceEntity.toTimelinePlace(): TimelinePlace {

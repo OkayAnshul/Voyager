@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
 import com.cosmiclaboratory.voyager.domain.model.TimelinePlace
+import com.cosmiclaboratory.voyager.domain.model.ids.PlaceId
 import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
 import com.cosmiclaboratory.voyager.presentation.state.SharedUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -47,21 +48,21 @@ class PlaceReviewViewModel @Inject constructor(
 
     fun confirmPlace(placeId: Long) {
         viewModelScope.launch {
-            placeRepository.confirmPlace(placeId)
+            placeRepository.confirmPlace(PlaceId(placeId))
                 .onSuccess { _uiState.update { it.copy(message = "Place confirmed") } }
         }
     }
 
     fun renamePlace(placeId: Long, newName: String) {
         viewModelScope.launch {
-            placeRepository.renamePlace(placeId, newName)
+            placeRepository.renamePlace(PlaceId(placeId), newName)
                 .onSuccess { _uiState.update { it.copy(message = "Place renamed") } }
         }
     }
 
     fun setCategory(placeId: Long, category: PlaceCategory) {
         viewModelScope.launch {
-            placeRepository.setPlaceCategory(placeId, category)
+            placeRepository.setPlaceCategory(PlaceId(placeId), category)
         }
     }
 

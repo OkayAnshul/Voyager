@@ -3,6 +3,8 @@ package com.cosmiclaboratory.voyager.domain.repository
 import android.net.Uri
 import com.cosmiclaboratory.voyager.domain.model.*
 import com.cosmiclaboratory.voyager.domain.model.enums.*
+import com.cosmiclaboratory.voyager.domain.model.ids.PlaceId
+import com.cosmiclaboratory.voyager.domain.model.ids.VisitId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -26,15 +28,15 @@ interface TimelineRepository {
 
 interface PlaceRepository {
     fun observePlaces(): Flow<List<TimelinePlace>>
-    fun observePlace(placeId: Long): Flow<TimelinePlace?>
-    suspend fun renamePlace(placeId: Long, name: String): Result<Unit>
-    suspend fun mergePlaces(sourceIds: List<Long>, targetId: Long): Result<Unit>
-    suspend fun splitPlace(placeId: Long, visitIds: List<Long>): Result<Long>
-    suspend fun setPlaceCategory(placeId: Long, category: PlaceCategory): Result<Unit>
-    suspend fun confirmPlace(placeId: Long): Result<Unit>
+    fun observePlace(placeId: PlaceId): Flow<TimelinePlace?>
+    suspend fun renamePlace(placeId: PlaceId, name: String): Result<Unit>
+    suspend fun mergePlaces(sourceIds: List<PlaceId>, targetId: PlaceId): Result<Unit>
+    suspend fun splitPlace(placeId: PlaceId, visitIds: List<VisitId>): Result<PlaceId>
+    suspend fun setPlaceCategory(placeId: PlaceId, category: PlaceCategory): Result<Unit>
+    suspend fun confirmPlace(placeId: PlaceId): Result<Unit>
     suspend fun getFrequentPlaces(limit: Int): List<TimelinePlace>
     suspend fun getHomePlace(): TimelinePlace?
-    suspend fun setPlaceEmoji(placeId: Long, emoji: String?): Result<Unit>
+    suspend fun setPlaceEmoji(placeId: PlaceId, emoji: String?): Result<Unit>
 }
 
 interface EvidenceRepository {

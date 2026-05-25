@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.cosmiclaboratory.voyager.domain.model.*
 import com.cosmiclaboratory.voyager.domain.model.enums.CorrectionType
 import com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
+import com.cosmiclaboratory.voyager.domain.model.ids.PlaceId
 import com.cosmiclaboratory.voyager.domain.repository.CorrectionRepository
 import com.cosmiclaboratory.voyager.domain.repository.EvidenceRepository
 import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
@@ -133,10 +134,10 @@ class TimelineViewModel @Inject constructor(
                 )
             }
             is TimelineIntent.SelectGeocodeName -> viewModelScope.launch {
-                placeRepository.renamePlace(intent.placeId, intent.name)
+                placeRepository.renamePlace(PlaceId(intent.placeId), intent.name)
             }
             is TimelineIntent.RenamePlace -> viewModelScope.launch {
-                placeRepository.renamePlace(intent.placeId, intent.name)
+                placeRepository.renamePlace(PlaceId(intent.placeId), intent.name)
             }
             is TimelineIntent.NavigatePrevious -> dayNavigation.navigatePreviousDay()
             is TimelineIntent.NavigateNext -> dayNavigation.navigateNextDay()
