@@ -42,6 +42,8 @@ data class TripEntity(
     val coverPhotoUri: String? = null,
     /** JSON map of `dayKey` → caption; null until the user writes one. */
     val dayCaptionsJson: String? = null,
+    // Multi-user scoping (v8) — inert until sync/multi-user ships; default = install id.
+    val userId: String = "",
     // Cloud-ready audit columns (v3). Inert until sync ships — see MIGRATION_2_3.
     val lastModifiedAt: Long = 0L,
     val revision: Long = 1L,

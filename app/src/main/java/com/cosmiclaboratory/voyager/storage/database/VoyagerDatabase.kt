@@ -49,7 +49,7 @@ import net.sqlcipher.database.SupportFactory
         // Activities (recorded workouts)
         ActivityEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -281,11 +281,33 @@ abstract class VoyagerDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v7 → v8: multi-user scoping column.
+         *
+         * Adds `userId` to every syncable table — the last piece of the cloud-ready
+         * contract (audit §A2). Inert today (default ''), exactly like the v3 audit
+         * columns: no read query filters on it and there is no multi-user/sync engine
+         * yet. Frozen now so multi-tenant / family / sync is an additive change later.
+         * Purely additive — no existing data is touched.
+         */
+        private val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val syncableTables = listOf(
+                    "places", "visits", "movement_segments", "routes",
+                    "geocode_candidates", "correction_feedback", "place_evidence",
+                    "trips", "activities"
+                )
+                for (table in syncableTables) {
+                    db.execSQL("ALTER TABLE `$table` ADD COLUMN `userId` TEXT NOT NULL DEFAULT ''")
+                }
+            }
+        }
+
         /** Exposed for migration tests. Production code uses it only via [buildDatabase]. */
         internal val MIGRATIONS: Array<androidx.room.migration.Migration> =
             arrayOf(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                MIGRATION_5_6, MIGRATION_6_7
+                MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
             )
 
         /**
