@@ -165,7 +165,7 @@ class VoyagerDatabaseMigrationTest {
             close()
         }
 
-        val db = helper.runMigrationsAndValidate(testDb, 5, true, VoyagerDatabase.MIGRATIONS.last())
+        val db = helper.runMigrationsAndValidate(testDb, 5, true, *VoyagerDatabase.MIGRATIONS)
 
         // The pre-existing v4 row survives.
         db.query("SELECT COUNT(*) FROM movement_segments").use { c ->
