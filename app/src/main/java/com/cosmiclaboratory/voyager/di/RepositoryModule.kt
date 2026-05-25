@@ -2,8 +2,10 @@ package com.cosmiclaboratory.voyager.di
 
 import com.cosmiclaboratory.voyager.data.media.MediaStorePhotoLibrary
 import com.cosmiclaboratory.voyager.data.repository.*
+import com.cosmiclaboratory.voyager.data.sync.NoOpSyncManager
 import com.cosmiclaboratory.voyager.domain.photo.PhotoLibrary
 import com.cosmiclaboratory.voyager.domain.repository.*
+import com.cosmiclaboratory.voyager.domain.sync.SyncManager
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -13,6 +15,10 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class RepositoryModule {
+
+    // On-device-only default; the frozen cloud-sync seam (hardening audit §8).
+    @Binds @Singleton
+    abstract fun bindSyncManager(impl: NoOpSyncManager): SyncManager
 
     @Binds @Singleton
     abstract fun bindTrackingRepository(impl: TrackingRepositoryImpl): TrackingRepository
