@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
 import com.cosmiclaboratory.voyager.domain.model.TimelinePlace
+import com.cosmiclaboratory.voyager.domain.model.ids.PlaceId
 import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
 import com.cosmiclaboratory.voyager.utils.ProductionLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -245,7 +246,7 @@ class CategoriesViewModel @Inject constructor(
                     "CategoriesViewModel",
                     "Assigning place '${place.displayName}' to category ${category.displayName}"
                 )
-                placeRepository.setPlaceCategory(place.placeId, category)
+                placeRepository.setPlaceCategory(PlaceId(place.placeId), category)
                 logger.d("CategoriesViewModel", "Successfully assigned place to category")
             } catch (e: Exception) {
                 logger.e("CategoriesViewModel", "Failed to assign place to category", e)

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cosmiclaboratory.voyager.domain.model.*
 import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
+import com.cosmiclaboratory.voyager.domain.model.ids.PlaceId
 import com.cosmiclaboratory.voyager.domain.repository.AnalyticsRepository
 import com.cosmiclaboratory.voyager.domain.repository.EvidenceRepository
 import com.cosmiclaboratory.voyager.domain.repository.GeocodingRepository
@@ -48,7 +49,7 @@ class PlaceDetailViewModel @Inject constructor(
     init {
         if (placeId > 0) {
             viewModelScope.launch {
-                placeRepository.observePlace(placeId).collect { place ->
+                placeRepository.observePlace(PlaceId(placeId)).collect { place ->
                     _uiState.update { it.copy(place = place, isLoading = false) }
                 }
             }
@@ -66,12 +67,12 @@ class PlaceDetailViewModel @Inject constructor(
     fun onIntent(intent: PlaceDetailIntent) {
         viewModelScope.launch {
             when (intent) {
-                is PlaceDetailIntent.Rename -> placeRepository.renamePlace(placeId, intent.name)
-                is PlaceDetailIntent.SetCategory -> placeRepository.setPlaceCategory(placeId, intent.category)
-                is PlaceDetailIntent.SetEmoji -> placeRepository.setPlaceEmoji(placeId, intent.emoji)
-                is PlaceDetailIntent.Confirm -> placeRepository.confirmPlace(placeId)
+                is PlaceDetailIntent.Rename -> placeRepository.renamePlace(PlaceId(placeId), intent.name)
+                is PlaceDetailIntent.SetCategory -> placeRepository.setPlaceCategory(PlaceId(placeId), intent.category)
+                is PlaceDetailIntent.SetEmoji -> placeRepository.setPlaceEmoji(PlaceId(placeId), intent.emoji)
+                is PlaceDetailIntent.Confirm -> placeRepository.confirmPlace(PlaceId(placeId))
                 is PlaceDetailIntent.MergeWith -> placeRepository.mergePlaces(
-                    sourceIds = listOf(placeId), targetId = intent.targetPlaceId
+                    sourceIds = listOf(PlaceId(placeId)), targetId = PlaceId(intent.targetPlaceId)
                 )
                 is PlaceDetailIntent.RefreshGeocode -> {
                     geocodingRepository.refreshGeocodeForPlace(placeId)
