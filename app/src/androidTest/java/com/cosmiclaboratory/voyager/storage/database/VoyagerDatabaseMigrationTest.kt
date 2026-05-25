@@ -36,7 +36,7 @@ class VoyagerDatabaseMigrationTest {
      */
     @Test
     @Throws(IOException::class)
-    fun migrate1To7_preservesData() {
+    fun migrate1To8_preservesData() {
         helper.createDatabase(testDb, 1).apply {
             execSQL(
                 """
@@ -58,7 +58,7 @@ class VoyagerDatabaseMigrationTest {
         }
 
         val db = helper.runMigrationsAndValidate(
-            testDb, 7, true, *VoyagerDatabase.MIGRATIONS
+            testDb, 8, true, *VoyagerDatabase.MIGRATIONS
         )
 
         db.query("SELECT segmentId, segmentType, distanceM FROM movement_segments").use { c ->
@@ -123,6 +123,46 @@ class VoyagerDatabaseMigrationTest {
             assertThat(c.moveToFirst()).isTrue()
             assertThat(c.getString(0)).isEqualTo("RUN")
             assertThat(c.getDouble(1)).isEqualTo(5000.0)
+        }
+
+        // The v8 userId column exists on syncable tables and defaults to '' on the
+        // v1 place row that predates it.
+        db.query("SELECT userId FROM places").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("")
+        }
+    }
+
+    /**
+     * Direct v7 → v8 hop: the userId column is purely additive across the syncable
+     * tables and defaults to '' on pre-existing rows.
+     */
+    @Test
+    @Throws(IOException::class)
+    fun migrate7To8_addsUserIdColumn() {
+        helper.createDatabase(testDb, 7).apply {
+            execSQL(
+                """
+                INSERT INTO movement_segments
+                    (segmentType, startAt, endAt, distanceM, confidence, dayKey,
+                     isUserCorrected, lastModifiedAt, revision)
+                VALUES ('DRIVE', 1000, 5000, 8000.0, 0.9, '2026-05-25', 0, 0, 1)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(testDb, 8, true, *VoyagerDatabase.MIGRATIONS)
+
+        db.query("SELECT userId FROM movement_segments").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("")
+        }
+        // A representative sample of the other syncable tables also gained the column.
+        for (table in listOf("places", "visits", "routes", "trips", "activities")) {
+            db.query("SELECT userId FROM $table LIMIT 0").use { c ->
+                assertThat(c.getColumnIndex("userId")).isAtLeast(0)
+            }
         }
     }
 
