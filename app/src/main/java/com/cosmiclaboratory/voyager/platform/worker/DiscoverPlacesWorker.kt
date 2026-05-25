@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.cosmiclaboratory.voyager.domain.model.enums.GeocodingProviderId
 import com.cosmiclaboratory.voyager.domain.model.enums.PlaceLifecycleStatus
 import com.cosmiclaboratory.voyager.domain.model.enums.VisitSource
 import com.cosmiclaboratory.voyager.domain.util.GeohashEncoder
@@ -49,6 +50,26 @@ class DiscoverPlacesWorker @AssistedInject constructor(
         /** Cluster radius for the current permission grant — exposed for unit testing. */
         fun clusterRadiusFor(roughMode: Boolean): Double =
             if (roughMode) ROUGH_CLUSTER_RADIUS_M else CLUSTER_RADIUS_M
+
+        /** Confidence floor for a place whose centroid geocodes to a named OSM POI. */
+        const val POI_PRIOR_CONFIDENCE = 0.85f
+
+        /**
+         * Confidence for a newly-discovered place. A centroid that geocodes to a
+         * named OSM POI (Overpass) is strong evidence the place is real, so it lifts
+         * confidence to at least [POI_PRIOR_CONFIDENCE] — except in rough/approximate
+         * mode, where the centroid is too coarse to trust a POI match (so it stays
+         * capped). Exposed for unit testing.
+         */
+        fun resolvePlaceConfidence(
+            baseConfidence: Float,
+            isPoiPrior: Boolean,
+            roughMode: Boolean
+        ): Float = when {
+            roughMode -> baseConfidence.coerceAtMost(0.5f)
+            isPoiPrior -> maxOf(baseConfidence, POI_PRIOR_CONFIDENCE)
+            else -> baseConfidence
+        }
     }
 
     /** Set once per run from the live permission snapshot; drives the cluster radius. */
@@ -91,13 +112,17 @@ class DiscoverPlacesWorker @AssistedInject constructor(
                         assignVisitToPlace(point.visitId, nearbyPlace.placeId)
                     }
                 } else {
-                    // Reverse geocode to get a name for the new place — skipped when
+                    // Reverse geocode for a name + provenance — skipped when
                     // auto-geocoding is off (place keeps its coordinate name).
-                    val displayName = if (settings.autoGeocodeNewPlaces) {
+                    val enrichment = if (settings.autoGeocodeNewPlaces) {
                         try {
-                            enrichPlaceUseCase(centroidLat, centroidLng)
+                            enrichPlaceUseCase.enrichWithSource(centroidLat, centroidLng)
                         } catch (_: Exception) { null }
                     } else null
+                    val displayName = enrichment?.displayName
+                    // POI prior: the centroid resolved to a named OSM POI — strong
+                    // evidence this is a real place, so confidence is lifted below.
+                    val isPoiPrior = enrichment?.providerSource == GeocodingProviderId.OVERPASS.name
 
                     // Coarse-location places are broad areas — never let one look
                     // as trustworthy as a precisely-clustered place.
@@ -108,12 +133,16 @@ class DiscoverPlacesWorker @AssistedInject constructor(
                             centroidLng = centroidLng,
                             radiusM = computeClusterRadius(cluster, centroidLat, centroidLng),
                             geohash = geohash,
-                            confidence = if (roughMode) baseConfidence.coerceAtMost(0.5f) else baseConfidence,
+                            confidence = resolvePlaceConfidence(baseConfidence, isPoiPrior, roughMode),
                             lifecycleStatus = PlaceLifecycleStatus.CANDIDATE.name,
                             createdAt = System.currentTimeMillis(),
                             lastVisitedAt = cluster.maxOf { it.arrivalAt },
                             bestProviderName = displayName,
-                            bestProviderSource = if (displayName != null) "GEOCODE" else null,
+                            bestProviderSource = when {
+                                isPoiPrior -> "OVERPASS"
+                                displayName != null -> "GEOCODE"
+                                else -> null
+                            },
                         )
                     )
                     for (point in cluster) {
