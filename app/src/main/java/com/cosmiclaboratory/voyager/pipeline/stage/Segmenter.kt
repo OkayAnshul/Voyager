@@ -1,22 +1,19 @@
 package com.cosmiclaboratory.voyager.pipeline.stage
 
+import com.cosmiclaboratory.voyager.domain.model.InProgressSegmentSnapshot
 import com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
 import com.cosmiclaboratory.voyager.domain.usecase.FusedMotionState
 import com.cosmiclaboratory.voyager.domain.model.enums.ActivityType
 import com.cosmiclaboratory.voyager.domain.util.LocationUtils
 import com.cosmiclaboratory.voyager.domain.util.DouglasPeuckerSimplifier
 import com.cosmiclaboratory.voyager.domain.util.PolylineEncoder
+import com.cosmiclaboratory.voyager.pipeline.EvidenceDraft
 import com.cosmiclaboratory.voyager.pipeline.PipelineConstants
+import com.cosmiclaboratory.voyager.pipeline.PipelineGateway
 import com.cosmiclaboratory.voyager.pipeline.RawSample
-import com.cosmiclaboratory.voyager.storage.database.VoyagerDatabase
-import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
-import com.cosmiclaboratory.voyager.storage.database.dao.RouteDao
-import com.cosmiclaboratory.voyager.storage.database.dao.SegmentEvidenceDao
-import com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity
-import com.cosmiclaboratory.voyager.storage.database.entity.RouteEntity
-import com.cosmiclaboratory.voyager.storage.database.entity.SegmentEvidenceEntity
+import com.cosmiclaboratory.voyager.pipeline.RouteDraft
+import com.cosmiclaboratory.voyager.pipeline.SegmentDraft
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
-import androidx.room.withTransaction
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.builtins.MapSerializer
@@ -26,10 +23,7 @@ import javax.inject.Singleton
 
 @Singleton
 class Segmenter @Inject constructor(
-    private val database: VoyagerDatabase,
-    private val movementSegmentDao: MovementSegmentDao,
-    private val segmentEvidenceDao: SegmentEvidenceDao,
-    private val routeDao: RouteDao,
+    private val pipelineGateway: PipelineGateway,
     private val stateStore: TimelineStateStore
 ) {
     // Mutex guards all mutable state below. PipelineConsumer calls processSample()
@@ -233,7 +227,19 @@ class Segmenter @Inject constructor(
         // maxOf guard prevents negative-duration segments from out-of-order FLP samples.
         val segmentEndAt = maxOf(bridgeToMs ?: lastSample.capturedAt, firstSample.capturedAt)
 
-        val segment = MovementSegmentEntity(
+        val speeds = segmentSamples.mapNotNull { it.speedMps }
+        val avgSpeedMps = if (speeds.isNotEmpty()) speeds.average().toFloat() else null
+        val maxSpeedMps = speeds.maxOrNull()
+        val evidenceDraft = EvidenceDraft(
+            avgSpeedMps = avgSpeedMps,
+            maxSpeedMps = maxSpeedMps,
+            sampleCount = segmentSamples.size,
+            activityVotesJson = kotlinx.serialization.json.Json.encodeToString(
+                MapSerializer(String.serializer(), Int.serializer()),
+                activityVotes
+            )
+        )
+        val segmentDraft = SegmentDraft(
             segmentType = type.name,
             startAt = firstSample.capturedAt,
             endAt = segmentEndAt,
@@ -243,49 +249,28 @@ class Segmenter @Inject constructor(
             confidence = 0.7f,
             dayKey = dayKey
         )
-
-        val speeds = segmentSamples.mapNotNull { it.speedMps }
-        val evidence = SegmentEvidenceEntity(
-            segmentId = 0, // placeholder — replaced after insert
-            avgSpeedMps = if (speeds.isNotEmpty()) speeds.average().toFloat() else null,
-            maxSpeedMps = speeds.maxOrNull(),
-            sampleCount = segmentSamples.size,
-            activityVotesJson = kotlinx.serialization.json.Json.encodeToString(
-                MapSerializer(String.serializer(), Int.serializer()),
-                activityVotes
+        val routeDraft = if (type != SegmentType.VISIT && type != SegmentType.DWELL && segmentSamples.size >= 2) {
+            val points = segmentSamples.map { it.lat to it.lng }
+            val encodedPolyline = PolylineEncoder.encode(points)
+            val simplifiedPoints = DouglasPeuckerSimplifier.simplify(points, epsilonM = 5.0)
+            val simplifiedPolyline = if (simplifiedPoints.size < points.size) {
+                PolylineEncoder.encode(simplifiedPoints)
+            } else null
+            val durationMs = lastSample.capturedAt - firstSample.capturedAt
+            RouteDraft(
+                encodedPolyline = encodedPolyline,
+                simplifiedPolyline = simplifiedPolyline,
+                totalDistanceM = totalDistance,
+                totalDurationMs = durationMs,
+                avgSpeedMps = avgSpeedMps ?: 0f,
+                maxSpeedMps = maxSpeedMps ?: 0f,
+                transportMode = type.name,
+                sampleCount = segmentSamples.size
             )
-        )
+        } else null
 
-        // All DB ops in one atomic transaction
-        val segmentId = database.withTransaction {
-            val segId = movementSegmentDao.insert(segment)
-            segmentEvidenceDao.upsert(evidence.copy(segmentId = segId))
-
-            if (type != SegmentType.VISIT && type != SegmentType.DWELL && segmentSamples.size >= 2) {
-                val points = segmentSamples.map { it.lat to it.lng }
-                val encodedPolyline = PolylineEncoder.encode(points)
-                val simplifiedPoints = DouglasPeuckerSimplifier.simplify(points, epsilonM = 5.0)
-                val simplifiedPolyline = if (simplifiedPoints.size < points.size) {
-                    PolylineEncoder.encode(simplifiedPoints)
-                } else null
-                val durationMs = lastSample.capturedAt - firstSample.capturedAt
-                val route = RouteEntity(
-                    segmentId = segId,
-                    encodedPolyline = encodedPolyline,
-                    simplifiedPolyline = simplifiedPolyline,
-                    totalDistanceM = totalDistance,
-                    totalDurationMs = durationMs,
-                    avgSpeedMps = evidence.avgSpeedMps ?: 0f,
-                    maxSpeedMps = evidence.maxSpeedMps ?: 0f,
-                    transportMode = type.name,
-                    sampleCount = segmentSamples.size
-                )
-                val routeId = routeDao.insert(route)
-                movementSegmentDao.update(segment.copy(segmentId = segId, routeId = routeId))
-            }
-
-            segId
-        }
+        // Atomic segment + evidence (+ optional route) write — transaction lives in the gateway impl.
+        val segmentId = pipelineGateway.commitClosedSegment(segmentDraft, evidenceDraft, routeDraft)
 
         stateStore.setCurrentSegment(segmentId)
 
@@ -304,7 +289,7 @@ class Segmenter @Inject constructor(
      * Used by the live timeline to show data before the 5-minute flush.
      * Not suspend — uses tryLock to avoid blocking the pipeline. Returns null if locked.
      */
-    fun getInProgressSnapshot(): MovementSegmentEntity? {
+    fun getInProgressSnapshot(): InProgressSegmentSnapshot? {
         if (!mutex.tryLock()) return null
         try {
             val type = currentSegmentType ?: return null
@@ -325,16 +310,12 @@ class Segmenter @Inject constructor(
                     if (dist > noiseFloor) totalDistance += dist
                 }
             }
-            return MovementSegmentEntity(
-                segmentId = -1,
+            return InProgressSegmentSnapshot(
                 segmentType = type.name,
                 startAt = first.capturedAt,
                 endAt = last.capturedAt,
-                startSampleId = first.sampleId,
-                endSampleId = last.sampleId,
                 distanceM = totalDistance,
-                confidence = 0.7f,
-                dayKey = ""
+                sampleCount = segmentSamples.size
             )
         } finally {
             mutex.unlock()

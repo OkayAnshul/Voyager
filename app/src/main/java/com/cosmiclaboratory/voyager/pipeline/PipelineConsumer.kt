@@ -11,7 +11,6 @@ import com.cosmiclaboratory.voyager.domain.usecase.FuseActivityStateUseCase
 import com.cosmiclaboratory.voyager.domain.usecase.MatchPlaceLiveUseCase
 import com.cosmiclaboratory.voyager.domain.usecase.VisitDetectionResult
 import com.cosmiclaboratory.voyager.domain.util.LocationUtils
-import com.cosmiclaboratory.voyager.domain.model.InProgressSegmentSnapshot
 import com.cosmiclaboratory.voyager.pipeline.stage.*
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
 import com.cosmiclaboratory.voyager.utils.ProductionLogger
@@ -296,13 +295,7 @@ class PipelineConsumer @Inject constructor(
         segmenter.processSample(smoothed, effectiveMotionState, dayKey)
 
         // 7b. Push in-progress segment snapshot for live UI
-        val snapshot = segmenter.getInProgressSnapshot()
-        timelineStateStore.setInProgressSegment(snapshot?.let {
-            InProgressSegmentSnapshot(
-                segmentType = it.segmentType, startAt = it.startAt,
-                endAt = it.endAt, distanceM = it.distanceM, sampleCount = 0
-            )
-        })
+        timelineStateStore.setInProgressSegment(segmenter.getInProgressSnapshot())
 
         // 8. Commit state
         stateCommitter.commit(smoothed, pipelineStartMs)
