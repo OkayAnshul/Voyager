@@ -1,11 +1,13 @@
 package com.cosmiclaboratory.voyager.di
 
 import com.cosmiclaboratory.voyager.data.media.MediaStorePhotoLibrary
+import com.cosmiclaboratory.voyager.data.pipeline.PipelineGatewayImpl
 import com.cosmiclaboratory.voyager.data.repository.*
 import com.cosmiclaboratory.voyager.data.sync.NoOpSyncManager
 import com.cosmiclaboratory.voyager.domain.photo.PhotoLibrary
 import com.cosmiclaboratory.voyager.domain.repository.*
 import com.cosmiclaboratory.voyager.domain.sync.SyncManager
+import com.cosmiclaboratory.voyager.pipeline.PipelineGateway
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -19,6 +21,10 @@ abstract class RepositoryModule {
     // On-device-only default; the frozen cloud-sync seam (hardening audit §8).
     @Binds @Singleton
     abstract fun bindSyncManager(impl: NoOpSyncManager): SyncManager
+
+    // The pipeline's storage seam (audit A6 / KMP). Keeps Room out of `pipeline/`.
+    @Binds @Singleton
+    abstract fun bindPipelineGateway(impl: PipelineGatewayImpl): PipelineGateway
 
     @Binds @Singleton
     abstract fun bindTrackingRepository(impl: TrackingRepositoryImpl): TrackingRepository
