@@ -14,11 +14,6 @@ import com.cosmiclaboratory.voyager.domain.util.LocationUtils
 import com.cosmiclaboratory.voyager.domain.model.InProgressSegmentSnapshot
 import com.cosmiclaboratory.voyager.pipeline.stage.*
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
-import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
-import com.cosmiclaboratory.voyager.storage.database.dao.RawActivitySampleDao
-import com.cosmiclaboratory.voyager.storage.database.dao.RawLocationSampleDao
-import com.cosmiclaboratory.voyager.storage.database.dao.RawStepSampleDao
-import com.cosmiclaboratory.voyager.storage.database.entity.RawLocationSampleEntity
 import com.cosmiclaboratory.voyager.utils.ProductionLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -50,12 +45,9 @@ class PipelineConsumer @Inject constructor(
     private val fuseActivityStateUseCase: FuseActivityStateUseCase,
     private val segmenter: Segmenter,
     private val stateCommitter: StateCommitter,
-    private val rawLocationSampleDao: RawLocationSampleDao,
-    private val rawActivitySampleDao: RawActivitySampleDao,
-    private val rawStepSampleDao: RawStepSampleDao,
+    private val pipelineGateway: PipelineGateway,
     private val detectVisitUseCase: DetectVisitUseCase,
     private val matchPlaceLiveUseCase: MatchPlaceLiveUseCase,
-    private val movementSegmentDao: MovementSegmentDao,
     private val adaptiveSamplingPolicy: AdaptiveSamplingPolicy,
     private val locationCapture: LocationCapture,
     private val activityCapture: ActivityCapture,
@@ -160,23 +152,15 @@ class PipelineConsumer @Inject constructor(
     private suspend fun createGapSegment(startMs: Long, endMs: Long, reason: String) {
         val zone = ZoneId.of(java.util.TimeZone.getDefault().id)
         val dayKey = Instant.ofEpochMilli(startMs).atZone(zone).toLocalDate().format(dayKeyFormatter)
-        val gap = com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity(
-            segmentType = com.cosmiclaboratory.voyager.domain.model.enums.SegmentType.GAP.name,
-            startAt = startMs,
-            endAt = endMs,
-            gapReason = reason,
-            dayKey = dayKey,
-            confidence = 1.0f
-        )
-        movementSegmentDao.insert(gap)
+        pipelineGateway.recordGapSegment(startAt = startMs, endAt = endMs, dayKey = dayKey, reason = reason)
     }
 
     private suspend fun bridgeGapIfNeeded(sampleTime: Long) {
-        val latest = movementSegmentDao.getLatest() ?: return
+        val latest = pipelineGateway.latestSegment() ?: return
         if (latest.segmentType == com.cosmiclaboratory.voyager.domain.model.enums.SegmentType.GAP.name &&
             latest.endAt < sampleTime
         ) {
-            movementSegmentDao.update(latest.copy(endAt = sampleTime))
+            pipelineGateway.updateSegmentEndAt(latest.segmentId, sampleTime)
         }
     }
 
@@ -187,23 +171,7 @@ class PipelineConsumer @Inject constructor(
         stateCommitter.commitTimestampEarly(rawSample.capturedAt)
 
         // 1. Persist raw sample
-        val sampleId = rawLocationSampleDao.insert(
-            RawLocationSampleEntity(
-                capturedAt = rawSample.capturedAt,
-                receivedAt = System.currentTimeMillis(),
-                lat = rawSample.lat, lng = rawSample.lng,
-                accuracyM = rawSample.accuracyM,
-                verticalAccuracyM = rawSample.verticalAccuracyM,
-                speedMps = rawSample.speedMps, bearingDeg = rawSample.bearingDeg,
-                altitudeM = rawSample.altitudeM,
-                provider = rawSample.provider, isMock = rawSample.isMock,
-                batteryPct = rawSample.batteryPct, isCharging = rawSample.isCharging,
-                deviceIdleMode = rawSample.deviceIdleMode,
-                permissionSnapshot = rawSample.permissionSnapshot,
-                trackingSessionId = rawSample.trackingSessionId,
-                localTimeZone = rawSample.localTimeZone, geohash = rawSample.geohash
-            )
-        )
+        val sampleId = pipelineGateway.recordSample(rawSample)
         val sample = rawSample.copy(sampleId = sampleId)
 
         // 2. Normalize
@@ -228,7 +196,7 @@ class PipelineConsumer @Inject constructor(
         }
 
         // 4. Fuse activity state
-        val arSample = rawActivitySampleDao.getLatest()
+        val arSample = pipelineGateway.latestActivity()
         val arAge = smoothed.capturedAt - (arSample?.capturedAt ?: 0L)
         val isFresh = arAge < AR_STALENESS_MS
         val arActivity = if (isFresh) arSample?.let { parseActivityType(it.activityType) } else null
@@ -394,7 +362,7 @@ class PipelineConsumer @Inject constructor(
 
     private suspend fun computeStepRate(currentTimeMs: Long): Float? {
         val windowMs = 60_000L
-        val recentSteps = rawStepSampleDao.getByTimeRange(currentTimeMs - windowMs, currentTimeMs)
+        val recentSteps = pipelineGateway.stepBuckets(currentTimeMs - windowMs, currentTimeMs)
         if (recentSteps.isEmpty()) return null
         val totalSteps = recentSteps.sumOf { it.stepCount }
         val spanMs = recentSteps.last().periodEnd - recentSteps.first().periodStart
