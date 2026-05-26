@@ -1,25 +1,20 @@
 package com.cosmiclaboratory.voyager.pipeline
 
 import com.cosmiclaboratory.voyager.domain.model.enums.ActivityType
-import com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
 import com.cosmiclaboratory.voyager.domain.usecase.FusedMotionState
 import com.cosmiclaboratory.voyager.pipeline.stage.Segmenter
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
-import com.cosmiclaboratory.voyager.storage.database.VoyagerDatabase
-import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
-import com.cosmiclaboratory.voyager.storage.database.dao.RouteDao
-import com.cosmiclaboratory.voyager.storage.database.dao.SegmentEvidenceDao
-import com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity
-import androidx.room.withTransaction
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Before
-import org.junit.After
 import org.junit.Test
 
 /**
  * Tests for Segmenter — the motion segmentation state machine.
+ *
+ * Persistence is observed by verifying calls on the [PipelineGateway] (H2 seam);
+ * the Room layer is mocked out at that boundary, not at individual DAOs.
  *
  * Critical scenarios:
  * - Segment creation on first sample
@@ -32,10 +27,7 @@ import org.junit.Test
  */
 class SegmenterTest {
 
-    private val database = mockk<VoyagerDatabase>()
-    private val movementSegmentDao = mockk<MovementSegmentDao>(relaxed = true)
-    private val segmentEvidenceDao = mockk<SegmentEvidenceDao>(relaxed = true)
-    private val routeDao = mockk<RouteDao>(relaxed = true)
+    private val pipelineGateway = mockk<PipelineGateway>(relaxed = true)
     private val stateStore = mockk<TimelineStateStore>(relaxed = true)
 
     private lateinit var segmenter: Segmenter
@@ -45,23 +37,8 @@ class SegmenterTest {
 
     @Before
     fun setup() {
-        // Mock the Room withTransaction extension — executes the block directly.
-        // withTransaction compiles to a static method where arg(0) = receiver, arg(1) = block.
-        mockkStatic("androidx.room.RoomDatabaseKt")
-        @Suppress("UNCHECKED_CAST")
-        coEvery { database.withTransaction<Long>(any()) } coAnswers {
-            val block = args[1] as (suspend () -> Long)
-            block()
-        }
-        coEvery { movementSegmentDao.insert(any()) } returns 100L
-        coEvery { routeDao.insert(any()) } returns 200L
-
-        segmenter = Segmenter(database, movementSegmentDao, segmentEvidenceDao, routeDao, stateStore)
-    }
-
-    @After
-    fun teardown() {
-        unmockkStatic("androidx.room.RoomDatabaseKt")
+        coEvery { pipelineGateway.commitClosedSegment(any(), any(), any()) } returns 100L
+        segmenter = Segmenter(pipelineGateway, stateStore)
     }
 
     private fun sample(
@@ -120,7 +97,7 @@ class SegmenterTest {
         }
 
         // No DB writes yet (no segment closed)
-        coVerify(exactly = 0) { movementSegmentDao.insert(any()) }
+        coVerify(exactly = 0) { pipelineGateway.commitClosedSegment(any(), any(), any()) }
 
         val snapshot = segmenter.getInProgressSnapshot()
         assertNotNull(snapshot)
@@ -139,20 +116,22 @@ class SegmenterTest {
 
         // Switch to STILL — need 5 consecutive
         segmenter.processSample(sample(baseTime + 30_000, sampleId = 3), motion(ActivityType.STILL), dayKey)
-        coVerify(exactly = 0) { movementSegmentDao.insert(any()) } // Not yet
+        coVerify(exactly = 0) { pipelineGateway.commitClosedSegment(any(), any(), any()) }
 
         segmenter.processSample(sample(baseTime + 45_000, sampleId = 4), motion(ActivityType.STILL), dayKey)
-        coVerify(exactly = 0) { movementSegmentDao.insert(any()) } // Not yet
+        coVerify(exactly = 0) { pipelineGateway.commitClosedSegment(any(), any(), any()) }
 
         segmenter.processSample(sample(baseTime + 60_000, sampleId = 5), motion(ActivityType.STILL), dayKey)
-        coVerify(exactly = 0) { movementSegmentDao.insert(any()) } // Not yet
+        coVerify(exactly = 0) { pipelineGateway.commitClosedSegment(any(), any(), any()) }
 
         segmenter.processSample(sample(baseTime + 75_000, sampleId = 6), motion(ActivityType.STILL), dayKey)
-        coVerify(exactly = 0) { movementSegmentDao.insert(any()) } // Not yet
+        coVerify(exactly = 0) { pipelineGateway.commitClosedSegment(any(), any(), any()) }
 
         segmenter.processSample(sample(baseTime + 90_000, sampleId = 7), motion(ActivityType.STILL), dayKey)
-        // Now the WALK segment should have been closed and written to DB
-        coVerify(exactly = 1) { movementSegmentDao.insert(match { it.segmentType == "WALK" }) }
+        // Now the WALK segment should have been closed and written
+        coVerify(exactly = 1) {
+            pipelineGateway.commitClosedSegment(match { it.segmentType == "WALK" }, any(), any())
+        }
 
         // New segment is DWELL (STILL maps to DWELL; VISIT is only set by PipelineConsumer for confirmed visits)
         val snapshot = segmenter.getInProgressSnapshot()
@@ -176,7 +155,7 @@ class SegmenterTest {
         segmenter.processSample(sample(baseTime + 60_000, sampleId = 5), motion(ActivityType.WALKING), dayKey)
 
         // No segment transition should have occurred
-        coVerify(exactly = 0) { movementSegmentDao.insert(any()) }
+        coVerify(exactly = 0) { pipelineGateway.commitClosedSegment(any(), any(), any()) }
 
         // Still in WALK segment
         val snapshot = segmenter.getInProgressSnapshot()
@@ -202,7 +181,9 @@ class SegmenterTest {
         )
 
         // WALK segment should have been flushed
-        coVerify(exactly = 1) { movementSegmentDao.insert(match { it.segmentType == "WALK" }) }
+        coVerify(exactly = 1) {
+            pipelineGateway.commitClosedSegment(match { it.segmentType == "WALK" }, any(), any())
+        }
 
         // New WALK segment started with sample 3
         val snapshot = segmenter.getInProgressSnapshot()
@@ -226,7 +207,9 @@ class SegmenterTest {
         // Simulate stop → flush
         val segmentId = segmenter.closeCurrentSegment(dayKey)
         assertNotNull("closeCurrentSegment should return segment ID", segmentId)
-        coVerify { movementSegmentDao.insert(match { it.segmentType == "WALK" }) }
+        coVerify {
+            pipelineGateway.commitClosedSegment(match { it.segmentType == "WALK" }, any(), any())
+        }
 
         // After close, no in-progress segment
         assertNull(segmenter.getInProgressSnapshot())
@@ -238,7 +221,7 @@ class SegmenterTest {
     fun `closeCurrentSegment with no accumulation returns null`() = runTest {
         val result = segmenter.closeCurrentSegment(dayKey)
         assertNull(result)
-        coVerify(exactly = 0) { movementSegmentDao.insert(any()) }
+        coVerify(exactly = 0) { pipelineGateway.commitClosedSegment(any(), any(), any()) }
     }
 
     // ── Scenario 8: DWELL segments don't create routes ──
@@ -251,8 +234,13 @@ class SegmenterTest {
         segmenter.processSample(sample(baseTime + 15_000, sampleId = 2), motion(ActivityType.STILL), dayKey)
         segmenter.closeCurrentSegment(dayKey)
 
-        coVerify { movementSegmentDao.insert(match { it.segmentType == "DWELL" }) }
-        coVerify(exactly = 0) { routeDao.insert(any()) }
+        coVerify {
+            pipelineGateway.commitClosedSegment(
+                match { it.segmentType == "DWELL" },
+                any(),
+                isNull()
+            )
+        }
     }
 
     // ── Scenario 9: Movement segments DO create routes ──
@@ -271,7 +259,13 @@ class SegmenterTest {
         )
         segmenter.closeCurrentSegment(dayKey)
 
-        coVerify { routeDao.insert(match { it.transportMode == "WALK" }) }
+        coVerify {
+            pipelineGateway.commitClosedSegment(
+                any(),
+                any(),
+                match { it != null && it.transportMode == "WALK" }
+            )
+        }
     }
 
     // ── Scenario 10: In-progress snapshot returns null when locked ──
@@ -299,7 +293,9 @@ class SegmenterTest {
         segmenter.processSample(sample(baseTime + 90_000, sampleId = 7), motion(ActivityType.IN_VEHICLE), dayKey)
 
         // WALK segment closed
-        coVerify { movementSegmentDao.insert(match { it.segmentType == "WALK" }) }
+        coVerify {
+            pipelineGateway.commitClosedSegment(match { it.segmentType == "WALK" }, any(), any())
+        }
 
         // Now in DRIVE segment
         val snapshot = segmenter.getInProgressSnapshot()
@@ -322,7 +318,9 @@ class SegmenterTest {
 
         for ((activity, expectedSegment) in types) {
             // Fresh segmenter for each
-            val seg = Segmenter(database, movementSegmentDao, segmentEvidenceDao, routeDao, stateStore)
+            val gw = mockk<PipelineGateway>(relaxed = true)
+            coEvery { gw.commitClosedSegment(any(), any(), any()) } returns 100L
+            val seg = Segmenter(gw, stateStore)
             val now = System.currentTimeMillis()
             seg.processSample(sample(now), motion(activity), dayKey)
             val snapshot = seg.getInProgressSnapshot()

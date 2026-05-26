@@ -12,10 +12,6 @@ import com.cosmiclaboratory.voyager.domain.usecase.VisitDetectionResult
 import com.cosmiclaboratory.voyager.domain.util.GeohashEncoder
 import com.cosmiclaboratory.voyager.domain.util.LocationUtils
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
-import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
-import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
-import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
-import com.cosmiclaboratory.voyager.storage.database.entity.PlaceEntity
 import com.cosmiclaboratory.voyager.utils.ProductionLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,13 +22,15 @@ import javax.inject.Singleton
 /**
  * Handles place matching, linking, creation, and geocoding after visit detection.
  * Extracted from PipelineConsumer to keep pipeline orchestration focused.
+ *
+ * All persistence goes through [PipelineGateway] — this file holds **only**
+ * orchestration logic (which visit/segment/place is linked to what, when to
+ * auto-promote, when to geocode). The gateway impl in `data/` does the Room mapping.
  */
 @Singleton
 class PlaceLinkingService @Inject constructor(
     private val matchPlaceLiveUseCase: MatchPlaceLiveUseCase,
-    private val visitDao: VisitDao,
-    private val placeDao: PlaceDao,
-    private val movementSegmentDao: MovementSegmentDao,
+    private val pipelineGateway: PipelineGateway,
     private val enrichPlaceUseCase: EnrichPlaceWithDetailsUseCase,
     private val geocodingRepository: GeocodingRepository,
     private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository,
@@ -81,7 +79,7 @@ class PlaceLinkingService @Inject constructor(
                     val state = timelineStateStore.getState()
                     val confirmedVisitId = state.lastConfirmedVisitId
                     if (confirmedVisitId != null) {
-                        val visit = visitDao.getById(confirmedVisitId)
+                        val visit = pipelineGateway.getVisit(confirmedVisitId)
                         if (visit != null && visit.placeId == 0L) {
                             linkVisitToPlace(confirmedVisitId, placeMatch.matchedPlace.placeId)
                         }
@@ -98,42 +96,39 @@ class PlaceLinkingService @Inject constructor(
     }
 
     private suspend fun linkVisitToPlace(visitId: Long, placeId: Long) {
-        val visit = visitDao.getById(visitId)
-        if (visit != null) {
-            visitDao.update(visit.copy(placeId = placeId))
-            // Stamp placeId on overlapping VISIT/DWELL segments
-            val segments = movementSegmentDao.getByDayKey(visit.dayKey)
-            for (seg in segments) {
-                if ((seg.segmentType == SegmentType.VISIT.name ||
-                        seg.segmentType == SegmentType.DWELL.name) &&
-                    seg.placeId == null && seg.startAt >= visit.arrivalAt &&
-                    (visit.departureAt == null || seg.startAt <= visit.departureAt!!)
-                ) {
-                    movementSegmentDao.update(seg.copy(placeId = placeId))
-                }
+        val visit = pipelineGateway.getVisit(visitId) ?: return
+        pipelineGateway.setVisitPlace(visitId, placeId)
+        // Stamp placeId on overlapping VISIT/DWELL segments within this visit's time window
+        val segments = pipelineGateway.segmentsForDay(visit.dayKey)
+        for (seg in segments) {
+            if ((seg.segmentType == SegmentType.VISIT.name ||
+                    seg.segmentType == SegmentType.DWELL.name) &&
+                seg.placeId == null && seg.startAt >= visit.arrivalAt &&
+                (visit.departureAt == null || seg.startAt <= visit.departureAt)
+            ) {
+                pipelineGateway.setSegmentPlace(seg.segmentId, placeId)
             }
-            logger.d("PlaceLinkingService", "Linked visit $visitId to place $placeId")
-
-            // Capture Wi-Fi fingerprint at CONFIRMED places
-            val place = placeDao.getById(placeId)
-            if (place != null && place.lifecycleStatus == PlaceLifecycleStatus.CONFIRMED.name) {
-                wifiFingerprinter.captureFingerprint(placeId)
-            }
-
-            autoPromotePlaceIfEligible(placeId)
         }
+        logger.d("PlaceLinkingService", "Linked visit $visitId to place $placeId")
+
+        // Capture Wi-Fi fingerprint at CONFIRMED places
+        val place = pipelineGateway.getPlace(placeId)
+        if (place != null && place.lifecycleStatus == PlaceLifecycleStatus.CONFIRMED.name) {
+            wifiFingerprinter.captureFingerprint(placeId)
+        }
+
+        autoPromotePlaceIfEligible(placeId)
     }
 
     private suspend fun autoPromotePlaceIfEligible(placeId: Long) {
-        val place = placeDao.getById(placeId) ?: return
+        val place = pipelineGateway.getPlace(placeId) ?: return
         if (place.lifecycleStatus != PlaceLifecycleStatus.CANDIDATE.name) return
-        val visitCount = visitDao.countByPlaceId(placeId)
+        val visitCount = pipelineGateway.countVisitsForPlace(placeId)
         if (visitCount >= AUTO_PROMOTE_VISIT_THRESHOLD) {
-            placeDao.update(
-                place.copy(
-                    lifecycleStatus = PlaceLifecycleStatus.CONFIRMED.name,
-                    confidence = maxOf(place.confidence, 0.8f)
-                )
+            pipelineGateway.setPlaceLifecycle(
+                placeId = placeId,
+                lifecycleStatus = PlaceLifecycleStatus.CONFIRMED.name,
+                confidence = maxOf(place.confidence, 0.8f)
             )
             logger.d("PlaceLinkingService", "Auto-promoted place $placeId to CONFIRMED ($visitCount visits)")
             placeGeofenceManager.syncGeofences()
@@ -142,27 +137,28 @@ class PlaceLinkingService @Inject constructor(
 
     private suspend fun createAndLinkPlace(visitId: Long, lat: Double, lng: Double, radiusM: Float = 60f) {
         val geohash = GeohashEncoder.encode(lat, lng)
-        val nearbyPlaces = placeDao.getByGeohashPrefix(geohash.take(5))
+        val nearbyPlaces = pipelineGateway.placesNearGeohash(geohash.take(5))
         val existingNearby = nearbyPlaces.firstOrNull { place ->
             LocationUtils.calculateDistance(lat, lng, place.centroidLat, place.centroidLng) <= 150.0
         }
         if (existingNearby != null) {
             linkVisitToPlace(visitId, existingNearby.placeId)
-            placeDao.update(existingNearby.copy(lastVisitedAt = System.currentTimeMillis()))
+            pipelineGateway.touchPlaceVisited(existingNearby.placeId, System.currentTimeMillis())
             logger.d("PlaceLinkingService", "Reused existing place ${existingNearby.placeId} for visit $visitId")
             return
         }
 
-        val placeId = placeDao.insert(
-            PlaceEntity(
+        val now = System.currentTimeMillis()
+        val placeId = pipelineGateway.createCandidatePlace(
+            PlaceDraft(
                 centroidLat = lat,
                 centroidLng = lng,
                 radiusM = radiusM,
                 geohash = geohash,
                 confidence = 0.5f,
                 lifecycleStatus = PlaceLifecycleStatus.CANDIDATE.name,
-                createdAt = System.currentTimeMillis(),
-                lastVisitedAt = System.currentTimeMillis()
+                createdAt = now,
+                lastVisitedAt = now
             )
         )
         linkVisitToPlace(visitId, placeId)

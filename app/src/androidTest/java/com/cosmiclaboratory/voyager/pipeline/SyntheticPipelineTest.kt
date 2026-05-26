@@ -7,6 +7,7 @@ import com.cosmiclaboratory.voyager.domain.model.enums.ActivityType
 import com.cosmiclaboratory.voyager.domain.time.SystemDefaultClock
 import com.cosmiclaboratory.voyager.domain.usecase.FusedMotionState
 import com.cosmiclaboratory.voyager.domain.util.GeohashEncoder
+import com.cosmiclaboratory.voyager.data.pipeline.PipelineGatewayImpl
 import com.cosmiclaboratory.voyager.pipeline.stage.Segmenter
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
 import com.cosmiclaboratory.voyager.storage.database.VoyagerDatabase
@@ -41,9 +42,19 @@ class SyntheticPipelineTest {
         val stateStore = TimelineStateStore(
             db.currentRuntimeStateDao(), db.healthLogDao(), SystemDefaultClock
         )
-        segmenter = Segmenter(
-            db, db.movementSegmentDao(), db.segmentEvidenceDao(), db.routeDao(), stateStore
+        // Real gateway against the in-memory DB — same wiring the pipeline uses in prod.
+        val gateway = PipelineGatewayImpl(
+            database = db,
+            rawLocationSampleDao = db.rawLocationSampleDao(),
+            rawActivitySampleDao = db.rawActivitySampleDao(),
+            rawStepSampleDao = db.rawStepSampleDao(),
+            movementSegmentDao = db.movementSegmentDao(),
+            segmentEvidenceDao = db.segmentEvidenceDao(),
+            routeDao = db.routeDao(),
+            placeDao = db.placeDao(),
+            visitDao = db.visitDao()
         )
+        segmenter = Segmenter(gateway, stateStore)
     }
 
     // Intentionally no db.close(): TimelineStateStore writes on a fire-and-forget
