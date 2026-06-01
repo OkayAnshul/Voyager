@@ -35,6 +35,7 @@ object WorkerScheduler {
         scheduleBatteryBudgetCheck(workManager)
         scheduleConfidenceDecay(workManager)
         scheduleMergePlaces(workManager)
+        scheduleInferPlaceCategory(workManager)
     }
 
     /**
@@ -228,6 +229,21 @@ object WorkerScheduler {
 
         workManager.enqueueUniquePeriodicWork(
             SearchIndexWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
+    }
+
+    /** Daily place-category inference at ~04:00 — after merges have collapsed duplicates. */
+    private fun scheduleInferPlaceCategory(workManager: WorkManager) {
+        val initialDelay = computeDelayUntil(hour = 4, minute = 0)
+        val request = PeriodicWorkRequestBuilder<InferPlaceCategoryWorker>(24, TimeUnit.HOURS)
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .setConstraints(defaultConstraints())
+            .build()
+
+        workManager.enqueueUniquePeriodicWork(
+            InferPlaceCategoryWorker.WORK_NAME,
             ExistingPeriodicWorkPolicy.KEEP,
             request,
         )
