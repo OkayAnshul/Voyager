@@ -34,6 +34,7 @@ object WorkerScheduler {
         scheduleTrackingHealthCheck(workManager)
         scheduleBatteryBudgetCheck(workManager)
         scheduleConfidenceDecay(workManager)
+        scheduleMergePlaces(workManager)
     }
 
     /**
@@ -227,6 +228,21 @@ object WorkerScheduler {
 
         workManager.enqueueUniquePeriodicWork(
             SearchIndexWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
+    }
+
+    /** Daily place-fragmentation merge at ~03:45 — after rollups but before IntegrityRepair. */
+    private fun scheduleMergePlaces(workManager: WorkManager) {
+        val initialDelay = computeDelayUntil(hour = 3, minute = 45)
+        val request = PeriodicWorkRequestBuilder<MergePlacesWorker>(24, TimeUnit.HOURS)
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .setConstraints(defaultConstraints())
+            .build()
+
+        workManager.enqueueUniquePeriodicWork(
+            MergePlacesWorker.WORK_NAME,
             ExistingPeriodicWorkPolicy.KEEP,
             request,
         )
