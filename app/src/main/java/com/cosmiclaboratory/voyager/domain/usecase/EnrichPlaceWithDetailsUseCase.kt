@@ -2,13 +2,16 @@ package com.cosmiclaboratory.voyager.domain.usecase
 
 import android.util.Log
 import com.cosmiclaboratory.voyager.domain.model.GeocodeCandidate
+import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
 import com.cosmiclaboratory.voyager.domain.repository.GeocodingRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 
 data class EnrichmentResult(
     val displayName: String,
-    val providerSource: String
+    val providerSource: String,
+    /** Category inferred from a provider's structured signal (e.g. OSM POI tag) — null if no signal. */
+    val inferredCategory: PlaceCategory? = null
 )
 
 data class FullEnrichmentResult(
@@ -50,7 +53,8 @@ class EnrichPlaceWithDetailsUseCase @Inject constructor(
                 EnrichmentResult(
                     // Accuracy-gated name — coarsened when confidence is low.
                     displayName = it.safeDisplayName ?: it.displayName,
-                    providerSource = it.provider.name
+                    providerSource = it.provider.name,
+                    inferredCategory = it.inferredCategory
                 )
             }
             FullEnrichmentResult(best = best, allCandidates = result.candidates)

@@ -42,7 +42,11 @@ class OverpassGeocodingProvider @Inject constructor(
                     displayName = poi.name,
                     // A POI carries a name, not a postal address — no structured parts.
                     structuredParts = null,
-                    confidence = confidenceForDistance(poi.distance)
+                    confidence = confidenceForDistance(poi.distance),
+                    // OSM POI tags also predict the category (cafe → RESTAURANT, gym → GYM, …).
+                    // Null when the tag is ambiguous (office=*, building=*) so we never set
+                    // a category without justification.
+                    inferredCategory = PoiCategoryMapper.fromOsmType(poi.type)
                 )
             )
         } catch (e: Exception) {

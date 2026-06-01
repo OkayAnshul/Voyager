@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
 import com.cosmiclaboratory.voyager.domain.model.enums.GeocodingProviderId
 import com.cosmiclaboratory.voyager.domain.model.enums.PlaceLifecycleStatus
 import com.cosmiclaboratory.voyager.domain.model.enums.VisitSource
@@ -123,6 +124,10 @@ class DiscoverPlacesWorker @AssistedInject constructor(
                     // POI prior: the centroid resolved to a named OSM POI — strong
                     // evidence this is a real place, so confidence is lifted below.
                     val isPoiPrior = enrichment?.providerSource == GeocodingProviderId.OVERPASS.name
+                    // POI tags also predict category (cafe → RESTAURANT etc.). Don't
+                    // trust the inference in rough mode — the centroid is too coarse
+                    // to confidently bind to a single POI's category.
+                    val inferredCategory = enrichment?.inferredCategory.takeUnless { roughMode }
 
                     // Coarse-location places are broad areas — never let one look
                     // as trustworthy as a precisely-clustered place.
@@ -143,6 +148,7 @@ class DiscoverPlacesWorker @AssistedInject constructor(
                                 displayName != null -> "GEOCODE"
                                 else -> null
                             },
+                            category = (inferredCategory ?: PlaceCategory.UNKNOWN).name,
                         )
                     )
                     for (point in cluster) {

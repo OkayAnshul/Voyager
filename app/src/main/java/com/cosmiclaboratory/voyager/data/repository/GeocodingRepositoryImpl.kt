@@ -6,6 +6,7 @@ import com.cosmiclaboratory.voyager.domain.geocoding.GeocodingProvider
 import com.cosmiclaboratory.voyager.domain.model.ConfidenceTier
 import com.cosmiclaboratory.voyager.domain.model.GeocodeCandidate
 import com.cosmiclaboratory.voyager.domain.model.GeocodingResult
+import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
 import com.cosmiclaboratory.voyager.domain.model.ProviderStatus
 import com.cosmiclaboratory.voyager.domain.model.StructuredAddress
 import com.cosmiclaboratory.voyager.domain.model.enums.GeocodingProviderId
@@ -77,7 +78,8 @@ class GeocodingRepositoryImpl @Inject constructor(
                     structuredParts = providerResult.structuredParts,
                     confidence = providerResult.confidence,
                     licenseClass = licenseClassFor(provider.providerId),
-                    fetchedAt = System.currentTimeMillis()
+                    fetchedAt = System.currentTimeMillis(),
+                    inferredCategory = providerResult.inferredCategory
                 )
                 candidates.add(candidate)
                 // Short-circuit: a HIGH-tier result is trustworthy — stop here.
@@ -130,7 +132,8 @@ class GeocodingRepositoryImpl @Inject constructor(
                         structuredParts = providerResult.structuredParts,
                         confidence = providerResult.confidence,
                         licenseClass = licenseClassFor(provider.providerId),
-                        fetchedAt = System.currentTimeMillis()
+                        fetchedAt = System.currentTimeMillis(),
+                        inferredCategory = providerResult.inferredCategory
                     )
                     candidates.add(candidate)
                 }
@@ -224,11 +227,19 @@ class GeocodingRepositoryImpl @Inject constructor(
             }
 
             geocodingResult.bestCandidate?.let { best ->
+                // POI tag → category, but only when the place is still UNKNOWN and
+                // the user hasn't set their own category. Preserves user choice
+                // and avoids overwriting a previously-inferred good category.
+                val shouldInferCategory = best.inferredCategory != null &&
+                    place.category == PlaceCategory.UNKNOWN.name &&
+                    place.userCategory == null
                 placeDao.update(
                     place.copy(
                         // Accuracy-gated name — never an over-precise/wrong address.
                         bestProviderName = best.safeDisplayName ?: best.displayName,
-                        bestProviderSource = best.provider.name
+                        bestProviderSource = best.provider.name,
+                        category = if (shouldInferCategory) best.inferredCategory!!.name else place.category,
+                        categoryConfidence = if (shouldInferCategory) best.confidence else place.categoryConfidence
                     )
                 )
             }

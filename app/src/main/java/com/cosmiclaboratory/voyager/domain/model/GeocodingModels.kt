@@ -1,5 +1,6 @@
 package com.cosmiclaboratory.voyager.domain.model
 
+import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
 import com.cosmiclaboratory.voyager.domain.model.enums.GeocodingProviderId
 import com.cosmiclaboratory.voyager.domain.model.enums.LicenseClass
 
@@ -21,7 +22,9 @@ data class GeocodeCandidate(
      * a wrong house number/street is never presented as fact. Computed by
      * [com.cosmiclaboratory.voyager.domain.geocoding.GeocodingConflictResolver].
      */
-    val safeDisplayName: String? = null
+    val safeDisplayName: String? = null,
+    /** Place category derived from a provider's structured signal (e.g. OSM POI tags). */
+    val inferredCategory: PlaceCategory? = null
 )
 
 /**
@@ -61,5 +64,13 @@ data class ProviderGeoResult(
     val displayName: String,
     val structuredParts: StructuredAddress?,
     val confidence: Float,
-    val rawResponseJson: String? = null
+    val rawResponseJson: String? = null,
+    /**
+     * Place category inferred at the provider boundary from a strong signal
+     * (e.g. an OSM POI tag — `amenity=cafe` → RESTAURANT). Null when the
+     * provider has no such signal or the tag is ambiguous. The discovery
+     * layer applies it only when the current category is UNKNOWN, so it
+     * never overrides a user-set category.
+     */
+    val inferredCategory: PlaceCategory? = null
 )
