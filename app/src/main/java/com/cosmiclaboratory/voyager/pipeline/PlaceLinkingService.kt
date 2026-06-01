@@ -61,7 +61,7 @@ class PlaceLinkingService @Inject constructor(
         when (result) {
             is VisitDetectionResult.Confirmed -> {
                 logger.d("PlaceLinkingService", "Visit confirmed: id=${result.visitId}")
-                val placeMatch = matchPlaceLiveUseCase.matchSample(sample.lat, sample.lng)
+                val placeMatch = matchPlaceLiveUseCase.matchSample(sample.lat, sample.lng, sample.accuracyM)
                 if (placeMatch.matchedPlace != null) {
                     linkVisitToPlace(result.visitId, placeMatch.matchedPlace.placeId)
                 } else {
@@ -76,7 +76,7 @@ class PlaceLinkingService @Inject constructor(
                 }
             }
             is VisitDetectionResult.Accumulating -> {
-                val placeMatch = matchPlaceLiveUseCase.matchSample(sample.lat, sample.lng)
+                val placeMatch = matchPlaceLiveUseCase.matchSample(sample.lat, sample.lng, sample.accuracyM)
                 if (placeMatch.matchedPlace != null) {
                     val state = timelineStateStore.getState()
                     val confirmedVisitId = state.lastConfirmedVisitId

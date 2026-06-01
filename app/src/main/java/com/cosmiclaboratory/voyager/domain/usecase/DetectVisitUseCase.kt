@@ -1,11 +1,13 @@
 package com.cosmiclaboratory.voyager.domain.usecase
 
 import com.cosmiclaboratory.voyager.domain.model.PendingVisitCandidate
+import com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
 import com.cosmiclaboratory.voyager.domain.model.enums.VisitSource
 import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import com.cosmiclaboratory.voyager.domain.util.LocationUtils
 import com.cosmiclaboratory.voyager.pipeline.RawSample
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
+import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitEvidenceDao
@@ -20,6 +22,7 @@ class DetectVisitUseCase @Inject constructor(
     private val visitWriteGuard: VisitWriteGuard,
     private val visitEvidenceDao: VisitEvidenceDao,
     private val placeDao: PlaceDao,
+    private val movementSegmentDao: MovementSegmentDao,
     private val settingsRepository: SettingsRepository
 ) {
     companion object {
@@ -36,6 +39,15 @@ class DetectVisitUseCase @Inject constructor(
         /** Known/matched places confirm faster than unknown ones — fraction of the
          *  user-configured min dwell applied to matched-place candidates. */
         private const val KNOWN_PLACE_DWELL_FRACTION = 2.0 / 3.0
+        /** Segment types that indicate a genuine displacement since the prior visit's
+         *  departure. If any of these closed inside the return window, we treat the
+         *  return as a new visit, not a continuation. */
+        private val MOVEMENT_SEGMENT_TYPES = setOf(
+            SegmentType.DRIVE.name,
+            SegmentType.CYCLE.name,
+            SegmentType.RUN.name,
+            SegmentType.FLIGHT.name
+        )
     }
 
     var consecutiveOutsideSamples = 0
@@ -90,12 +102,19 @@ class DetectVisitUseCase @Inject constructor(
                 consecutiveOutsideSamples = 0
                 val n = candidate.sampleCount + 1
                 val isConfirmed = state.lastConfirmedVisitId != null
+                // First-stable timestamp: latch the first sample that sits well inside
+                // the candidate radius (half the radius), which means the centroid has
+                // converged and the user is genuinely *there* — not still walking up to
+                // the place. This becomes the reported arrival/dwell anchor.
+                val firstStableSampleAt = candidate.firstStableSampleAt
+                    ?: sample.capturedAt.takeIf { distance < radius * 0.5 }
                 val updated = if (isConfirmed) {
                     // Post-confirmation: freeze centroid to keep place matching stable.
                     // Only track spread for radius estimation.
                     candidate.copy(
                         sampleCount = n,
-                        maxDistanceFromCentroidM = maxOf(candidate.maxDistanceFromCentroidM, distance)
+                        maxDistanceFromCentroidM = maxOf(candidate.maxDistanceFromCentroidM, distance),
+                        firstStableSampleAt = firstStableSampleAt
                     )
                 } else {
                     // Pre-confirmation: keep updating centroid for GPS convergence accuracy
@@ -103,11 +122,17 @@ class DetectVisitUseCase @Inject constructor(
                         centroidLat = candidate.centroidLat + (sample.lat - candidate.centroidLat) / n,
                         centroidLng = candidate.centroidLng + (sample.lng - candidate.centroidLng) / n,
                         sampleCount = n,
-                        maxDistanceFromCentroidM = maxOf(candidate.maxDistanceFromCentroidM, distance)
+                        maxDistanceFromCentroidM = maxOf(candidate.maxDistanceFromCentroidM, distance),
+                        firstStableSampleAt = firstStableSampleAt
                     )
                 }
                 stateStore.setPendingVisitCandidate(updated)
 
+                // Confirmation timing keys off accumulationStartAt (the candidate's
+                // first-ever sample). firstStableSampleAt refines only the *persisted*
+                // arrival time on confirmation — see confirmVisit() — so that the
+                // confirmation threshold is stable across releases while the timeline
+                // arrival is more accurate.
                 val dwellMs = sample.capturedAt - candidate.accumulationStartAt
                 val effectiveDwell = if (updated.matchedPlaceId != null) knownPlaceDwellMs else unknownDwellMs
                 if (dwellMs >= effectiveDwell && updated.sampleCount >= minSamplesForCandidate) {
@@ -198,7 +223,20 @@ class DetectVisitUseCase @Inject constructor(
                     val distFromPrevious = LocationUtils.calculateDistance(
                         depLat, depLng, sample.lat, sample.lng
                     )
-                    if (distFromPrevious <= placeRadiusM && depVisitId != null) {
+                    // A genuine drive/cycle/run/flight between departure and now is hard
+                    // evidence that the user moved away — clearing the return memory
+                    // forces a fresh visit instead of resurrecting the prior one (which
+                    // would otherwise paper over a real round-trip detour).
+                    val movedAwayInWindow = movementSegmentDao
+                        .getByDayKey(dayKey)
+                        .any { seg ->
+                            seg.segmentType in MOVEMENT_SEGMENT_TYPES &&
+                                seg.endAt > depTime &&
+                                seg.endAt <= sample.capturedAt
+                        }
+                    if (movedAwayInWindow) {
+                        clearDepartureMemory()
+                    } else if (distFromPrevious <= placeRadiusM && depVisitId != null) {
                         // Quick return — reopen previous visit as continuation
                         val previousVisit = visitDao.getById(depVisitId)
                         if (previousVisit != null) {
@@ -262,11 +300,15 @@ class DetectVisitUseCase @Inject constructor(
         currentTime: Long,
         dayKey: String
     ): VisitDetectionResult {
+        // Anchor arrival at the first-stable sample (centroid converged inside
+        // half-radius); falls back to the candidate start if convergence didn't
+        // happen — a small visit confirmed via raw sample-count alone.
+        val arrivalAt = candidate.firstStableSampleAt ?: candidate.accumulationStartAt
         val visit = VisitEntity(
             placeId = candidate.matchedPlaceId ?: 0,
-            arrivalAt = candidate.accumulationStartAt,
+            arrivalAt = arrivalAt,
             departureAt = null, // ongoing
-            dwellMs = currentTime - candidate.accumulationStartAt,
+            dwellMs = currentTime - arrivalAt,
             source = VisitSource.LIVE_DETECTION.name,
             confidence = 0.7f,
             dayKey = dayKey,

@@ -32,6 +32,8 @@ object WorkerScheduler {
         scheduleFeedbackCalibration(workManager)
         scheduleSearchIndex(workManager)
         scheduleTrackingHealthCheck(workManager)
+        scheduleBatteryBudgetCheck(workManager)
+        scheduleConfidenceDecay(workManager)
     }
 
     /**
@@ -225,6 +227,34 @@ object WorkerScheduler {
 
         workManager.enqueueUniquePeriodicWork(
             SearchIndexWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
+    }
+
+    /** Daily place-confidence decay at ~03:30 (after the rollups have settled). */
+    private fun scheduleConfidenceDecay(workManager: WorkManager) {
+        val initialDelay = computeDelayUntil(hour = 3, minute = 30)
+        val request = PeriodicWorkRequestBuilder<ConfidenceDecayWorker>(24, TimeUnit.HOURS)
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .setConstraints(defaultConstraints())
+            .build()
+
+        workManager.enqueueUniquePeriodicWork(
+            ConfidenceDecayWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
+    }
+
+    /** Periodic battery-budget check: every 6 hours, downgrades the tier if discharge exceeds budget. */
+    private fun scheduleBatteryBudgetCheck(workManager: WorkManager) {
+        val request = PeriodicWorkRequestBuilder<BatteryBudgetWorker>(6, TimeUnit.HOURS)
+            .setConstraints(defaultConstraints())
+            .build()
+
+        workManager.enqueueUniquePeriodicWork(
+            BatteryBudgetWorker.WORK_NAME,
             ExistingPeriodicWorkPolicy.KEEP,
             request,
         )

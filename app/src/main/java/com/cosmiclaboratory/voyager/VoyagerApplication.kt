@@ -5,11 +5,13 @@ import android.os.StrictMode
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
+import com.cosmiclaboratory.voyager.domain.usecase.IntegrityRepairUseCase
 import com.cosmiclaboratory.voyager.pipeline.PipelineConsumer
 import com.cosmiclaboratory.voyager.platform.crash.LocalCrashHandler
 import com.cosmiclaboratory.voyager.platform.worker.WorkerScheduler
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
 import com.cosmiclaboratory.voyager.storage.database.dao.HealthLogDao
+import com.cosmiclaboratory.voyager.storage.database.dao.RawLocationSampleDao
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,8 +27,19 @@ class VoyagerApplication : Application(), Configuration.Provider {
     @Inject lateinit var pipelineConsumer: PipelineConsumer
     @Inject lateinit var healthLogDao: HealthLogDao
     @Inject lateinit var settingsRepository: SettingsRepository
+    @Inject lateinit var integrityRepairUseCase: IntegrityRepairUseCase
+    @Inject lateinit var rawLocationSampleDao: RawLocationSampleDao
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    companion object {
+        /** Cutoff window for closing visits left open by the previous process.
+         *  Visits whose arrival precedes (lastKnownAliveTimestamp - 30 min) and
+         *  still have departureAt == null are considered stranded and closed.
+         *  30 min covers typical Doze cycles without false-closing genuine
+         *  long stays still in progress. */
+        private const val BOOTSTRAP_STALE_GAP_MS = 30L * 60_000L
+    }
 
     override fun onCreate() {
         // Install crash handler before anything else so we capture init-time crashes too.
@@ -44,6 +57,11 @@ class VoyagerApplication : Application(), Configuration.Provider {
         applicationScope.launch {
             try {
                 timelineStateStore.initialize()
+                // Close any visits left open by the previous process before the
+                // pipeline resumes. Otherwise lastConfirmedVisitId in the state
+                // store points at a stranded visit and the timeline shows
+                // "still at Place" until a new departure event happens.
+                repairStrandedVisits()
             } catch (e: Exception) {
                 android.util.Log.e("VoyagerApp", "Failed to initialize state store", e)
             }
@@ -59,6 +77,16 @@ class VoyagerApplication : Application(), Configuration.Provider {
                 androidx.work.WorkManager.getInstance(this@VoyagerApplication),
                 settingsRepository.observeSettings().value
             )
+        }
+    }
+
+    private suspend fun repairStrandedVisits() {
+        val latest = rawLocationSampleDao.getLatest()
+        val lastKnownAlive = latest?.capturedAt ?: System.currentTimeMillis()
+        val cutoffMs = lastKnownAlive - BOOTSTRAP_STALE_GAP_MS
+        val closed = integrityRepairUseCase.closeStaleVisits(cutoffMs)
+        if (closed > 0) {
+            timelineStateStore.setLastConfirmedVisitId(null)
         }
     }
 

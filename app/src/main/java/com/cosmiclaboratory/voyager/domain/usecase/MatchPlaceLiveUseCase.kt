@@ -17,14 +17,23 @@ class MatchPlaceLiveUseCase @Inject constructor(
 ) {
     companion object {
         private const val HYSTERESIS_BUFFER_M = 30.0
-        private const val SEARCH_RADIUS_M = 200.0
+        /** Floor on the adaptive search radius — good GPS still searches at least this wide. */
+        private const val MIN_SEARCH_RADIUS_M = 50.0
+        /** Ceiling on the adaptive search radius — rough-mode (cell-tower) caps here so
+         *  half the neighborhood doesn't match a single place. */
+        private const val MAX_SEARCH_RADIUS_M = 250.0
     }
 
     private var consecutiveInsideCount = 0
     private var consecutiveOutsideCount = 0
     private var currentMatchedPlaceId: Long? = null
 
-    suspend fun matchSample(lat: Double, lng: Double): PlaceMatchResult {
+    suspend fun matchSample(lat: Double, lng: Double, accuracyM: Float? = null): PlaceMatchResult {
+        // Adaptive search radius: tighten when GPS is accurate, widen only in rough mode.
+        // Previously fixed at 200m — caused wrong-place attribution under cell-tower fallback.
+        val searchRadius = (accuracyM?.toDouble() ?: MIN_SEARCH_RADIUS_M)
+            .coerceIn(MIN_SEARCH_RADIUS_M, MAX_SEARCH_RADIUS_M)
+
         val geohash = GeohashEncoder.encode(lat, lng)
         val prefix = geohash.take(5) // ~5km search radius
 
@@ -45,7 +54,7 @@ class MatchPlaceLiveUseCase @Inject constructor(
             }
         }
 
-        if (nearestPlace == null || nearestDistance > SEARCH_RADIUS_M) {
+        if (nearestPlace == null || nearestDistance > searchRadius) {
             handleOutside()
             return PlaceMatchResult(null, nearestDistance, false)
         }

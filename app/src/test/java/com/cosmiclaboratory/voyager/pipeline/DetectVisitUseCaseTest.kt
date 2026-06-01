@@ -8,6 +8,7 @@ import com.cosmiclaboratory.voyager.domain.usecase.DetectVisitUseCase
 import com.cosmiclaboratory.voyager.domain.usecase.VisitDetectionResult
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
 import kotlinx.coroutines.flow.MutableStateFlow
+import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitEvidenceDao
@@ -36,6 +37,7 @@ class DetectVisitUseCaseTest {
     private val visitDao = mockk<VisitDao>(relaxed = true)
     private val visitEvidenceDao = mockk<VisitEvidenceDao>(relaxed = true)
     private val placeDao = mockk<PlaceDao>(relaxed = true)
+    private val movementSegmentDao = mockk<MovementSegmentDao>(relaxed = true)
     private val settingsRepository = mockk<SettingsRepository>(relaxed = true)
 
     /** Mutable so tests can change a setting and assert the detector reacts. */
@@ -66,7 +68,8 @@ class DetectVisitUseCaseTest {
         // Real guard wrapping the mocked DAO — stubs on visitDao flow through unchanged.
         val visitWriteGuard = VisitWriteGuard(visitDao)
         useCase = DetectVisitUseCase(
-            stateStore, visitDao, visitWriteGuard, visitEvidenceDao, placeDao, settingsRepository
+            stateStore, visitDao, visitWriteGuard, visitEvidenceDao, placeDao,
+            movementSegmentDao, settingsRepository
         )
     }
 

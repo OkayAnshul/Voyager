@@ -54,6 +54,35 @@ class FuseActivityStateUseCaseTest {
     }
 
     @Test
+    fun `speed 3_0 to 4_5 mps with no corroboration falls back to IN_VEHICLE`() {
+        // Stop-and-go highway traffic sits in 3.0–4.5 m/s (~11–16 km/h). Without AR
+        // or step evidence, this band used to default to CYCLING — that was the
+        // dominant misclassification. New default: IN_VEHICLE.
+        val result = useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 3.5f, stepRatePerMinute = null)
+        assertEquals(ActivityType.IN_VEHICLE, result.activityType)
+    }
+
+    @Test
+    fun `speed 3_0 to 4_5 mps preserves CYCLING when last was CYCLING`() {
+        // First sample establishes CYCLING via clearly-cycling speed.
+        useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 5.0f, stepRatePerMinute = null)
+        // Next sample in the ambiguous band stays CYCLING via hysteresis.
+        val result = useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 3.5f, stepRatePerMinute = null)
+        assertEquals(ActivityType.CYCLING, result.activityType)
+    }
+
+    @Test
+    fun `slow traffic speed with AR=CYCLING still classifies as CYCLING`() {
+        // AR's vote at high confidence overrides the new IN_VEHICLE fallback,
+        // ensuring genuine cyclists at 12 km/h aren't mislabelled.
+        val result = useCase.fuse(
+            arActivity = ActivityType.CYCLING, arConfidence = 80f,
+            speedMps = 3.5f, stepRatePerMinute = null
+        )
+        assertEquals(ActivityType.CYCLING, result.activityType)
+    }
+
+    @Test
     fun `speed above 8_5 mps is IN_VEHICLE`() {
         val result = useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 15.0f, stepRatePerMinute = null)
         assertEquals(ActivityType.IN_VEHICLE, result.activityType)
@@ -69,8 +98,16 @@ class FuseActivityStateUseCaseTest {
 
     @Test
     fun `moderate step rate indicates WALKING`() {
-        val result = useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = null, stepRatePerMinute = 100f)
+        val result = useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = null, stepRatePerMinute = 110f)
         assertEquals(ActivityType.WALKING, result.activityType)
+    }
+
+    @Test
+    fun `step rate in 80-100 spm band does not classify as WALKING alone`() {
+        // 80–100 spm covers desk-shuffle territory and used to pull fusion toward
+        // WALKING via stepConf=0.85. With no other signal, fused state should be UNKNOWN.
+        val result = useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = null, stepRatePerMinute = 90f)
+        assertEquals(ActivityType.UNKNOWN, result.activityType)
     }
 
     @Test

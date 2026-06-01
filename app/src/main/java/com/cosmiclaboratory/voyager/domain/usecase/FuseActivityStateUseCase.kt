@@ -53,7 +53,7 @@ class FuseActivityStateUseCase @Inject constructor(
             validatedSpeed < 3.0f -> ActivityType.RUNNING
             validatedSpeed in 3.0f..4.5f -> lastSpeedActivity.takeIf {
                 it == ActivityType.RUNNING || it == ActivityType.CYCLING
-            } ?: ActivityType.CYCLING
+            } ?: ActivityType.IN_VEHICLE
             validatedSpeed < 6.5f -> ActivityType.CYCLING
             validatedSpeed in 6.5f..8.5f -> lastSpeedActivity.takeIf {
                 it == ActivityType.CYCLING || it == ActivityType.IN_VEHICLE
@@ -63,11 +63,14 @@ class FuseActivityStateUseCase @Inject constructor(
         val speedActivity = rawSpeedActivity.also { lastSpeedActivity = it }
         val speedConf = if (validatedSpeed != null) 0.7f else 0f
 
-        // Step-rate override (check higher thresholds first)
+        // Step-rate override (check higher thresholds first).
+        // WALKING threshold at 100 spm: real walking cadence is ≥110 spm. The 80–100
+        // band is excluded because brief desk shuffles (30–90 spm bursts) at the high
+        // end of that range used to pull fusion toward WALKING without true walking.
         val stepActivity = when {
             stepRatePerMinute == null -> null
             stepRatePerMinute > 140 -> ActivityType.RUNNING
-            stepRatePerMinute > 80 -> ActivityType.WALKING
+            stepRatePerMinute > 100 -> ActivityType.WALKING
             stepRatePerMinute < 5 && (arActivity == ActivityType.WALKING || arActivity == ActivityType.RUNNING) -> ActivityType.STILL
             else -> null
         }
@@ -76,7 +79,7 @@ class FuseActivityStateUseCase @Inject constructor(
         val stepConf = when {
             stepRatePerMinute == null -> 0f
             stepRatePerMinute > 140 || stepRatePerMinute < 5 -> 0.9f
-            stepRatePerMinute > 80 -> 0.85f
+            stepRatePerMinute > 100 -> 0.85f
             else -> 0.4f
         }
 

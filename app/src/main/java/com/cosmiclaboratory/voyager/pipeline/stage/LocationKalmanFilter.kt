@@ -1,5 +1,6 @@
 package com.cosmiclaboratory.voyager.pipeline.stage
 
+import com.cosmiclaboratory.voyager.domain.util.LocationUtils
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.atan2
@@ -41,6 +42,11 @@ class LocationKalmanFilter @Inject constructor() {
     // Higher = filter adapts faster but smooths less.
     private val processNoiseAccel = 2.0 // m/s² — accounts for walking/driving acceleration
 
+    /** Distance from the local-tangent-plane reference at which we re-anchor.
+     *  The flat-earth approximation breaks down past ~25 km from reference, introducing
+     *  bearing/distance error on multi-city travel days. */
+    private val referenceResetDistanceM = 25_000.0
+
     fun reset() {
         initialized = false
         lastTimestamp = 0
@@ -73,6 +79,14 @@ class LocationKalmanFilter @Inject constructor() {
             return currentEstimate()
         }
         if (dt > 300) {
+            reset()
+            return filter(lat, lng, accuracyM, timestamp)
+        }
+
+        // Long-haul reanchor: keep the meters approximation accurate by resetting
+        // when the sample is far from the original reference point.
+        val distFromRefM = LocationUtils.calculateDistance(referenceLat, referenceLng, lat, lng)
+        if (distFromRefM > referenceResetDistanceM) {
             reset()
             return filter(lat, lng, accuracyM, timestamp)
         }

@@ -27,7 +27,12 @@ data class PendingVisitCandidate(
     val accumulationStartAt: Long,
     val sampleCount: Int,
     val maxDistanceFromCentroidM: Double,
-    val matchedPlaceId: Long?
+    val matchedPlaceId: Long?,
+    /** Timestamp of the first sample after the candidate's centroid converged
+     *  inside half its expected radius — a better proxy for the actual arrival
+     *  than [accumulationStartAt], which may be a passing sample en route to
+     *  the place. Null until convergence; falls back to [accumulationStartAt]. */
+    val firstStableSampleAt: Long? = null
 )
 
 data class TrackingHealth(
