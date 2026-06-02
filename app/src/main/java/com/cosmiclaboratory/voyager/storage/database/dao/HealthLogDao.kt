@@ -23,4 +23,7 @@ interface HealthLogDao {
 
     @Query("DELETE FROM health_log WHERE eventAt < :cutoffMs")
     suspend fun deleteOlderThan(cutoffMs: Long): Int
+
+    @Query("SELECT * FROM health_log WHERE eventAt >= :sinceMs ORDER BY eventAt DESC")
+    suspend fun getEventsSince(sinceMs: Long): List<HealthLogEntity>
 }

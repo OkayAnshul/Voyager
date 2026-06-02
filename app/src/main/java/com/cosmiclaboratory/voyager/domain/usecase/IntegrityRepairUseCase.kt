@@ -1,18 +1,39 @@
 package com.cosmiclaboratory.voyager.domain.usecase
 
 import com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
+import com.cosmiclaboratory.voyager.storage.database.dao.HealthLogDao
 import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
+import com.cosmiclaboratory.voyager.storage.database.entity.HealthLogEntity
 import javax.inject.Inject
 
 /**
  * Lightweight integrity repair that can run after each visit departure.
  * Fixes overlapping visits for a single day without waiting for the daily worker.
+ *
+ * Every repair action writes an audit row to [HealthLogEntity] with
+ * eventType `REPAIR_*` and detailsJson describing the before/after state.
+ * That makes silent corrections visible to the user — "we adjusted this
+ * visit from 4:23pm to 4:18pm because it overlapped the next one" — and
+ * also gives the team a debuggable trail when production data drifts.
  */
 class IntegrityRepairUseCase @Inject constructor(
     private val visitDao: VisitDao,
-    private val movementSegmentDao: MovementSegmentDao
+    private val movementSegmentDao: MovementSegmentDao,
+    private val healthLogDao: HealthLogDao
 ) {
+
+    private suspend fun audit(eventType: String, details: String) {
+        runCatching {
+            healthLogDao.insert(
+                HealthLogEntity(
+                    eventType = eventType,
+                    eventAt = System.currentTimeMillis(),
+                    detailsJson = details
+                )
+            )
+        }
+    }
     /**
      * Check and fix visit overlaps for a single day.
      * Clamps the departure of earlier visits to the arrival of later ones.
@@ -29,6 +50,10 @@ class IntegrityRepairUseCase @Inject constructor(
                 val clampedDeparture = next.arrivalAt
                 val clampedDwell = clampedDeparture - current.arrivalAt
                 visitDao.endVisit(current.visitId, clampedDeparture, clampedDwell)
+                audit(
+                    "REPAIR_VISIT_OVERLAP",
+                    """{"visitId":${current.visitId},"oldDeparture":$currentDeparture,"newDeparture":$clampedDeparture,"reason":"clamped to next visit arrival"}"""
+                )
                 fixed++
             }
         }
@@ -45,12 +70,24 @@ class IntegrityRepairUseCase @Inject constructor(
                     if (seg.startAt >= visit.arrivalAt && seg.endAt <= visitDeparture) {
                         // Segment fully enclosed within visit — delete it
                         movementSegmentDao.delete(seg)
+                        audit(
+                            "REPAIR_SEGMENT_DELETED",
+                            """{"segmentId":${seg.segmentId},"type":"${seg.segmentType}","reason":"enclosed within visit ${visit.visitId}"}"""
+                        )
                     } else if (seg.startAt < visit.arrivalAt) {
                         // Segment starts before visit — trim end
                         movementSegmentDao.update(seg.copy(endAt = visit.arrivalAt))
+                        audit(
+                            "REPAIR_SEGMENT_TRIMMED",
+                            """{"segmentId":${seg.segmentId},"side":"end","oldEnd":${seg.endAt},"newEnd":${visit.arrivalAt}}"""
+                        )
                     } else {
                         // Segment ends after visit — trim start
                         movementSegmentDao.update(seg.copy(startAt = visitDeparture))
+                        audit(
+                            "REPAIR_SEGMENT_TRIMMED",
+                            """{"segmentId":${seg.segmentId},"side":"start","oldStart":${seg.startAt},"newStart":$visitDeparture}"""
+                        )
                     }
                     fixed++
                 }
@@ -78,6 +115,10 @@ class IntegrityRepairUseCase @Inject constructor(
             }
             val dwellMs = departureAt - visit.arrivalAt
             visitDao.endVisit(visit.visitId, departureAt, dwellMs)
+            audit(
+                "REPAIR_VISIT_STRANDED",
+                """{"visitId":${visit.visitId},"arrival":${visit.arrivalAt},"departure":$departureAt,"reason":"open visit closed at last-known-alive cutoff"}"""
+            )
         }
         return staleVisits.size
     }
