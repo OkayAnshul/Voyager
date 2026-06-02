@@ -55,7 +55,7 @@ import net.sqlcipher.database.SupportFactory
         MileageSummaryEntity::class,
         VehicleServiceLogEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -461,11 +461,27 @@ abstract class VoyagerDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v9 → v10: per-segment user override of the classified movement type (W6 T16).
+         *
+         * Adds `userOverrideType` (nullable TEXT) and `userOverrideAt` (nullable INTEGER)
+         * to `movement_segments`. The classifier never writes these — only an explicit
+         * user action does. Display and aggregate queries should COALESCE the override
+         * with `segmentType`. Purely additive — no existing data is touched.
+         */
+        private val MIGRATION_9_10 = object : androidx.room.migration.Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `movement_segments` ADD COLUMN `userOverrideType` TEXT")
+                db.execSQL("ALTER TABLE `movement_segments` ADD COLUMN `userOverrideAt` INTEGER")
+            }
+        }
+
         /** Exposed for migration tests. Production code uses it only via [buildDatabase]. */
         internal val MIGRATIONS: Array<androidx.room.migration.Migration> =
             arrayOf(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9
+                MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
+                MIGRATION_9_10
             )
 
         /**

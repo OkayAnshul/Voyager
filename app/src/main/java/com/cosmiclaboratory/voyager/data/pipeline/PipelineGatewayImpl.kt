@@ -20,12 +20,15 @@ import com.cosmiclaboratory.voyager.storage.database.dao.RawLocationSampleDao
 import com.cosmiclaboratory.voyager.storage.database.dao.RawStepSampleDao
 import com.cosmiclaboratory.voyager.storage.database.dao.RouteDao
 import com.cosmiclaboratory.voyager.storage.database.dao.SegmentEvidenceDao
+import com.cosmiclaboratory.voyager.storage.database.dao.TripVehicleAssignmentDao
+import com.cosmiclaboratory.voyager.storage.database.dao.VehicleDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
 import com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.PlaceEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.RawLocationSampleEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.RouteEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.SegmentEvidenceEntity
+import com.cosmiclaboratory.voyager.storage.database.entity.TripVehicleAssignmentEntity
 import com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -49,7 +52,10 @@ class PipelineGatewayImpl @Inject constructor(
     private val segmentEvidenceDao: SegmentEvidenceDao,
     private val routeDao: RouteDao,
     private val placeDao: PlaceDao,
-    private val visitDao: VisitDao
+    private val visitDao: VisitDao,
+    // Mileage subsystem (Wave 10 M3) — auto-attribute DRIVE to default vehicle.
+    private val vehicleDao: VehicleDao,
+    private val tripVehicleAssignmentDao: TripVehicleAssignmentDao,
 ) : PipelineGateway {
 
     // ---------- raw samples ----------
@@ -144,6 +150,22 @@ class PipelineGatewayImpl @Inject constructor(
             movementSegmentDao.update(
                 segmentEntity.copy(segmentId = segmentId, routeId = routeId)
             )
+        }
+        // M3: auto-attribute DRIVE segments to the user's default vehicle so
+        // mileage / fuel cost rolls up without an explicit per-trip user action.
+        // Skipped silently when no default exists — the user will get a "tag
+        // these N drives" CTA in the UI once they register a vehicle.
+        if (segment.segmentType == SegmentType.DRIVE.name) {
+            vehicleDao.getDefault()?.let { defaultVehicle ->
+                tripVehicleAssignmentDao.upsert(
+                    TripVehicleAssignmentEntity(
+                        segmentId = segmentId,
+                        vehicleId = defaultVehicle.vehicleId,
+                        manuallyAssigned = false,
+                        assignedAt = System.currentTimeMillis(),
+                    )
+                )
+            }
         }
         segmentId
     }

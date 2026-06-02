@@ -44,16 +44,20 @@ class Segmenter @Inject constructor(
     private var pendingTransition: SegmentType? = null
     private var transitionCount = 0
 
+    /** Last sample's implied speed (m/s) — drives the sustained FLIGHT trigger. */
+    private var lastImpliedSpeedMps: Double = 0.0
+
     companion object {
         private const val TRANSITION_THRESHOLD = 5
-        /** Flush in-progress segment every 5 minutes so the timeline stays up to date */
-        private const val MAX_SEGMENT_DURATION_MS = 5 * 60 * 1000L
         /** Time-flush trigger for VISIT/DWELL: trim buffer every 15 min even if under sample cap */
         private const val VISIT_TRIM_INTERVAL_MS = 15 * 60 * 1000L
         /** Hard cap on in-memory samples to prevent OOM if flush fails repeatedly */
         private const val MAX_SEGMENT_SAMPLES = 500
-        /** Implied speed above this is treated as FLIGHT — faster than any commercial flight */
+        /** Single-sample FLIGHT trigger — faster than any commercial flight cruise speed. */
         private const val FLIGHT_SPEED_THRESHOLD_MPS = 200.0
+        /** Sustained FLIGHT trigger — takeoff/landing sit here (≈ 290 km/h), so we
+         *  call out a flight once two consecutive samples both clear the bar. */
+        private const val FLIGHT_SUSTAINED_THRESHOLD_MPS = 80.0
         private const val DISPLACEMENT_TRANSIT_THRESHOLD_M = PipelineConstants.DISPLACEMENT_TRANSIT_THRESHOLD_M
         private const val DISPLACEMENT_SPEED_THRESHOLD_MPS = PipelineConstants.DISPLACEMENT_SPEED_THRESHOLD_MPS
         private const val DISPLACEMENT_MAX_ACCURACY_M = PipelineConstants.DISPLACEMENT_MAX_ACCURACY_M
@@ -78,15 +82,24 @@ class Segmenter @Inject constructor(
                 val timeDeltaMs = sample.capturedAt - prev.capturedAt
                 if (displacement > DISPLACEMENT_TRANSIT_THRESHOLD_M && timeDeltaMs > 0) {
                     val impliedSpeed = displacement / (timeDeltaMs / 1000.0)
+                    val priorImpliedSpeed = lastImpliedSpeedMps
+                    lastImpliedSpeedMps = impliedSpeed
                     if (impliedSpeed > DISPLACEMENT_SPEED_THRESHOLD_MPS) {
                         when {
+                            // Single-sample cruise-speed FLIGHT, or sustained
+                            // takeoff/landing range (≥ 80 m/s for two samples).
                             impliedSpeed >= FLIGHT_SPEED_THRESHOLD_MPS -> SegmentType.FLIGHT
+                            impliedSpeed >= FLIGHT_SUSTAINED_THRESHOLD_MPS &&
+                                priorImpliedSpeed >= FLIGHT_SUSTAINED_THRESHOLD_MPS -> SegmentType.FLIGHT
                             impliedSpeed >= 7.5 -> SegmentType.DRIVE
                             impliedSpeed >= 3.7 -> SegmentType.CYCLE
                             else -> SegmentType.WALK
                         }
                     } else null
-                } else null
+                } else {
+                    lastImpliedSpeedMps = 0.0
+                    null
+                }
             } else null
         } else null
 
@@ -109,9 +122,10 @@ class Segmenter @Inject constructor(
                 segmentSamples.clear()
                 segmentSamples.add(first)
                 segmentSamples.addAll(recent)
-            } else if (!isVisit && segmentAge >= MAX_SEGMENT_DURATION_MS && segmentSamples.size >= 2) {
-                closeInternal(currentSegmentDayKey ?: dayKey, bridgeToMs = sample.capturedAt, isPeriodicFlush = true)
             } else if (!isVisit && segmentSamples.size >= MAX_SEGMENT_SAMPLES) {
+                // OOM guard: cap in-memory sample count regardless of segment age.
+                // No time-only flush: a 30-min WALK should be one row, not six —
+                // live-timeline freshness comes from getInProgressSnapshot().
                 closeInternal(currentSegmentDayKey ?: dayKey, bridgeToMs = sample.capturedAt, isPeriodicFlush = true)
             }
         }

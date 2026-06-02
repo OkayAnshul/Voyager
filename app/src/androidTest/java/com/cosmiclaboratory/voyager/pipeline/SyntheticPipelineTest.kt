@@ -52,7 +52,9 @@ class SyntheticPipelineTest {
             segmentEvidenceDao = db.segmentEvidenceDao(),
             routeDao = db.routeDao(),
             placeDao = db.placeDao(),
-            visitDao = db.visitDao()
+            visitDao = db.visitDao(),
+            vehicleDao = db.vehicleDao(),
+            tripVehicleAssignmentDao = db.tripVehicleAssignmentDao(),
         )
         segmenter = Segmenter(gateway, stateStore)
     }

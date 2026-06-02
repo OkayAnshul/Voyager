@@ -162,30 +162,26 @@ class SegmenterTest {
         assertEquals("WALK", snapshot!!.segmentType)
     }
 
-    // ── Scenario 5: Periodic 5-minute flush ──
+    // ── Scenario 5: long-running same-activity segment stays one row ──
 
     @Test
-    fun `segment flushes after 5 minutes`() = runTest {
+    fun `long-running WALK does not periodic-flush — coalesces to one row`() = runTest {
         val baseTime = System.currentTimeMillis()
-        val fiveMinutes = 5 * 60 * 1000L
 
-        // Add samples over 5+ minutes
-        segmenter.processSample(sample(baseTime, sampleId = 1), motion(ActivityType.WALKING), dayKey)
-        segmenter.processSample(sample(baseTime + 60_000, sampleId = 2), motion(ActivityType.WALKING), dayKey)
-
-        // Next sample is past 5 minutes — triggers flush
-        segmenter.processSample(
-            sample(baseTime + fiveMinutes + 1000, sampleId = 3),
-            motion(ActivityType.WALKING),
-            dayKey
-        )
-
-        // WALK segment should have been flushed
-        coVerify(exactly = 1) {
-            pipelineGateway.commitClosedSegment(match { it.segmentType == "WALK" }, any(), any())
+        // 30 minutes of WALK samples at 1-min cadence — same activity throughout.
+        for (i in 0..30) {
+            segmenter.processSample(
+                sample(baseTime + i * 60_000L, sampleId = i + 1L),
+                motion(ActivityType.WALKING),
+                dayKey
+            )
         }
 
-        // New WALK segment started with sample 3
+        // No periodic flush: the only commit should be from explicit
+        // closeCurrentSegment / activity transition. Neither happened.
+        coVerify(exactly = 0) {
+            pipelineGateway.commitClosedSegment(any(), any(), any())
+        }
         val snapshot = segmenter.getInProgressSnapshot()
         assertNotNull(snapshot)
         assertEquals("WALK", snapshot!!.segmentType)

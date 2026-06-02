@@ -68,4 +68,14 @@ object DatabaseModule {
 
     // Trips
     @Provides fun provideTripDao(db: VoyagerDatabase) = db.tripDao()
+
+    // Workouts (Wave 3 D1)
+    @Provides fun provideActivityDao(db: VoyagerDatabase) = db.activityDao()
+
+    // Mileage subsystem (Wave 10)
+    @Provides fun provideVehicleDao(db: VoyagerDatabase) = db.vehicleDao()
+    @Provides fun provideFuelPriceHistoryDao(db: VoyagerDatabase) = db.fuelPriceHistoryDao()
+    @Provides fun provideTripVehicleAssignmentDao(db: VoyagerDatabase) = db.tripVehicleAssignmentDao()
+    @Provides fun provideMileageSummaryDao(db: VoyagerDatabase) = db.mileageSummaryDao()
+    @Provides fun provideVehicleServiceLogDao(db: VoyagerDatabase) = db.vehicleServiceLogDao()
 }

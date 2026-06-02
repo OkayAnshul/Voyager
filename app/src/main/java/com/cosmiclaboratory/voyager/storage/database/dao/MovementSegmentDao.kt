@@ -71,4 +71,8 @@ interface MovementSegmentDao {
 
     @Delete
     suspend fun delete(segment: MovementSegmentEntity)
+
+    /** Set or clear a user override for a single segment. */
+    @Query("UPDATE movement_segments SET userOverrideType = :overrideType, userOverrideAt = :overrideAt WHERE segmentId = :segmentId")
+    suspend fun setUserOverride(segmentId: Long, overrideType: String?, overrideAt: Long?)
 }
