@@ -5,47 +5,38 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Narrow guard for the storage seam established by H2 (the `PipelineGateway`).
+ * Enforces the storage seam established by H2: **no file in `pipeline/` may
+ * import a Room DAO or storage entity.**
  *
- * The two files that define the seam — [PipelineGateway] and [PipelineConsumer] —
- * MUST NOT import Room DAOs or storage entities. That's the whole point of the
- * gateway: the pipeline asks for typed projections, the impl in `data/` does the
- * mapping. If a future change reaches back into `storage.database.*` from
- * either of these files, this test fails fast in CI.
- *
- * (Broader H6 — clean the rest of `pipeline/` of DAO imports — also requires
- * refactoring `Segmenter` and `PlaceLinkingService`, tracked as follow-up.)
+ * The pipeline talks to persistence only through [PipelineGateway]; its impl
+ * lives in `data/` and is the one place Room is mapped. If a future change
+ * reaches back into `storage.database.*` from anywhere in `pipeline/`, this
+ * test fails in CI with a precise file list — the fix path is "route it
+ * through PipelineGateway."
  */
 class PipelineGatewayBoundaryTest {
 
     @Test
-    fun `PipelineConsumer does not import storage DAOs or entities`() {
-        assertNoStorageImports(sourceFile("pipeline/PipelineConsumer.kt"))
-    }
+    fun `pipeline package does not import storage DAOs or entities`() {
+        val root = File("src/main/java/com/cosmiclaboratory/voyager/pipeline")
+        check(root.isDirectory) { "pipeline source dir missing at ${root.absolutePath} (CWD=${File("").absolutePath})" }
 
-    @Test
-    fun `PipelineGateway interface does not import storage DAOs or entities`() {
-        assertNoStorageImports(sourceFile("pipeline/PipelineGateway.kt"))
-    }
-
-    private fun assertNoStorageImports(file: File) {
-        val violations = file.readLines()
-            .map { it.trim() }
-            .filter {
-                it.startsWith("import com.cosmiclaboratory.voyager.storage.database.dao.") ||
-                    it.startsWith("import com.cosmiclaboratory.voyager.storage.database.entity.")
+        val violations: List<String> = root.walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .flatMap { file ->
+                file.readLines().asSequence()
+                    .map { it.trim() }
+                    .filter {
+                        it.startsWith("import com.cosmiclaboratory.voyager.storage.database.dao.") ||
+                            it.startsWith("import com.cosmiclaboratory.voyager.storage.database.entity.")
+                    }
+                    .map { "${file.relativeTo(root)}: $it" }
             }
+            .toList()
+
         assertEquals(
-            "Pipeline-gateway boundary broken in ${file.name}: re-route this through PipelineGateway.",
+            "pipeline/ boundary broken — re-route these through PipelineGateway:",
             emptyList<String>(), violations
         )
-    }
-
-    private fun sourceFile(relative: String): File {
-        // Tests run with module dir as CWD (Gradle's default); main sources live under src/main/java.
-        val root = File("src/main/java/com/cosmiclaboratory/voyager")
-        val f = File(root, relative)
-        check(f.exists()) { "Source not found at ${f.absolutePath} (CWD=${File("").absolutePath})" }
-        return f
     }
 }
