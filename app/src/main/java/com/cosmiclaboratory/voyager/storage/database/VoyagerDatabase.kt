@@ -47,9 +47,15 @@ import net.sqlcipher.database.SupportFactory
         // Trips
         TripEntity::class,
         // Activities (recorded workouts)
-        ActivityEntity::class
+        ActivityEntity::class,
+        // Mileage subsystem (Wave 10)
+        VehicleEntity::class,
+        FuelPriceHistoryEntity::class,
+        TripVehicleAssignmentEntity::class,
+        MileageSummaryEntity::class,
+        VehicleServiceLogEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -110,6 +116,13 @@ abstract class VoyagerDatabase : RoomDatabase() {
 
     // Activity (workout) DAOs
     abstract fun activityDao(): ActivityDao
+
+    // Mileage DAOs (Wave 10)
+    abstract fun vehicleDao(): VehicleDao
+    abstract fun fuelPriceHistoryDao(): FuelPriceHistoryDao
+    abstract fun tripVehicleAssignmentDao(): TripVehicleAssignmentDao
+    abstract fun mileageSummaryDao(): MileageSummaryDao
+    abstract fun vehicleServiceLogDao(): VehicleServiceLogDao
 
     companion object {
         private const val DATABASE_NAME = "voyager_database"
@@ -303,11 +316,156 @@ abstract class VoyagerDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v8 → v9: mileage subsystem (Wave 10).
+         *
+         * Adds five purely-additive tables that drive the mileage / fuel-cost / CO2
+         * pipeline:
+         *   - `vehicles` — user-registered vehicles with fuel type + efficiency + price
+         *   - `fuel_price_history` — time-versioned prices for retroactive accuracy
+         *   - `trip_vehicle_assignments` — segmentId → vehicleId + tax classification
+         *   - `mileage_summary` — pre-aggregated rollups per (vehicle, period)
+         *   - `vehicle_service_log` — user-authored maintenance entries
+         *
+         * No existing table is touched. All audit columns mirror the v3 syncable
+         * tables (lastModifiedAt / revision / deletedAt / userId).
+         */
+        private val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `vehicles` (
+                        `vehicleId` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        `name` TEXT NOT NULL,
+                        `fuelType` TEXT NOT NULL,
+                        `efficiencyValue` REAL NOT NULL,
+                        `efficiencyUnit` TEXT NOT NULL,
+                        `tankCapacityL` REAL,
+                        `currentFuelPricePerUnit` REAL NOT NULL,
+                        `currencyCode` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `isDefault` INTEGER NOT NULL DEFAULT 0,
+                        `color` TEXT,
+                        `lastModifiedAt` INTEGER NOT NULL DEFAULT 0,
+                        `revision` INTEGER NOT NULL DEFAULT 1,
+                        `deletedAt` INTEGER,
+                        `userId` TEXT NOT NULL DEFAULT ''
+                    )
+                    """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `fuel_price_history` (
+                        `priceId` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        `vehicleId` INTEGER NOT NULL,
+                        `pricePerUnit` REAL NOT NULL,
+                        `currencyCode` TEXT NOT NULL,
+                        `effectiveFrom` INTEGER NOT NULL,
+                        `source` TEXT NOT NULL DEFAULT 'MANUAL',
+                        `lastModifiedAt` INTEGER NOT NULL DEFAULT 0,
+                        `revision` INTEGER NOT NULL DEFAULT 1,
+                        `deletedAt` INTEGER,
+                        `userId` TEXT NOT NULL DEFAULT '',
+                        FOREIGN KEY(`vehicleId`) REFERENCES `vehicles`(`vehicleId`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_fuel_price_history_vehicleId_effectiveFrom` " +
+                        "ON `fuel_price_history` (`vehicleId`, `effectiveFrom`)"
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `trip_vehicle_assignments` (
+                        `segmentId` INTEGER NOT NULL PRIMARY KEY,
+                        `vehicleId` INTEGER NOT NULL,
+                        `isBusiness` INTEGER NOT NULL DEFAULT 0,
+                        `businessPurpose` TEXT,
+                        `manuallyAssigned` INTEGER NOT NULL DEFAULT 0,
+                        `assignedAt` INTEGER NOT NULL,
+                        `lastModifiedAt` INTEGER NOT NULL DEFAULT 0,
+                        `revision` INTEGER NOT NULL DEFAULT 1,
+                        `deletedAt` INTEGER,
+                        `userId` TEXT NOT NULL DEFAULT '',
+                        FOREIGN KEY(`segmentId`) REFERENCES `movement_segments`(`segmentId`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`vehicleId`) REFERENCES `vehicles`(`vehicleId`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_trip_vehicle_assignments_vehicleId` " +
+                        "ON `trip_vehicle_assignments` (`vehicleId`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_trip_vehicle_assignments_assignedAt` " +
+                        "ON `trip_vehicle_assignments` (`assignedAt`)"
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `mileage_summary` (
+                        `summaryId` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        `vehicleId` INTEGER NOT NULL,
+                        `period` TEXT NOT NULL,
+                        `periodKey` TEXT NOT NULL,
+                        `totalDistanceKm` REAL NOT NULL,
+                        `totalFuelL` REAL NOT NULL,
+                        `totalCostMinor` INTEGER NOT NULL,
+                        `currencyCode` TEXT NOT NULL,
+                        `totalCo2Kg` REAL NOT NULL,
+                        `tripCount` INTEGER NOT NULL,
+                        `businessDistanceKm` REAL NOT NULL DEFAULT 0,
+                        `personalDistanceKm` REAL NOT NULL DEFAULT 0,
+                        `computedAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_mileage_summary_vehicleId_period_periodKey` " +
+                        "ON `mileage_summary` (`vehicleId`, `period`, `periodKey`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_mileage_summary_period_periodKey` " +
+                        "ON `mileage_summary` (`period`, `periodKey`)"
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `vehicle_service_log` (
+                        `serviceId` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        `vehicleId` INTEGER NOT NULL,
+                        `serviceAt` INTEGER NOT NULL,
+                        `odometerKm` REAL,
+                        `serviceType` TEXT NOT NULL,
+                        `costMinor` INTEGER,
+                        `currencyCode` TEXT,
+                        `notes` TEXT,
+                        `lastModifiedAt` INTEGER NOT NULL DEFAULT 0,
+                        `revision` INTEGER NOT NULL DEFAULT 1,
+                        `deletedAt` INTEGER,
+                        `userId` TEXT NOT NULL DEFAULT '',
+                        FOREIGN KEY(`vehicleId`) REFERENCES `vehicles`(`vehicleId`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_vehicle_service_log_vehicleId_serviceAt` " +
+                        "ON `vehicle_service_log` (`vehicleId`, `serviceAt`)"
+                )
+            }
+        }
+
         /** Exposed for migration tests. Production code uses it only via [buildDatabase]. */
         internal val MIGRATIONS: Array<androidx.room.migration.Migration> =
             arrayOf(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
+                MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9
             )
 
         /**
