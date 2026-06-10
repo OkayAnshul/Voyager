@@ -21,7 +21,9 @@ class DormantModeManager @Inject constructor(
     private val logger: ProductionLogger
 ) {
     private var consecutiveStillCount = 0
-    var isDormant = false
+    // @Volatile: read on the pipeline thread (gap-reason, debug) but flipped from the
+    // sensor-trigger thread on wake, same as dormantExitedAt.
+    @Volatile var isDormant = false
         private set
     @Volatile var dormantExitedAt: Long = 0
         private set
@@ -40,11 +42,13 @@ class DormantModeManager @Inject constructor(
     fun onActivityUpdate(activityType: ActivityType): Boolean {
         if (activityType == ActivityType.STILL) {
             consecutiveStillCount++
-            // DORMANT turns GPS fully off and relies on the significant-motion
-            // sensor to wake. With motion detection disabled there is no wake
-            // path, so never enter DORMANT in that case.
-            val motionWakeEnabled = settingsRepository.observeSettings().value.motionDetectionEnabled
-            if (motionWakeEnabled && consecutiveStillCount >= DORMANT_ENTRY_THRESHOLD && !isDormant) {
+            // DORMANT turns GPS fully off and relies on the significant-motion sensor
+            // to wake. If there is no wake path — motion detection disabled by the user,
+            // OR the device has no TYPE_SIGNIFICANT_MOTION sensor — never enter DORMANT,
+            // or tracking would go dark with no way back.
+            val canWake = settingsRepository.observeSettings().value.motionDetectionEnabled &&
+                significantMotionDetector.isAvailable
+            if (canWake && consecutiveStillCount >= DORMANT_ENTRY_THRESHOLD && !isDormant) {
                 enterDormant()
                 return true
             }

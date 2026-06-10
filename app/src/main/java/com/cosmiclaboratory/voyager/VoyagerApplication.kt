@@ -84,7 +84,12 @@ class VoyagerApplication : Application(), Configuration.Provider {
         val latest = rawLocationSampleDao.getLatest()
         val lastKnownAlive = latest?.capturedAt ?: System.currentTimeMillis()
         val cutoffMs = lastKnownAlive - BOOTSTRAP_STALE_GAP_MS
-        val closed = integrityRepairUseCase.closeStaleVisits(cutoffMs)
+        // Select visits stranded for >30 min, but close them at the last sample we actually
+        // recorded — not the selection cutoff, which would truncate the dwell by 30 min (T3).
+        val closed = integrityRepairUseCase.closeStaleVisits(
+            staleBeforeMs = cutoffMs,
+            closeAtMs = lastKnownAlive,
+        )
         if (closed > 0) {
             timelineStateStore.setLastConfirmedVisitId(null)
         }

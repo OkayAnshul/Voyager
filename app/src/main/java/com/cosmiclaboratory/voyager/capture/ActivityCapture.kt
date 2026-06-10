@@ -34,16 +34,17 @@ class ActivityCapture @Inject constructor(
      * Re-register for activity transitions if none received within [timeoutMs].
      * Android battery optimization can silently kill the PendingIntent receiver,
      * causing 17-22 hour gaps in AR data (observed in real phone data).
+     *
+     * [start] resets the staleness clock, so after a re-register we wait a fresh
+     * [timeoutMs] before trying again — otherwise, with no transition following, the
+     * watchdog would thrash stop()/start() on every tick (lastTransitionAt stayed old).
      */
     @Suppress("MissingPermission")
-    fun reRegisterIfStale(timeoutMs: Long = 1_800_000L) { // 30 minutes
-        if (activeSessionId == 0L) return
-        val silenceMs = System.currentTimeMillis() - lastTransitionAt
-        if (silenceMs > timeoutMs) {
-            val sessionId = activeSessionId
-            stop()
-            start(sessionId)
-        }
+    fun reRegisterIfStale(timeoutMs: Long = AR_STALE_TIMEOUT_MS) {
+        if (!shouldReRegister(System.currentTimeMillis(), lastTransitionAt, activeSessionId, timeoutMs)) return
+        val sessionId = activeSessionId
+        stop()
+        start(sessionId)
     }
 
     @Suppress("MissingPermission")
@@ -82,6 +83,11 @@ class ActivityCapture @Inject constructor(
 
         ActivityRecognition.getClient(context)
             .requestActivityTransitionUpdates(request, pendingIntent!!)
+
+        // Anchor the staleness window to (re)registration time, not the singleton's
+        // construction time — so the 30-min self-heal is measured from when AR was
+        // actually armed, and a re-register resets the clock.
+        lastTransitionAt = System.currentTimeMillis()
     }
 
     fun stop() {
@@ -111,5 +117,20 @@ class ActivityCapture @Inject constructor(
                 trackingSessionId = activeSessionId
             )
         )
+    }
+
+    companion object {
+        /** Re-register if no AR transition is seen for this long — battery optimization
+         *  can silently kill the PendingIntent receiver. */
+        const val AR_STALE_TIMEOUT_MS = 1_800_000L // 30 minutes
+
+        /** Pure staleness decision, extracted for testability. Re-register only while a
+         *  session is active and the silence has exceeded [timeoutMs]. */
+        internal fun shouldReRegister(
+            now: Long,
+            lastTransitionAt: Long,
+            activeSessionId: Long,
+            timeoutMs: Long,
+        ): Boolean = activeSessionId != 0L && (now - lastTransitionAt) > timeoutMs
     }
 }

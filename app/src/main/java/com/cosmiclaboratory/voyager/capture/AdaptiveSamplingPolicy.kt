@@ -127,7 +127,7 @@ class AdaptiveSamplingPolicy @Inject constructor(
     }
 
     // ── Hysteresis for sampling state changes ──
-    // Require 2 consecutive samples with the new state before actually switching,
+    // Require 3 consecutive samples with the new state before actually switching,
     // to prevent thrashing location requests at motion boundaries.
 
     private var lastConfirmedState: MotionState? = null

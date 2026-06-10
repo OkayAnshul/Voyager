@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import com.cosmiclaboratory.voyager.platform.battery.BatteryBudgetController
 import com.cosmiclaboratory.voyager.platform.battery.BatteryUsageReporter
+import com.cosmiclaboratory.voyager.platform.notification.VoyagerNotificationManager
 import com.cosmiclaboratory.voyager.storage.database.dao.HealthLogDao
 import com.cosmiclaboratory.voyager.storage.database.entity.HealthLogEntity
 import dagger.assisted.Assisted
@@ -27,6 +28,7 @@ class BatteryBudgetWorker @AssistedInject constructor(
     private val batteryUsageReporter: BatteryUsageReporter,
     private val batteryBudgetController: BatteryBudgetController,
     private val settingsRepository: SettingsRepository,
+    private val notificationManager: VoyagerNotificationManager,
     private val healthLogDao: HealthLogDao,
 ) : CoroutineWorker(context, params) {
 
@@ -51,6 +53,17 @@ class BatteryBudgetWorker @AssistedInject constructor(
             val fromTier = settings.trackingTier.name
             settingsRepository.updateSetting("tracking_tier", downgradeTo.name)
 
+            // Surface the change — the controller's contract is that the tier is never
+            // changed silently behind the user's back (they opted into a budget, so they
+            // get told when it's honoured). Friendly + reassuring; data is never affected.
+            notificationManager.showTrackingAlert(
+                title = "Tracking eased to save battery 🔋",
+                message = "Yesterday's drain was ${estimate.percentPerDay}%/day — over your " +
+                    "${settings.batteryBudgetPctPerDay}%/day budget. Voyager switched from " +
+                    "${pretty(fromTier)} to ${pretty(downgradeTo.name)} to stay within it. " +
+                    "Tap to adjust anytime; none of your data is affected."
+            )
+
             healthLogDao.insert(
                 HealthLogEntity(
                     eventType = HEALTH_EVENT_WORKER_COMPLETE,
@@ -70,4 +83,8 @@ class BatteryBudgetWorker @AssistedInject constructor(
             Result.retry()
         }
     }
+
+    /** "ACCURATE" -> "Accurate" — friendlier tier label for user-facing copy. */
+    private fun pretty(tierName: String): String =
+        tierName.lowercase().replaceFirstChar { it.uppercase() }
 }

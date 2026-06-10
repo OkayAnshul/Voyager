@@ -38,6 +38,7 @@ class VoyagerNotificationManager @Inject constructor(
         const val NOTIFICATION_ID_VISIT_CONFIRMATION = 2000 // offset by visitId
         const val NOTIFICATION_ID_INSIGHT = 3001
         const val NOTIFICATION_ID_HEALTH = 4001
+        const val NOTIFICATION_ID_TRACKING_ALERT = 4002
     }
 
     private val notificationManager: NotificationManager
@@ -112,13 +113,22 @@ class VoyagerNotificationManager @Inject constructor(
 
     /**
      * Builds the ongoing foreground-service notification for location tracking.
+     *
+     * This is the one notification a user sees *all day*, so it is deliberately warm and
+     * privacy-forward — it reassures ("stays on this phone") and frames the value ("your
+     * journey / timeline") instead of reading like surveillance ("tracking"). Tapping opens
+     * the app; the Pause / Stop actions keep the user in control.
      */
     fun showTrackingNotification(state: TrackingRuntimeState): Notification {
-        val title = "Voyager Tracking"
-        val text = when {
-            state.isTracking -> "Tracking your journey"
-            else -> "Tracking idle"
-        }
+        val (title, text) = trackingCopy(state.isTracking)
+
+        // Tap the notification → open the app.
+        val openIntent = Intent(context, com.cosmiclaboratory.voyager.MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val openPending = PendingIntent.getActivity(
+            context, 3, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
         val pauseIntent = Intent(context, NotificationActionReceiver::class.java).apply {
             action = NotificationActionReceiver.ACTION_PAUSE_TRACKING
@@ -139,13 +149,37 @@ class VoyagerNotificationManager @Inject constructor(
         return NotificationCompat.Builder(context, CHANNEL_TRACKING_STATUS)
             .setContentTitle(title)
             .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSmallIcon(R.drawable.ic_notification_location)
             .setOngoing(true)
             .setSilent(true)
+            .setShowWhen(false)
+            .setContentIntent(openPending)
             .addAction(0, "Pause", pausePending)
             .addAction(0, "Stop", stopPending)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
+    }
+
+    /**
+     * Warm, time-of-day copy for the all-day tracking notification. Privacy first — it should
+     * feel like a companion keeping your memories, never like something watching you.
+     */
+    private fun trackingCopy(isTracking: Boolean): Pair<String, String> {
+        if (!isTracking) {
+            return "Voyager is paused" to
+                "Your timeline is on hold. Tap Resume whenever you're ready — everything stays on this phone."
+        }
+        return when (java.time.LocalTime.now().hour) {
+            in 5..10 -> "Good morning ☀️" to
+                "Voyager is quietly saving today's journey — only on this phone."
+            in 11..16 -> "Out and about?" to
+                "Capturing the places you go, just for you. Nothing ever leaves your device."
+            in 17..21 -> "Winding down 🌙" to
+                "Today's map is safe on your phone — private, and yours to keep."
+            else -> "Resting easy" to
+                "Your timeline stays right here on your device. Sleep tight ✨"
+        }
     }
 
     /**
@@ -216,6 +250,31 @@ class VoyagerNotificationManager @Inject constructor(
             .build()
 
         notificationManager.notify(NOTIFICATION_ID_INSIGHT, notification)
+    }
+
+    /**
+     * Shows an actionable tracking alert — e.g. an automatic battery-budget downgrade or
+     * permission degradation. Posts on the tracking-alerts channel so a change to *how*
+     * Voyager tracks is never made silently behind the user's back. Tapping opens the app.
+     */
+    fun showTrackingAlert(title: String, message: String) {
+        val launchIntent = Intent(context, com.cosmiclaboratory.voyager.MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val contentPending = PendingIntent.getActivity(
+            context, 4, launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_TRACKING_ALERTS)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setSmallIcon(R.drawable.ic_notification_location)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(contentPending)
+            .build()
+
+        notificationManager.notify(NOTIFICATION_ID_TRACKING_ALERT, notification)
     }
 
     /**

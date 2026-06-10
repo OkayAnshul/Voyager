@@ -52,9 +52,14 @@ class IntegrityRepairWorker @AssistedInject constructor(
             // Check the last LOOKBACK_DAYS days
             val dayKeys = buildRecentDayKeys()
 
-            // 0. Close stale open visits (departureAt=null, arrivalAt > 24h ago)
+            // 0. Close stale open visits (departureAt=null, arrivalAt > 24h ago). A visit
+            // open this long is an anomaly with no better last-known-alive signal, so close
+            // it at the cutoff itself.
             val cutoffMs = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
-            staleVisitsClosed = integrityRepairUseCase.closeStaleVisits(cutoffMs)
+            staleVisitsClosed = integrityRepairUseCase.closeStaleVisits(
+                staleBeforeMs = cutoffMs,
+                closeAtMs = cutoffMs,
+            )
             fixed += staleVisitsClosed
 
             // 1. Visit non-overlap check (delegated to shared use case)

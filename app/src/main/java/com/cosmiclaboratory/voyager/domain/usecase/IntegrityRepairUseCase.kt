@@ -98,26 +98,26 @@ class IntegrityRepairUseCase @Inject constructor(
     }
 
     /**
-     * Close stale open visits whose arrival is older than [cutoffMs].
+     * Close stale open visits — those still open (departureAt null) whose arrival is older
+     * than [staleBeforeMs]. Each is closed at [closeAtMs], which must be the last moment we
+     * actually had tracking data (e.g. the latest raw sample's time), NOT the selection
+     * cutoff — otherwise the dwell is truncated by the whole stale-gap window (T3). A stored
+     * dwell, if present, wins; [closeAtMs] is clamped to never precede the visit's arrival.
      * @return number of visits closed
      */
-    suspend fun closeStaleVisits(cutoffMs: Long): Int {
-        val staleVisits = visitDao.getStaleOpenVisits(cutoffMs)
+    suspend fun closeStaleVisits(staleBeforeMs: Long, closeAtMs: Long): Int {
+        val staleVisits = visitDao.getStaleOpenVisits(staleBeforeMs)
         for (visit in staleVisits) {
-            // Use stored dwell if available; otherwise close at the cutoff time
-            // (the latest moment we know tracking was still alive). This is a better
-            // approximation than arrival + arbitrary 1 hour, which is wrong for both
-            // quick stops (inflated) and long stays (possibly underestimated).
             val departureAt = if (visit.dwellMs != null && visit.dwellMs > 0) {
                 visit.arrivalAt + visit.dwellMs
             } else {
-                cutoffMs
+                closeAtMs.coerceAtLeast(visit.arrivalAt)
             }
             val dwellMs = departureAt - visit.arrivalAt
             visitDao.endVisit(visit.visitId, departureAt, dwellMs)
             audit(
                 "REPAIR_VISIT_STRANDED",
-                """{"visitId":${visit.visitId},"arrival":${visit.arrivalAt},"departure":$departureAt,"reason":"open visit closed at last-known-alive cutoff"}"""
+                """{"visitId":${visit.visitId},"arrival":${visit.arrivalAt},"departure":$departureAt,"reason":"open visit closed at last-known-alive time"}"""
             )
         }
         return staleVisits.size

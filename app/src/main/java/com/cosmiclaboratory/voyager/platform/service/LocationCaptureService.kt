@@ -1,21 +1,18 @@
 package com.cosmiclaboratory.voyager.platform.service
 
 import android.Manifest
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.cosmiclaboratory.voyager.capture.ActivityCapture
 import com.cosmiclaboratory.voyager.capture.LocationCapture
 import com.cosmiclaboratory.voyager.capture.StepCapture
 import com.cosmiclaboratory.voyager.platform.coordinator.TrackingRuntimeCoordinator
+import com.cosmiclaboratory.voyager.platform.notification.VoyagerNotificationManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +21,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
@@ -38,6 +36,7 @@ class LocationCaptureService : Service() {
     @Inject lateinit var activityCapture: ActivityCapture
     @Inject lateinit var stepCapture: StepCapture
     @Inject lateinit var coordinator: TrackingRuntimeCoordinator
+    @Inject lateinit var notificationManager: VoyagerNotificationManager
     @Inject lateinit var settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -47,8 +46,13 @@ class LocationCaptureService : Service() {
     override fun onCreate() {
         super.onCreate()
 
-        ensureNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification())
+        // Channels are owned solely by VoyagerNotificationManager (createChannels is
+        // idempotent); the foreground notification is its warm, tappable builder.
+        notificationManager.createChannels()
+        startForeground(
+            VoyagerNotificationManager.NOTIFICATION_ID_TRACKING,
+            notificationManager.showTrackingNotification(coordinator.runtimeState.value)
+        )
 
         val hasLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -92,6 +96,17 @@ class LocationCaptureService : Service() {
             if (settings.activityRecognitionEnabled) activityCapture.start(sessionId)
             if (settings.stepCountingEnabled) stepCapture.start(sessionId)
             capturesStarted.set(true)
+
+            // Refresh the notification now that the session is live. Matters for the
+            // crash-restart path, where onCreate ran before the session was restored and
+            // the notification would otherwise read as paused. startForeground is the
+            // update mechanism that isn't subject to POST_NOTIFICATIONS suppression.
+            withContext(Dispatchers.Main) {
+                startForeground(
+                    VoyagerNotificationManager.NOTIFICATION_ID_TRACKING,
+                    notificationManager.showTrackingNotification(coordinator.runtimeState.value)
+                )
+            }
         }
     }
 
@@ -108,35 +123,7 @@ class LocationCaptureService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun ensureNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Location Tracking",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Ongoing location tracking notification"
-                setShowBadge(false)
-            }
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.createNotificationChannel(channel)
-        }
-    }
-
-    private fun buildNotification(): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Voyager")
-            .setContentText("Tracking your journey")
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-    }
-
     companion object {
-        private const val NOTIFICATION_ID = 1001
-        private const val CHANNEL_ID = "tracking_status"
-
         fun start(context: Context) {
             val intent = Intent(context, LocationCaptureService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
