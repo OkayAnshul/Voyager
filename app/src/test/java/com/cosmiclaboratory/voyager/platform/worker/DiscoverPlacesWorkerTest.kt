@@ -52,4 +52,24 @@ class DiscoverPlacesWorkerTest {
         assertEquals(80.0, DiscoverPlacesWorker.clusterRadiusFor(roughMode = false), 0.0)
         assertEquals(2_000.0, DiscoverPlacesWorker.clusterRadiusFor(roughMode = true), 0.0)
     }
+
+    // ── Merge radius: honor the existing place's footprint to avoid fragmentation (T5) ──
+
+    @Test
+    fun `merge radius defaults to the cluster radius for a small place`() {
+        // 50m place: footprint (50+20=70) is under the 80m cluster radius, so 80m wins.
+        assertEquals(80.0, DiscoverPlacesWorker.mergeRadiusM(existingRadiusM = 50f, clusterRadiusM = 80.0), 0.0)
+    }
+
+    @Test
+    fun `merge radius expands to a large venue's footprint`() {
+        // 300m venue: a cluster up to 320m from its centroid is still the same place,
+        // not a duplicate — this is the T5 fix.
+        assertEquals(320.0, DiscoverPlacesWorker.mergeRadiusM(existingRadiusM = 300f, clusterRadiusM = 80.0), 0.0)
+    }
+
+    @Test
+    fun `rough-mode cluster radius still dominates a small footprint`() {
+        assertEquals(2_000.0, DiscoverPlacesWorker.mergeRadiusM(existingRadiusM = 100f, clusterRadiusM = 2_000.0), 0.0)
+    }
 }

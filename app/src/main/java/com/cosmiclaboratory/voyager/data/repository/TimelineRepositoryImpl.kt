@@ -79,7 +79,9 @@ class TimelineRepositoryImpl @Inject constructor(
                 GeocodeHint(name = entity.displayName, provider = providerLabel)
             }
 
-        return hints.take(3)
+        // Dedup by name so the picker never shows the same name twice (e.g. the same
+        // address returned by two providers) — keep the first (highest-ranked) source.
+        return hints.distinctBy { it.name }.take(3)
     }
 
     private fun dayBoundsMs(dayKey: String): Pair<Long, Long> {

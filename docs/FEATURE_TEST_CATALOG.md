@@ -193,41 +193,54 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 
 ## Wave 2 — Place intelligence & naming: *right names, right categories?*
 
-### W2.1 — Multi-provider geocoding · Status: [ ] verified  [ ] improved
+### W2.1 — Multi-provider geocoding · Status: [ ] verified (device varied-places test pending)  [x] improved 2026-06-11
 **What it does:** Resolves coordinates to names via Android/Nominatim/Photon/Overpass with fallback + rate limiting.
-**Key functions / files:** `data/geocoding/*` providers, `GeocodingProviderRegistryImpl`, `RateLimiter`, `PoiCategoryMapper`.
+**Key functions / files:** `data/geocoding/*` providers, `GeocodingRepositoryImpl.activeProviders/reverseGeocode`, `data/api/RateLimiter`, `PoiCategoryMapper`.
 **How to travel-test:** Visit varied places (chain store, indie cafe, park); confirm names resolve and providers fall back when one fails.
 **Flagship bar:** Real names not "Unnamed road"; respectful of provider rate limits; offline-tolerant.
+**Verification (2026-06-11, code-level — device varied-places test pending):** ✅ Well-built and (mostly) well-tested already: `GeocodingRepositoryImpl` orders providers by the user's `providerOrder` (priority fallback), **skips unavailable** providers, **short-circuits** on the first HIGH-tier result (typically 0–1 network calls), and applies privacy coarsening to network providers while the offline Android Geocoder gets exact coords. Existing tests cover the repository, Android + Overpass providers, the conflict resolver, and the POI mapper. Added `RateLimiterTest` (first call free; back-to-back call throttled to the interval) — the OSM 1-req/sec compliance limiter was untested.
+> - **Note (dead code):** `GeocodingProviderRegistryImpl.getEnabledProviders()` has no callers — the repo uses an injected provider list and does its own ordering. Candidate for removal in a future tidy; left as-is on this verify card.
 
-### W2.2 — Display-name resolution & candidate selection ("near to") · Status: [ ] verified  [ ] improved
+### W2.2 — Display-name resolution & candidate selection ("near to") · Status: [ ] verified (device picker test pending)  [x] improved 2026-06-11
 **What it does:** Picks the best display name and offers alternatives from other providers.
-**Key functions / files:** `domain/repository/GeocodingRepository.kt` (`resolveDisplayName`, `getCandidatesForPlace`), `GeocodingConflictResolver`, TimelinePlace geocode hints.
+**Key functions / files:** `storage/database/entity/PlaceEntity.displayName()`, `data/repository/TimelineRepositoryImpl.buildGeocodeHints` (POIs as "Near X" + alt candidates), `TimelinePlace.geocodeHints`, `TimelineViewModel.SelectGeocodeName` → `renamePlace`.
 **How to travel-test:** Open a place with an imperfect name; confirm you can pick a better candidate and a "near to <landmark>" style hint shows.
 **Flagship bar:** Best name chosen by default; clean candidate picker; "near to" hint when exact name is weak. _(User-priority feature.)_
+**Verification (2026-06-11, code-level — device picker test pending):** ✅ The live path works: name shown = `PlaceEntity.displayName()` (user name → best provider name → coordinates); the picker (`geocodeHints`) is built from nearby Overpass POIs as **"Near {POI}"** plus alternative stored geocode candidates, and tapping one renames the place. Locked `displayName()` with `PlaceDisplayNameTest` (3 cases).
+> - **Improvement:** `buildGeocodeHints` now dedups hints by name (`distinctBy { it.name }`) so the picker never shows the same address twice when two providers return it — cleaner picker.
+> - **Note (dead code):** `GeocodingConflictResolver.resolveDisplayName` takes a documented `nearbyContext` ("Near …") param but its body never uses it, and its only caller — `GeocodingRepositoryImpl.resolveDisplayName(placeId)` — has no callers itself. Both are dead (the live "near to" runs through `buildGeocodeHints`). Candidates for wiring-or-removal in a future tidy; left untouched on this verify card.
 
-### W2.3 — Category inference · Status: [ ] verified  [ ] improved
+### W2.3 — Category inference · Status: [ ] verified (device multi-day test pending)  [x] improved (already at bar) 2026-06-11
 **What it does:** Auto-assigns HOME/WORK/GYM/RESTAURANT/etc. from patterns + OSM tags.
-**Key functions / files:** `domain/usecase/InferPlaceCategoryUseCase.kt`, `PoiCategoryMapper`, `InferPlaceCategoryWorker`.
+**Key functions / files:** `data/geocoding/PoiCategoryMapper.kt`, `domain/usecase/InferPlaceCategoryUseCase.kt`, `platform/worker/InferPlaceCategoryWorker.kt`, `DiscoverPlacesWorker`, `GeocodingRepositoryImpl.refreshGeocodeForPlace`.
 **How to travel-test:** After a few days, confirm home/work auto-categorize and a cafe gets RESTAURANT from its OSM tag (see T2).
 **Flagship bar:** Categories inferred from OSM tags, not just time-of-day; high-confidence ones need no user touch.
+**Verification (2026-06-11, code-level — device multi-day test pending):** ✅ Both inference paths are live and tested — **no code change needed**:
+> - **OSM-tag path (T2):** `PoiCategoryMapper.fromOsmType` (comprehensive amenity/shop/leisure/tourism/transit map, conservative null for ambiguous `office`/`building`) feeds `inferredCategory`, applied to `place.category` at **discovery** (`DiscoverPlacesWorker`, skipped only in rough mode) and on **refresh** (`refreshGeocodeForPlace`), both gated to UNKNOWN + no user override. Covered by `PoiCategoryMapperTest` (≈20 cases).
+> - **Pattern path:** `InferPlaceCategoryUseCase` (HOME nightly / WORK weekday-9-5 / etc.) is the fallback for places OSM can't classify, run by `InferPlaceCategoryWorker`, covered by `InferPlaceCategoryUseCaseTest`.
 
-### W2.4 — Place enrichment (POI detail) · Status: [ ] verified  [ ] improved
+### W2.4 — Place enrichment (POI detail) · Status: [ ] verified (device POI test pending)  [x] improved 2026-06-11
 **What it does:** Enriches places with POI metadata.
 **Key functions / files:** `domain/usecase/EnrichPlaceWithDetailsUseCase.kt`.
 **How to travel-test:** Open a well-known POI; confirm enriched details appear.
 **Flagship bar:** Enrichment improves name/category confidence visibly.
+**Verification (2026-06-11, code-level — device POI test pending):** ✅ Thin, sound wrapper over the multi-provider `reverseGeocode` pipeline (W2.1): three entry points (`invoke`→name, `enrichWithSource`→result, `enrichFull`→result+candidates), prefers the accuracy-gated `safeDisplayName`, passes through the OSM `inferredCategory` (feeds W2.3/T2), and on failure returns an empty result without leaking coordinates to logs. New `EnrichPlaceWithDetailsUseCaseTest` (4 cases incl. safe-name preference and the graceful-failure path) — was untested.
 
-### W2.5 — Place discovery / clustering · Status: [ ] verified  [ ] improved
+### W2.5 — Place discovery / clustering · Status: [ ] verified (device discovery test pending)  [x] improved 2026-06-11
 **What it does:** Discovers new places by clustering repeated stays.
-**Key functions / files:** `worker/DiscoverPlacesWorker`, `GeohashEncoder`.
+**Key functions / files:** `worker/DiscoverPlacesWorker` (`densityCluster`, `mergeRadiusM`, `clusterRadiusFor`, `resolvePlaceConfidence`), `GeohashEncoder`.
 **How to travel-test:** Visit a new spot a few times; confirm it becomes a discovered place (not fragmented across visits — see T5).
 **Flagship bar:** One building → one place; discovery cadence is timely.
+**Verification (2026-06-11, code-level — device discovery test pending):** ✅ Density clustering (HDBSCAN-like, 80m / 2km rough, min 3 points), POI-prior confidence lift, rough-mode handling — all with existing pure-helper tests.
+> - **T5 (discovery half) ✅:** the existing-place dedup compared the cluster centroid to the existing **centroid** with a fixed 80m radius — so a cluster landing inside a large venue (>80m from its centroid) spawned a **duplicate** place (same root cause as T8). Now merges within `mergeRadiusM = max(clusterRadius, existing.radiusM + buffer)`, honoring the venue footprint (place radius is capped at 500m so the merge stays bounded). Locked with 3 `mergeRadiusM` tests. The other half of T5 — collapsing places that *already* fragmented — is **W2.6** (MergePlacesWorker).
 
-### W2.6 — Place merging (dedup) · Status: [ ] verified  [ ] improved
+### W2.6 — Place merging (dedup) · Status: [ ] verified (device merge test pending)  [x] improved 2026-06-11
 **What it does:** Collapses near-duplicate places.
-**Key functions / files:** `worker/MergePlacesWorker`, `PlaceRepository.mergePlaces`.
+**Key functions / files:** `worker/MergePlacesWorker` (`nearestMergeable`, `mergeDistanceLimitM`), `PlaceRepository.mergePlaces`.
 **How to travel-test:** If a place fragmented, confirm merge consolidates it and re-points visits.
 **Flagship bar:** No visible duplicates of the same physical place; merges preserve history.
+**Verification (2026-06-11, code-level — device merge test pending):** ✅ Conservative + safe: only CANDIDATE→CONFIRMED merges, requires a non-empty **exact name match** (case-insensitive), and reassigns visits + segments and marks MERGED inside one transaction (no dangling FKs). New `MergePlacesWorkerTest` (2 cases).
+> - **T5 (merge half) ✅:** `nearestMergeable` capped the merge at a flat 200m from the confirmed centroid, so same-named fragments inside a large venue (campus/airport, >200m) never collapsed. Now uses `mergeDistanceLimitM = max(200m, confirmed.radiusM + buffer)`, honoring the footprint — safe because an exact name match is already required. Completes T5 (discovery half landed in W2.5).
 
 ### W2.7 — Confidence & decay · Status: [ ] verified  [ ] improved
 **What it does:** Scores place confidence and decays it when not revisited.
@@ -561,10 +574,10 @@ Each cross-links to the Part A wave it degrades. Source: `~/.claude/plans/yes-fi
 | ID | Symptom | Degrades | Status |
 |----|---------|----------|--------|
 | T1 | Long walks fragment into multiple segments (time-flush flaw) | W1.3 | ✅ — already fixed (no time-only flush for non-VISIT segments) + covered by existing test. |
-| T2 | Place categories never auto-inferred from OSM tags | W2.3 | ☐ |
+| T2 | Place categories never auto-inferred from OSM tags | W2.3 | ✅ — already implemented: `PoiCategoryMapper` (OSM tag→category) applied at place discovery + geocode refresh (gated to UNKNOWN/no-override); comprehensive mapper + pattern fallback both tested. Verified, no change needed. |
 | T3 | Visits don't close on app death | W0.6 / W1.4 | ✅ 2026-06-10 — already closed on cold start (`repairStrandedVisits`) + nightly worker; fixed the dwell-truncation bug (`closeStaleVisits` now closes at last-known-alive, not the 30-min selection cutoff). Tests added. |
 | T4 | Slow traffic classified as cycling | W1.2 / W1.3 | ✅ 2026-06-11 — prior fix handled 3.0–4.5 m/s; added vehicle-context so the 4.5–6.5 m/s cycling band reads as slow traffic once driving, cleared by walking-steps/AR. Tests added. |
-| T5 | Place fragmentation (same building → multiple places) | W2.5 / W2.6 | ☐ |
+| T5 | Place fragmentation (same building → multiple places) | W2.5 / W2.6 | ✅ 2026-06-11 — both halves footprint-aware: discovery merges new clusters within an existing place's radius (W2.5 `mergeRadiusM`); the merge worker collapses same-named fragments within a confirmed venue's radius (W2.6 `mergeDistanceLimitM`). Tests added. |
 | T6 | Quick-return continuation overeager | W1.4 | ◐ 2026-06-11 — `movedAwayInWindow` guard (vehicle round-trips → new visit) verified + locked with tests. Residual: on-foot returns within the 30-min PROCESS_DEAD window still continue; tightening needs device data (documented in W1.4). |
 | T7 | Step-rate fusion misfires | W0.5 / W1.2 | ☐ |
 | T8 | Place-match search radius fixed at 200m | W1.5 | ✅ 2026-06-11 — search radius already adaptive on GPS accuracy; also made the reachability gate honor the place's own footprint (`max(searchRadius, place.radiusM+buffer)`) so large venues match in good GPS. Tests added. |

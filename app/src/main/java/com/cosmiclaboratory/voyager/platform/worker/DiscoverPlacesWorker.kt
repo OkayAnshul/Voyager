@@ -71,6 +71,20 @@ class DiscoverPlacesWorker @AssistedInject constructor(
             isPoiPrior -> maxOf(baseConfidence, POI_PRIOR_CONFIDENCE)
             else -> baseConfidence
         }
+
+        /** Slack added to an existing place's radius when deciding whether a new cluster
+         *  belongs to it (matches the live-match hysteresis buffer in W1.5). */
+        private const val PLACE_FOOTPRINT_BUFFER_M = 20.0
+
+        /**
+         * Distance within which a new cluster is treated as the *same* place as an
+         * existing one — the wider of the cluster radius and the existing place's own
+         * footprint (+ buffer). Honoring the footprint stops a cluster that lands inside
+         * a large venue (but beyond the fixed cluster radius from its centroid) from
+         * spawning a duplicate place (T5). Exposed for unit testing.
+         */
+        fun mergeRadiusM(existingRadiusM: Float, clusterRadiusM: Double): Double =
+            maxOf(clusterRadiusM, existingRadiusM + PLACE_FOOTPRINT_BUFFER_M)
     }
 
     /** Set once per run from the live permission snapshot; drives the cluster radius. */
@@ -101,10 +115,13 @@ class DiscoverPlacesWorker @AssistedInject constructor(
                 val centroidLng = cluster.map { it.lng }.average()
                 val geohash = GeohashEncoder.encode(centroidLat, centroidLng)
 
-                // Check for existing nearby place to avoid duplicates
+                // Check for an existing nearby place to avoid fragmenting one venue into
+                // many. Merge when the cluster falls within the existing place's own
+                // footprint (radius + buffer), not just a fixed cluster radius (T5).
                 val existingPlaces = placeDao.getByGeohashPrefix(geohash.take(5))
                 val nearbyPlace = existingPlaces.firstOrNull { existing ->
-                    haversineM(centroidLat, centroidLng, existing.centroidLat, existing.centroidLng) < activeClusterRadiusM
+                    haversineM(centroidLat, centroidLng, existing.centroidLat, existing.centroidLng) <
+                        mergeRadiusM(existing.radiusM, activeClusterRadiusM)
                 }
 
                 if (nearbyPlace != null) {

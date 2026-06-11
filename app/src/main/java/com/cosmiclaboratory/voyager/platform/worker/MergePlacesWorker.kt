@@ -48,6 +48,17 @@ class MergePlacesWorker @AssistedInject constructor(
     companion object {
         const val WORK_NAME = "merge_places"
         private const val MERGE_RADIUS_M = 200.0
+        private const val FOOTPRINT_BUFFER_M = 20.0
+
+        /**
+         * How far a same-named CANDIDATE may sit from a CONFIRMED place and still be
+         * merged into it — the wider of the base radius and the confirmed place's own
+         * footprint (+ buffer). Honoring the footprint collapses same-named fragments
+         * inside a large venue (campus/airport) that sit beyond the flat 200m (T5).
+         * Safe because a non-empty exact name match is already required. Exposed for tests.
+         */
+        fun mergeDistanceLimitM(confirmedRadiusM: Float): Double =
+            maxOf(MERGE_RADIUS_M, confirmedRadiusM + FOOTPRINT_BUFFER_M)
     }
 
     override suspend fun doWork(): Result {
@@ -106,7 +117,7 @@ class MergePlacesWorker @AssistedInject constructor(
                 )
                 place to distance
             }
-            .filter { it.second <= MERGE_RADIUS_M }
+            .filter { (place, distance) -> distance <= mergeDistanceLimitM(place.radiusM) }
             .minByOrNull { it.second }
             ?.first
     }
