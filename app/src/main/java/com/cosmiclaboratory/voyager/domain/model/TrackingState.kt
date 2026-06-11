@@ -32,7 +32,11 @@ data class PendingVisitCandidate(
      *  inside half its expected radius — a better proxy for the actual arrival
      *  than [accumulationStartAt], which may be a passing sample en route to
      *  the place. Null until convergence; falls back to [accumulationStartAt]. */
-    val firstStableSampleAt: Long? = null
+    val firstStableSampleAt: Long? = null,
+    /** Timestamp of the most recent sample that was inside the candidate radius.
+     *  Used as the departure time so dwell isn't inflated by the exit-hysteresis
+     *  samples spent walking away (T10). Null until the first inside sample. */
+    val lastInsideSampleAt: Long? = null
 )
 
 data class TrackingHealth(

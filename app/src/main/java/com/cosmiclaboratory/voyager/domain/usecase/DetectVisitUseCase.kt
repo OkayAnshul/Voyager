@@ -114,7 +114,8 @@ class DetectVisitUseCase @Inject constructor(
                     candidate.copy(
                         sampleCount = n,
                         maxDistanceFromCentroidM = maxOf(candidate.maxDistanceFromCentroidM, distance),
-                        firstStableSampleAt = firstStableSampleAt
+                        firstStableSampleAt = firstStableSampleAt,
+                        lastInsideSampleAt = sample.capturedAt
                     )
                 } else {
                     // Pre-confirmation: keep updating centroid for GPS convergence accuracy
@@ -123,7 +124,8 @@ class DetectVisitUseCase @Inject constructor(
                         centroidLng = candidate.centroidLng + (sample.lng - candidate.centroidLng) / n,
                         sampleCount = n,
                         maxDistanceFromCentroidM = maxOf(candidate.maxDistanceFromCentroidM, distance),
-                        firstStableSampleAt = firstStableSampleAt
+                        firstStableSampleAt = firstStableSampleAt,
+                        lastInsideSampleAt = sample.capturedAt
                     )
                 }
                 stateStore.setPendingVisitCandidate(updated)
@@ -182,6 +184,12 @@ class DetectVisitUseCase @Inject constructor(
                     }
                 }
 
+                // Departure time is the LAST sample we were actually inside the place —
+                // not this exit-confirming sample, which sits exitHysteresis samples (and
+                // the walk-out) later and would inflate the dwell (T10). Falls back to the
+                // current sample only if we somehow never recorded an inside sample.
+                val departureAt = candidate.lastInsideSampleAt ?: sample.capturedAt
+
                 // Confirmed departure — persist context for return continuation
                 // (survives process kill so quick-return detection works after restart)
                 consecutiveOutsideSamples = 0
@@ -189,7 +197,7 @@ class DetectVisitUseCase @Inject constructor(
                     it.copy(
                         lastDepartedCentroidLat = candidate.centroidLat,
                         lastDepartedCentroidLng = candidate.centroidLng,
-                        lastDepartureTime = sample.capturedAt,
+                        lastDepartureTime = departureAt,
                         lastDepartedVisitId = lastConfirmedVisitId
                     )
                 }
@@ -198,8 +206,8 @@ class DetectVisitUseCase @Inject constructor(
                     val visit = visitDao.getById(lastConfirmedVisitId)
                     if (visit != null && visit.departureAt == null) {
                         visitDao.update(visit.copy(
-                            departureAt = sample.capturedAt,
-                            dwellMs = sample.capturedAt - visit.arrivalAt
+                            departureAt = departureAt,
+                            dwellMs = departureAt - visit.arrivalAt
                         ))
                     }
                     stateStore.setLastConfirmedVisitId(null)

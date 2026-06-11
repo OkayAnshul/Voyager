@@ -13,6 +13,7 @@ import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitEvidenceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitWriteGuard
+import com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
@@ -357,5 +358,95 @@ class DetectVisitUseCaseTest {
         assertTrue("Expected Accumulating, got $result2", result2 is VisitDetectionResult.Accumulating)
         // 3rd outside sample: departure confirmed
         assertTrue("Expected Departed, got $result3", result3 is VisitDetectionResult.Departed)
+    }
+
+    private fun movementSegment(type: String, startAt: Long, endAt: Long) = MovementSegmentEntity(
+        segmentType = type, startAt = startAt, endAt = endAt, dayKey = dayKey
+    )
+
+    // ── Scenario 11: Departure time is the last in-place sample, not the exit sample (T10) ──
+
+    @Test
+    fun `departure time is the last inside sample, not the exit-confirming sample`() = runTest {
+        val now = System.currentTimeMillis()
+        val arrival = now - 800_000
+        val lastInside = now - 200_000 // last sample we were actually at the place
+        val candidate = PendingVisitCandidate(
+            centroidLat = baseLat, centroidLng = baseLng,
+            accumulationStartAt = arrival, sampleCount = 40, maxDistanceFromCentroidM = 10.0,
+            matchedPlaceId = null, lastInsideSampleAt = lastInside
+        )
+        val existingVisit = VisitEntity(
+            visitId = 42L, placeId = 0, arrivalAt = arrival, departureAt = null, dwellMs = null,
+            source = "LIVE_DETECTION", confidence = 0.7f, dayKey = dayKey,
+            centroidLat = baseLat, centroidLng = baseLng
+        )
+        coEvery { stateStore.getState() } returns emptyState.copy(
+            pendingVisitCandidate = candidate, lastConfirmedVisitId = 42L
+        )
+        coEvery { visitDao.getById(42L) } returns existingVisit
+
+        // 3 outside samples to clear exit hysteresis — each minutes after the last inside sample.
+        val farLat = baseLat + 0.002
+        useCase.processSample(sample(lat = farLat, capturedAt = now - 2000), dayKey)
+        useCase.processSample(sample(lat = farLat, capturedAt = now - 1000), dayKey)
+        useCase.processSample(sample(lat = farLat, capturedAt = now), dayKey)
+
+        // Departure clamped back to the last inside sample; dwell measured to there —
+        // not inflated by the ~200s spent confirming the exit.
+        coVerify {
+            visitDao.update(match { it.departureAt == lastInside && it.dwellMs == lastInside - arrival })
+        }
+    }
+
+    // ── Scenario 12: Quick-return continuation guard (T6) ──
+
+    @Test
+    fun `quick return within window and radius reopens the previous visit`() = runTest {
+        val now = System.currentTimeMillis()
+        val depTime = now - 120_000 // 2 min ago, well within the 30-min window
+        val arrival = now - 900_000
+        coEvery { stateStore.getState() } returns emptyState.copy(
+            pendingVisitCandidate = null,
+            lastDepartedCentroidLat = baseLat,
+            lastDepartedCentroidLng = baseLng,
+            lastDepartureTime = depTime,
+            lastDepartedVisitId = 42L
+        )
+        coEvery { movementSegmentDao.getByDayKey(dayKey) } returns emptyList() // never moved away
+        coEvery { visitDao.getById(42L) } returns VisitEntity(
+            visitId = 42L, placeId = 7L, arrivalAt = arrival, departureAt = depTime,
+            dwellMs = depTime - arrival, source = "LIVE_DETECTION", confidence = 0.7f,
+            dayKey = dayKey, centroidLat = baseLat, centroidLng = baseLng
+        )
+
+        val result = useCase.processSample(sample(lat = baseLat, capturedAt = now), dayKey)
+
+        assertTrue("Expected continuation, got $result", result is VisitDetectionResult.Accumulating)
+        coVerify { visitDao.update(match { it.departureAt == null && it.dwellMs == null }) }
+        coVerify { stateStore.setLastConfirmedVisitId(42L) }
+    }
+
+    @Test
+    fun `driving away within the window forces a new visit, not a continuation`() = runTest {
+        val now = System.currentTimeMillis()
+        val depTime = now - 600_000 // 10 min ago, still within the window
+        coEvery { stateStore.getState() } returns emptyState.copy(
+            pendingVisitCandidate = null,
+            lastDepartedCentroidLat = baseLat,
+            lastDepartedCentroidLng = baseLng,
+            lastDepartureTime = depTime,
+            lastDepartedVisitId = 42L
+        )
+        // A DRIVE segment closed inside the window = a real round trip, not GPS jitter.
+        coEvery { movementSegmentDao.getByDayKey(dayKey) } returns listOf(
+            movementSegment("DRIVE", startAt = depTime + 60_000, endAt = depTime + 300_000)
+        )
+
+        val result = useCase.processSample(sample(lat = baseLat, capturedAt = now), dayKey)
+
+        assertTrue("Expected a fresh candidate, got $result", result is VisitDetectionResult.CandidateStarted)
+        // The prior visit is NOT reopened.
+        coVerify(exactly = 0) { visitDao.update(any()) }
     }
 }

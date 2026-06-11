@@ -54,7 +54,13 @@ class MatchPlaceLiveUseCase @Inject constructor(
             }
         }
 
-        if (nearestPlace == null || nearestDistance > searchRadius) {
+        // Reachability gate: consider the nearest place when the sample is within either
+        // the GPS-accuracy search radius OR the place's own footprint (+ hysteresis).
+        // Without the place-footprint term, a large venue (mall/campus/airport) rejects a
+        // user standing well inside it whenever GPS is accurate and the centroid is farther
+        // than searchRadius away (T8).
+        val placeReach = nearestPlace?.let { it.radiusM + HYSTERESIS_BUFFER_M } ?: 0.0
+        if (nearestPlace == null || nearestDistance > maxOf(searchRadius, placeReach)) {
             handleOutside()
             return PlaceMatchResult(null, nearestDistance, false)
         }

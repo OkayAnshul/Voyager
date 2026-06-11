@@ -150,17 +150,23 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 > - **T1 ✅ — already implemented & tested** (non-VISIT segments have no time-only flush; the existing "long-running WALK… one row" test covers it).
 > - **T13 ✅ — already implemented** (single-sample ≥200 m/s cruise OR sustained ≥80 m/s ×2 for takeoff/landing); previously **untested** — now locked with cruise + sustained FLIGHT tests. See Part B.
 
-### W1.4 — Visit detection (hysteresis, return window, centroid) · Status: [ ] verified  [ ] improved
+### W1.4 — Visit detection (hysteresis, return window, centroid) · Status: [ ] verified (device dwell/return test pending)  [x] improved 2026-06-11
 **What it does:** Detects stays and forms visit candidates before segmentation (prevents DWELL fragmentation).
 **Key functions / files:** `domain/usecase/DetectVisitUseCase.kt` (`processSample`, `forceDeparture`, `clearDepartureMemory`; accuracy-adaptive radius, return-window, quick-return).
 **How to travel-test:** Visit a place for 45 min, step outside briefly, return; confirm it's one visit, not two (see T6), and dwell time matches reality (see T10).
 **Flagship bar:** No double-counted overnight stays (see T11); dwell uses true arrival/departure; quick-return tuned.
+**Verification (2026-06-11, code-level — device dwell/return test pending):** ✅ Sound: accuracy-adaptive radius, entry/exit hysteresis, place-anchor departure resistance, first-stable arrival anchor, post-confirmation centroid freeze, quick-return continuation with a movement-away guard. Extended `DetectVisitUseCaseTest` to 14 cases.
+> - **T10 ✅:** departure was recorded at the **exit-confirming** sample, which sits exit-hysteresis samples + the walk-out *after* the user actually left — inflating dwell. Added `lastInsideSampleAt` to the candidate and close the visit at that (the last truly-inside sample). Test asserts the exact departure time. See Part B.
+> - **T6 ◐ (guard verified + locked; residual documented):** the main overeagerness — a car driving away and back resurrecting the prior visit — is already prevented by the `movedAwayInWindow` guard (clears return memory on a DRIVE/CYCLE/RUN/FLIGHT segment in the window). Added tests for both the guard and the legitimate jitter-return continuation. **Residual:** an on-foot return within the 30-min window still continues (counting the away-time as dwell). The 30-min window is deliberately tuned for PROCESS_DEAD anti-fragmentation (W0.6), so tightening it (e.g. gating long continuations on an actual GAP segment) needs real-device data before changing — left as a follow-up rather than a blind change.
 
-### W1.5 — Live place matching + Wi-Fi fingerprint · Status: [ ] verified  [ ] improved
+### W1.5 — Live place matching + Wi-Fi fingerprint · Status: [ ] verified (device venue test pending)  [x] improved 2026-06-11
 **What it does:** Matches an active stay to a known place in real time.
 **Key functions / files:** `domain/usecase/MatchPlaceLiveUseCase.kt`, `PlaceLinkingService`, `WifiFingerprinter`.
 **How to travel-test:** Return to home/work; confirm the active-visit card names it immediately. Test a large venue (mall) where 200m is too tight (see T8).
 **Flagship bar:** Search radius adapts to place size; indoor matches use Wi-Fi prior; no mismatches between adjacent places.
+**Verification (2026-06-11, code-level — device venue test pending):** ✅ geohash-prefix candidate fetch (~5km), nearest-place selection, entry (×2) / exit (×3) hysteresis, place-radius + buffer membership test. New `MatchPlaceLiveUseCaseTest` (4 cases) — the use case previously had no tests.
+> - **T8 ✅:** the *search* radius was already made adaptive on GPS accuracy (no longer a flat 200m), but the reachability gate still keyed **only** on that — so in good GPS (≈50m) a user 150m inside a 300m-radius venue was rejected before the venue's own footprint was checked. Gate now uses `max(searchRadius, place.radiusM + buffer)`, so large venues match while tight GPS still avoids wrong-place attribution among small adjacent places. Locked with a large-venue test. See Part B.
+> - **Note:** Wi-Fi fingerprint prior (`WifiFingerprinter`) for indoor matching is a separate enhancement, not yet fused into the live match — tracked under Part C (place intelligence).
 
 ### W1.6 — Gap watchdog & GAP reasons · Status: [ ] verified  [ ] improved
 **What it does:** Inserts GAP segments on tracking loss, distinguishing intentional (DORMANT) from GPS_LOSS.
@@ -554,11 +560,11 @@ Each cross-links to the Part A wave it degrades. Source: `~/.claude/plans/yes-fi
 | T3 | Visits don't close on app death | W0.6 / W1.4 | ✅ 2026-06-10 — already closed on cold start (`repairStrandedVisits`) + nightly worker; fixed the dwell-truncation bug (`closeStaleVisits` now closes at last-known-alive, not the 30-min selection cutoff). Tests added. |
 | T4 | Slow traffic classified as cycling | W1.2 / W1.3 | ✅ 2026-06-11 — prior fix handled 3.0–4.5 m/s; added vehicle-context so the 4.5–6.5 m/s cycling band reads as slow traffic once driving, cleared by walking-steps/AR. Tests added. |
 | T5 | Place fragmentation (same building → multiple places) | W2.5 / W2.6 | ☐ |
-| T6 | Quick-return continuation overeager | W1.4 | ☐ |
+| T6 | Quick-return continuation overeager | W1.4 | ◐ 2026-06-11 — `movedAwayInWindow` guard (vehicle round-trips → new visit) verified + locked with tests. Residual: on-foot returns within the 30-min PROCESS_DEAD window still continue; tightening needs device data (documented in W1.4). |
 | T7 | Step-rate fusion misfires | W0.5 / W1.2 | ☐ |
-| T8 | Place-match search radius fixed at 200m | W1.5 | ☐ |
+| T8 | Place-match search radius fixed at 200m | W1.5 | ✅ 2026-06-11 — search radius already adaptive on GPS accuracy; also made the reachability gate honor the place's own footprint (`max(searchRadius, place.radiusM+buffer)`) so large venues match in good GPS. Tests added. |
 | T9 | Kalman reference doesn't reset on long travel | W1.1 | ✅ 2026-06-11 — already implemented (25km reanchor in `LocationKalmanFilter.filter()`); verified + locked with a re-anchor unit test. |
-| T10 | Visit dwell uses wrong timestamp | W1.4 | ☐ |
+| T10 | Visit dwell uses wrong timestamp | W1.4 | ✅ 2026-06-11 — departure now recorded at the last in-place sample (`lastInsideSampleAt`), not the exit-confirming sample that inflated dwell by the exit-hysteresis + walk-out. Test added. |
 | T11 | Day-boundary overnight stays double-count | W1.7 | ☐ |
 | T12 | BatteryBudgetController computed but never applied | W0.2 | ✅ 2026-06-10 — worker applies + is scheduled (6h) + live re-apply on next motion transition; now also **surfaces** the downgrade to the user via `showTrackingAlert` (was silent, violating the controller's contract). UI to *enable* a budget = F2 (planned). |
 | T13 | FLIGHT threshold 200 m/s misses takeoff/landing | W1.3 | ✅ 2026-06-11 — already fixed (sustained ≥80 m/s ×2 trigger alongside the 200 m/s single-sample bar); now locked with cruise + sustained tests. |
