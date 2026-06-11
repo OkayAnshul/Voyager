@@ -123,23 +123,32 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 
 ## Wave 1 — Timeline correctness: *is what it recorded actually true?*
 
-### W1.1 — Pipeline: normalize → dedup → Kalman → quality · Status: [ ] verified  [ ] improved
+### W1.1 — Pipeline: normalize → dedup → Kalman → quality · Status: [ ] verified (device intercity test pending)  [x] improved 2026-06-11
 **What it does:** Cleans each raw sample before segmentation.
 **Key functions / files:** `pipeline/stage/SampleNormalizer.kt`, `DedupSuppressor.kt` (accuracy-aware jitter), `LocationKalmanFilter.kt` (4-state, 25km auto-anchor), `QualityScorer.kt`, orchestrated by `pipeline/PipelineConsumer.kt`.
 **How to travel-test:** Drive across a city, then a long intercity leg; check the route is smooth, not jittery, and bearings look right after the long leg (see T9).
 **Flagship bar:** No GPS-jitter zigzag; Kalman reference resets on long travel; mock/low-accuracy fixes rejected.
+**Verification (2026-06-11, code-level — device intercity test pending):** ✅ All four stages sound: normalize (7-dp round, speed clamp, bearing), dedup (out-of-order reject + accuracy-aware noise floor), quality (mock / `>200m` / motion-aware staleness / score bands), Kalman (4-state, Joseph-form covariance for multi-day numerical stability, 25km reanchor, 300s-gap reset). Added **4 test files (~19 cases)** — the stages previously had only an integration test (contributes to Part C **K2**).
+> - **T9 ✅ — already implemented** (`referenceResetDistanceM = 25_000` + long-haul reanchor in `filter()`); now locked with a `LocationKalmanFilter` re-anchor test. See Part B.
+> - **Tiny fix:** `SampleNormalizer` bearing used `% 360`, which keeps the sign for negatives; now normalized to `[0,360)`.
 
-### W1.2 — Motion fusion (AR + GPS + steps) · Status: [ ] verified  [ ] improved
+### W1.2 — Motion fusion (AR + GPS + steps) · Status: [ ] verified (device drive/congestion test pending)  [x] improved 2026-06-11
 **What it does:** Fuses activity recognition, GPS speed, and step rate into one motion state.
-**Key functions / files:** `domain/usecase/FuseActivityStateUseCase.kt` (`fuse`, hysteresis dead zones, >140 spm→RUN / >100 spm→WALK, speed sanity).
+**Key functions / files:** `domain/usecase/FuseActivityStateUseCase.kt` (`fuse`, hysteresis dead zones, vehicle context, >140 spm→RUN / >100 spm→WALK, speed sanity).
 **How to travel-test:** Walk, then sit in slow traffic; confirm slow traffic is **drive**, not cycle (see T4), and brisk walking isn't called running.
 **Flagship bar:** No mode flips at boundaries; step override never misfires while in a vehicle (see T7).
+**Verification (2026-06-11, code-level — device drive/congestion test pending):** ✅ Speed validated against accuracy (rejects phantom spikes), wide hysteresis dead zones at band boundaries, AR gated by user confidence threshold, weighted fusion. Extended `FuseActivityStateUseCaseTest` with 4 vehicle-context cases (26 total).
+> - **T4 ✅:** the prior fix covered the 3.0–4.5 m/s band, but **4.5–6.5 m/s still hard-mapped to CYCLING** — a car crawling in congestion with AR stale read as cycling. Added **vehicle context**: a confident IN_VEHICLE (AR) or clearly-driving (>8.5 m/s) reading arms it, and while armed a cycling-speed reading resolves to IN_VEHICLE. It's sticky across red lights and cleared only by real walking steps or a confident non-vehicle AR reading — so genuine cyclists (no prior driving) still classify as CYCLING. See Part B.
+> - **T7 (note):** step-rate thresholds already appear tuned (RUN >140, WALK >100, the 80–100 desk-shuffle band excluded, STILL on <5 spm with AR walking) and are covered by existing tests; capture-side accuracy was handled in W0.5. Left as-is pending a real-device misfire report.
 
-### W1.3 — Segmenter (WALK/RUN/DRIVE/CYCLE/FLIGHT/VISIT/DWELL/GAP) · Status: [ ] verified  [ ] improved
+### W1.3 — Segmenter (WALK/RUN/DRIVE/CYCLE/FLIGHT/VISIT/DWELL/GAP) · Status: [ ] verified (device flight/walk test pending)  [x] improved 2026-06-11
 **What it does:** Turns the fused stream into typed segments with distance, evidence, and routes.
 **Key functions / files:** `pipeline/stage/Segmenter.kt` (`processSample`, `closeCurrentSegment`, `getInProgressSnapshot`; 5-sample debounce, dominant-mode voting, 500-sample flush cap), tuning in `pipeline/PipelineConstants.kt`.
 **How to travel-test:** Take a 30-min continuous walk; confirm it is **one** segment, not six (see T1). Take a flight; confirm takeoff/landing captured (see T13). Confirm stationary segments report 0 distance.
 **Flagship bar:** Long single-mode trips = one row; no flapping at lights; FLIGHT only on real flights; stationary distance == 0.
+**Verification (2026-06-11, code-level — device flight/walk test pending):** ✅ Sound: displacement override (when AR misses), 5-sample debounce against red-light/jitter flapping, dominant-mode voting on flush, day-boundary close, stationary segments report 0 distance, atomic segment+evidence+route commit via the gateway seam, non-blocking `getInProgressSnapshot` (tryLock). **No code change needed** — both target trust items were already implemented; added 2 FLIGHT tests (SegmenterTest now 14 cases).
+> - **T1 ✅ — already implemented & tested** (non-VISIT segments have no time-only flush; the existing "long-running WALK… one row" test covers it).
+> - **T13 ✅ — already implemented** (single-sample ≥200 m/s cruise OR sustained ≥80 m/s ×2 for takeoff/landing); previously **untested** — now locked with cruise + sustained FLIGHT tests. See Part B.
 
 ### W1.4 — Visit detection (hysteresis, return window, centroid) · Status: [ ] verified  [ ] improved
 **What it does:** Detects stays and forms visit candidates before segmentation (prevents DWELL fragmentation).
@@ -540,19 +549,19 @@ Each cross-links to the Part A wave it degrades. Source: `~/.claude/plans/yes-fi
 
 | ID | Symptom | Degrades | Status |
 |----|---------|----------|--------|
-| T1 | Long walks fragment into multiple segments (time-flush flaw) | W1.3 | ☐ |
+| T1 | Long walks fragment into multiple segments (time-flush flaw) | W1.3 | ✅ — already fixed (no time-only flush for non-VISIT segments) + covered by existing test. |
 | T2 | Place categories never auto-inferred from OSM tags | W2.3 | ☐ |
 | T3 | Visits don't close on app death | W0.6 / W1.4 | ✅ 2026-06-10 — already closed on cold start (`repairStrandedVisits`) + nightly worker; fixed the dwell-truncation bug (`closeStaleVisits` now closes at last-known-alive, not the 30-min selection cutoff). Tests added. |
-| T4 | Slow traffic classified as cycling | W1.2 / W1.3 | ☐ |
+| T4 | Slow traffic classified as cycling | W1.2 / W1.3 | ✅ 2026-06-11 — prior fix handled 3.0–4.5 m/s; added vehicle-context so the 4.5–6.5 m/s cycling band reads as slow traffic once driving, cleared by walking-steps/AR. Tests added. |
 | T5 | Place fragmentation (same building → multiple places) | W2.5 / W2.6 | ☐ |
 | T6 | Quick-return continuation overeager | W1.4 | ☐ |
 | T7 | Step-rate fusion misfires | W0.5 / W1.2 | ☐ |
 | T8 | Place-match search radius fixed at 200m | W1.5 | ☐ |
-| T9 | Kalman reference doesn't reset on long travel | W1.1 | ☐ |
+| T9 | Kalman reference doesn't reset on long travel | W1.1 | ✅ 2026-06-11 — already implemented (25km reanchor in `LocationKalmanFilter.filter()`); verified + locked with a re-anchor unit test. |
 | T10 | Visit dwell uses wrong timestamp | W1.4 | ☐ |
 | T11 | Day-boundary overnight stays double-count | W1.7 | ☐ |
 | T12 | BatteryBudgetController computed but never applied | W0.2 | ✅ 2026-06-10 — worker applies + is scheduled (6h) + live re-apply on next motion transition; now also **surfaces** the downgrade to the user via `showTrackingAlert` (was silent, violating the controller's contract). UI to *enable* a budget = F2 (planned). |
-| T13 | FLIGHT threshold 200 m/s misses takeoff/landing | W1.3 | ☐ |
+| T13 | FLIGHT threshold 200 m/s misses takeoff/landing | W1.3 | ✅ 2026-06-11 — already fixed (sustained ≥80 m/s ×2 trigger alongside the 200 m/s single-sample bar); now locked with cruise + sustained tests. |
 | T14 | No place-confidence decay | W2.7 | ☐ |
 | T15 | isMock catches only API-flagged spoofers | W0.1 | ☐ |
 | I1 | 3 remaining `!!` in screen code (ship-blocker) | W3.x / W9.1 | ☐ |

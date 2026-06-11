@@ -19,9 +19,13 @@ class FuseActivityStateUseCase @Inject constructor(
 
     // Hysteresis: keep last speed-derived activity to avoid oscillation at boundaries
     private var lastSpeedActivity: ActivityType? = null
+    // Vehicle context (T4): once we're confidently in a vehicle, a dip into cycling
+    // speed is slow traffic, not a bike ride.
+    private var inVehicleContext: Boolean = false
 
     fun reset() {
         lastSpeedActivity = null
+        inVehicleContext = false
     }
 
     fun fuse(
@@ -60,9 +64,6 @@ class FuseActivityStateUseCase @Inject constructor(
             } ?: ActivityType.CYCLING
             else -> ActivityType.IN_VEHICLE
         }
-        val speedActivity = rawSpeedActivity.also { lastSpeedActivity = it }
-        val speedConf = if (validatedSpeed != null) 0.7f else 0f
-
         // Step-rate override (check higher thresholds first).
         // WALKING threshold at 100 spm: real walking cadence is ≥110 spm. The 80–100
         // band is excluded because brief desk shuffles (30–90 spm bursts) at the high
@@ -92,6 +93,32 @@ class FuseActivityStateUseCase @Inject constructor(
             arConfidence >= settings.arConfidenceThreshold
         ) arActivity else null
 
+        // ── Vehicle context (T4) ──
+        // Slow/stop-go traffic sits in the cycling speed band, so speed alone mislabels a
+        // car in congestion as CYCLING. Once we're confidently in a vehicle (AR says so, or
+        // we were clearly driving above bike speed), treat cycling-speed readings as slow
+        // traffic. Sticky across red lights; cleared only by real walking steps or a
+        // confident non-vehicle AR reading.
+        when {
+            effectiveArActivity == ActivityType.IN_VEHICLE ||
+                (validatedSpeed != null && validatedSpeed > VEHICLE_CONTEXT_SPEED_MPS) ->
+                inVehicleContext = true
+            stepActivity == ActivityType.WALKING || stepActivity == ActivityType.RUNNING ||
+                effectiveArActivity == ActivityType.WALKING ||
+                effectiveArActivity == ActivityType.RUNNING ||
+                effectiveArActivity == ActivityType.ON_BICYCLE ->
+                inVehicleContext = false
+            // else: hold context through ambiguous slow patches / brief stops
+        }
+
+        val speedActivity = if (inVehicleContext && rawSpeedActivity == ActivityType.CYCLING) {
+            ActivityType.IN_VEHICLE
+        } else {
+            rawSpeedActivity
+        }
+        lastSpeedActivity = speedActivity
+        val speedConf = if (validatedSpeed != null) 0.7f else 0f
+
         // Weighted fusion
         val candidates = mutableMapOf<ActivityType, Float>()
         effectiveArActivity?.let {
@@ -120,5 +147,10 @@ class FuseActivityStateUseCase @Inject constructor(
             speedConfidence = speedConf,
             stepConfidence = stepConf
         )
+    }
+
+    private companion object {
+        /** Above bike top-speed → unambiguously driving; arms the vehicle context. */
+        const val VEHICLE_CONTEXT_SPEED_MPS = 8.5f
     }
 }

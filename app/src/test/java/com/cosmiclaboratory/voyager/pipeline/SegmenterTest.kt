@@ -323,4 +323,41 @@ class SegmenterTest {
             assertEquals("$activity should map to $expectedSegment", expectedSegment, snapshot?.segmentType)
         }
     }
+
+    // ── Scenario 13: FLIGHT detection via displacement (T13) ──
+
+    @Test
+    fun `cruise-speed displacement produces a FLIGHT segment`() = runTest {
+        val t0 = System.currentTimeMillis()
+        // Open a DWELL, then jump ~0.25° lat every 90s ≈ 309 m/s (well past the
+        // single-sample cruise threshold). Debounce needs 5 consecutive FLIGHT classifications.
+        segmenter.processSample(sample(t0, lat = baseLat, sampleId = 1), motion(ActivityType.STILL), dayKey)
+        for (i in 1..6) {
+            segmenter.processSample(
+                sample(t0 + i * 90_000L, lat = baseLat + i * 0.25, sampleId = i + 1L),
+                motion(ActivityType.STILL), dayKey
+            )
+        }
+        segmenter.closeCurrentSegment(dayKey)
+
+        coVerify { pipelineGateway.commitClosedSegment(match { it.segmentType == "FLIGHT" }, any(), any()) }
+    }
+
+    @Test
+    fun `sustained takeoff-landing speed produces a FLIGHT segment`() = runTest {
+        val t0 = System.currentTimeMillis()
+        // ~0.09° lat every 90s ≈ 111 m/s — between the 80 m/s sustained bar and the
+        // 200 m/s cruise bar. The first fast sample reads as DRIVE (no prior fast sample);
+        // from the second on, two consecutive ≥80 m/s readings classify as FLIGHT (T13).
+        segmenter.processSample(sample(t0, lat = baseLat, sampleId = 1), motion(ActivityType.STILL), dayKey)
+        for (i in 1..8) {
+            segmenter.processSample(
+                sample(t0 + i * 90_000L, lat = baseLat + i * 0.09, sampleId = i + 1L),
+                motion(ActivityType.STILL), dayKey
+            )
+        }
+        segmenter.closeCurrentSegment(dayKey)
+
+        coVerify { pipelineGateway.commitClosedSegment(match { it.segmentType == "FLIGHT" }, any(), any()) }
+    }
 }

@@ -10,7 +10,8 @@ class SampleNormalizer @Inject constructor() {
             lat = roundCoordinate(sample.lat, 7),
             lng = roundCoordinate(sample.lng, 7),
             speedMps = sample.speedMps?.coerceAtLeast(0f),
-            bearingDeg = sample.bearingDeg?.let { it % 360f }
+            // Normalize into [0, 360) — `% 360` alone keeps the sign for negatives.
+            bearingDeg = sample.bearingDeg?.let { ((it % 360f) + 360f) % 360f }
         )
     }
 

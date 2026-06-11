@@ -218,4 +218,39 @@ class FuseActivityStateUseCaseTest {
         assertTrue("Confidence should be positive", result.confidence > 0f)
         assertTrue("AR confidence should be normalized", result.arConfidence in 0f..1f)
     }
+
+    // ── Vehicle context: slow traffic ≠ cycling (T4) ──
+
+    @Test
+    fun `slow traffic after driving stays IN_VEHICLE`() {
+        // Clearly driving (>8.5 m/s) arms the vehicle context.
+        useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 15.0f, stepRatePerMinute = null)
+        // Then congestion drops to 5 m/s (cycling-speed band) with AR stale/absent —
+        // this used to read as CYCLING; now it's slow traffic.
+        val result = useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 5.0f, stepRatePerMinute = null)
+        assertEquals(ActivityType.IN_VEHICLE, result.activityType)
+    }
+
+    @Test
+    fun `walking steps clear vehicle context so later cycling speed reads as CYCLING`() {
+        useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 15.0f, stepRatePerMinute = null) // arm
+        useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = null, stepRatePerMinute = 110f) // walking → clear
+        val result = useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 5.0f, stepRatePerMinute = null)
+        assertEquals(ActivityType.CYCLING, result.activityType)
+    }
+
+    @Test
+    fun `AR on-bicycle clears vehicle context`() {
+        useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 15.0f, stepRatePerMinute = null) // arm
+        useCase.fuse(arActivity = ActivityType.ON_BICYCLE, arConfidence = 80f, speedMps = null, stepRatePerMinute = null) // clear
+        val result = useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 5.0f, stepRatePerMinute = null)
+        assertEquals(ActivityType.CYCLING, result.activityType)
+    }
+
+    @Test
+    fun `genuine cycling with no prior driving stays CYCLING`() {
+        // No vehicle context ever armed → cycling speed classifies as cycling.
+        val result = useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 5.0f, stepRatePerMinute = null)
+        assertEquals(ActivityType.CYCLING, result.activityType)
+    }
 }
