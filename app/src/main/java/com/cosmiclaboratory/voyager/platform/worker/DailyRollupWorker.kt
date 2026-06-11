@@ -11,11 +11,13 @@ import com.cosmiclaboratory.voyager.storage.database.dao.HealthLogDao
 import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
+import com.cosmiclaboratory.voyager.domain.util.DayBoundaryResolver
 import com.cosmiclaboratory.voyager.storage.database.entity.DailyRollupEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.HealthLogEntity
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * Computes DailyRollupEntity from segments/visits for the previous day.
@@ -32,6 +34,7 @@ class DailyRollupWorker @AssistedInject constructor(
     private val healthLogDao: HealthLogDao,
     private val notificationManager: VoyagerNotificationManager,
     private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository,
+    private val dayBoundaryResolver: DayBoundaryResolver,
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -40,7 +43,10 @@ class DailyRollupWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         return try {
-            val yesterdayKey = computeYesterdayKey()
+            // Day key + window use the user's home timezone, matching how the pipeline
+            // assigned dayKeys — so segment/visit queries and the day window agree.
+            val homeTz = settingsRepository.observeSettings().value.homeTimeZone
+            val yesterdayKey = computeYesterdayKey(homeTz)
 
             // Idempotent: recompute even if rollup already exists
             val segments = movementSegmentDao.getByDayKey(yesterdayKey)
@@ -49,7 +55,15 @@ class DailyRollupWorker @AssistedInject constructor(
             val totalDistanceM = segments
                 .filter { it.segmentType != SegmentType.VISIT.name && it.segmentType != SegmentType.GAP.name }
                 .sumOf { it.distanceM }
-            val totalDwellMs = visits.sumOf { it.dwellMs ?: 0L }
+
+            // Dwell is clamped to the day window so an overnight stay contributes only its
+            // in-day portion to each day, not its whole span to the arrival day (T11).
+            // Segments are already split at midnight by the Segmenter, so they need no clamp.
+            val dayStart = dayBoundaryResolver.getDayStartEpochMs(yesterdayKey, homeTz)
+            val dayEnd = dayBoundaryResolver.getDayEndEpochMs(yesterdayKey, homeTz)
+            val totalDwellMs = visitDao.getVisitsOverlapping(dayStart, dayEnd).sumOf { v ->
+                dayBoundaryResolver.overlapMs(v.arrivalAt, v.departureAt ?: dayEnd, dayStart, dayEnd)
+            }
 
             val transitSegments = segments.filter { it.segmentType != SegmentType.VISIT.name && it.segmentType != SegmentType.GAP.name }
             val totalTransitMs = transitSegments.sumOf { it.endAt - it.startAt }
@@ -93,7 +107,8 @@ class DailyRollupWorker @AssistedInject constructor(
         }
     }
 
-    private fun computeYesterdayKey(): String = LocalDate.now().minusDays(1).toString()
+    private fun computeYesterdayKey(homeTz: String): String =
+        LocalDate.now(ZoneId.of(homeTz)).minusDays(1).toString()
 
     private fun sendDailySummaryNotification(rollup: DailyRollupEntity) {
         // Respect the daily-insights notification toggle.

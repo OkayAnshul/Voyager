@@ -67,9 +67,6 @@ class PipelineConsumer @Inject constructor(
 
     companion object {
         private const val AR_STALENESS_MS = 180_000L // 3 minutes
-        private const val GAP_WATCHDOG_MULTIPLIER = 5
-        private const val GAP_WATCHDOG_CHECK_MS = 60_000L
-        private const val MIN_GAP_DURATION_MS = 600_000L
         private const val DISPLACEMENT_TRANSIT_THRESHOLD_M = PipelineConstants.DISPLACEMENT_TRANSIT_THRESHOLD_M
         private const val DISPLACEMENT_SPEED_THRESHOLD_MPS = PipelineConstants.DISPLACEMENT_SPEED_THRESHOLD_MPS
         private const val DISPLACEMENT_MAX_ACCURACY_M = PipelineConstants.DISPLACEMENT_MAX_ACCURACY_M
@@ -121,7 +118,7 @@ class PipelineConsumer @Inject constructor(
         gapWatchdogJob = scope.launch {
             var lastGapCreatedAt: Long = 0
             while (true) {
-                delay(GAP_WATCHDOG_CHECK_MS)
+                delay(GapWatchdogPolicy.CHECK_INTERVAL_MS)
                 val state = timelineStateStore.getState()
                 if (state.activeSessionId == null) continue
 
@@ -133,13 +130,8 @@ class PipelineConsumer @Inject constructor(
                 val now = System.currentTimeMillis()
                 val inDormantGrace = dormantModeManager.dormantExitedAt > 0L &&
                     now - dormantModeManager.dormantExitedAt <= DormantModeManager.DORMANT_EXIT_GRACE_MS
-                if (expectedInterval > 0 &&
-                    !inDormantGrace &&
-                    silenceMs > expectedInterval * GAP_WATCHDOG_MULTIPLIER &&
-                    silenceMs >= MIN_GAP_DURATION_MS &&
-                    lastAt != lastGapCreatedAt
-                ) {
-                    val gapReason = if (dormantModeManager.isDormant) "DORMANT" else "GPS_LOSS"
+                if (GapWatchdogPolicy.shouldCreateGap(silenceMs, expectedInterval, inDormantGrace, lastAt, lastGapCreatedAt)) {
+                    val gapReason = GapWatchdogPolicy.gapReason(dormantModeManager.isDormant)
                     createGapSegment(lastAt, now, gapReason)
                     lastGapCreatedAt = lastAt
                     logger.w("PipelineConsumer", "Gap watchdog: no sample for ${silenceMs / 1000}s, reason=$gapReason")

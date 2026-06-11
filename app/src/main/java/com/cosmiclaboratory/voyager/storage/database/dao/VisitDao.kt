@@ -77,6 +77,17 @@ interface VisitDao {
     """)
     suspend fun getVisitOverlappingWindow(startAt: Long, endAt: Long): VisitEntity?
 
+    /** All visits whose `[arrivalAt, departureAt)` overlaps `[startMs, endMs)`. Open visits
+     *  (departureAt null) are treated as ongoing and overlap if they arrived before endMs.
+     *  Used to attribute an overnight stay's dwell to each day it touches (T11). */
+    @Query("""
+        SELECT * FROM visits
+        WHERE arrivalAt < :endMs
+        AND (departureAt IS NULL OR departureAt > :startMs)
+        ORDER BY arrivalAt ASC
+    """)
+    suspend fun getVisitsOverlapping(startMs: Long, endMs: Long): List<VisitEntity>
+
     @Query("DELETE FROM visits WHERE arrivalAt < :cutoffMs")
     suspend fun deleteOlderThan(cutoffMs: Long): Int
 

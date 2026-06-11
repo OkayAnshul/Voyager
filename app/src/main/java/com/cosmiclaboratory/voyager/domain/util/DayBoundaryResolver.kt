@@ -43,4 +43,16 @@ class DayBoundaryResolver @Inject constructor() {
     fun today(timeZone: String): String {
         return LocalDate.now(ZoneId.of(timeZone)).format(dayKeyFormatter)
     }
+
+    /**
+     * Milliseconds of the interval `[startMs, endMs)` that fall within the window
+     * `[windowStartMs, windowEndMs)`. Used to attribute an overnight visit's dwell to each
+     * calendar day it actually touches, instead of dumping the whole stay on the arrival
+     * day (T11). Never negative.
+     */
+    fun overlapMs(startMs: Long, endMs: Long, windowStartMs: Long, windowEndMs: Long): Long {
+        val lo = maxOf(startMs, windowStartMs)
+        val hi = minOf(endMs, windowEndMs)
+        return (hi - lo).coerceAtLeast(0L)
+    }
 }

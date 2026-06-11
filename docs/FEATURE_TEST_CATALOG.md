@@ -168,23 +168,28 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 > - **T8 ✅:** the *search* radius was already made adaptive on GPS accuracy (no longer a flat 200m), but the reachability gate still keyed **only** on that — so in good GPS (≈50m) a user 150m inside a 300m-radius venue was rejected before the venue's own footprint was checked. Gate now uses `max(searchRadius, place.radiusM + buffer)`, so large venues match while tight GPS still avoids wrong-place attribution among small adjacent places. Locked with a large-venue test. See Part B.
 > - **Note:** Wi-Fi fingerprint prior (`WifiFingerprinter`) for indoor matching is a separate enhancement, not yet fused into the live match — tracked under Part C (place intelligence).
 
-### W1.6 — Gap watchdog & GAP reasons · Status: [ ] verified  [ ] improved
+### W1.6 — Gap watchdog & GAP reasons · Status: [ ] verified (device tunnel test pending)  [x] improved 2026-06-11
 **What it does:** Inserts GAP segments on tracking loss, distinguishing intentional (DORMANT) from GPS_LOSS.
-**Key functions / files:** `pipeline/PipelineConsumer.kt` (gap watchdog: silence > 5× interval, min 10 min).
+**Key functions / files:** `pipeline/GapWatchdogPolicy.kt` (pure decision), `pipeline/PipelineConsumer.kt` (60s watchdog loop).
 **How to travel-test:** Go into a tunnel/underground; confirm a GAP appears labeled GPS_LOSS, and dormant idle is labeled DORMANT.
 **Flagship bar:** Gaps are explained, not silent; reason is correct; no false gaps during normal cadence.
+**Verification (2026-06-11, code-level — device tunnel test pending):** ✅ 60s watchdog raises a GAP only when active GPS is running (interval > 0), silence exceeds **both** 5× the cadence **and** the 10-min floor, we're outside the post-dormant grace window, and no gap was already recorded for that last-sample (dedup). Reason = DORMANT (intentional GPS-off) vs GPS_LOSS. Extracted the decision into pure `GapWatchdogPolicy` (and reused its constants in `PipelineConsumer`); new `GapWatchdogPolicyTest` (7 cases) — previously the decision lived only inside the coroutine loop with no coverage.
 
-### W1.7 — Day-boundary resolution · Status: [ ] verified  [ ] improved
+### W1.7 — Day-boundary resolution · Status: [ ] verified (device overnight test pending)  [x] improved 2026-06-11
 **What it does:** Resolves which day a segment belongs to (home-tz vs travel-aware).
-**Key functions / files:** `domain/usecase/ResolveDayBoundaryUseCase.kt`, `DayBoundaryResolver`.
+**Key functions / files:** `domain/util/DayBoundaryResolver.kt` (`resolveDayKey`, `getDayStart/EndEpochMs`, `overlapMs`), `ResolveDayBoundaryUseCase`, `platform/worker/DailyRollupWorker.kt`, `VisitDao.getVisitsOverlapping`.
 **How to travel-test:** Stay somewhere overnight and across a timezone change; confirm the overnight stay isn't double-counted on both days (see T11).
 **Flagship bar:** Overnight + cross-tz days split cleanly; user's day-boundary preference respected.
+**Verification (2026-06-11, code-level — device overnight test pending):** ✅ Resolver is a pure single-dayKey mapper (home-tz vs travel-aware) with day-window helpers. New `DayBoundaryResolverTest` (4 cases incl. the overnight split).
+> - **T11 ✅:** `DailyRollupWorker` summed each visit's **full** `dwellMs` keyed to its arrival day, so a 9h overnight stay dumped all 9h on day N (and 0 on N+1) — while segments were already split at midnight. Dwell is now **clamped to each day's window** via `overlapMs` over visits that *overlap* the day (new `getVisitsOverlapping` query, open visits clamped to day-end): the 9h stay becomes 2h on N + 7h on N+1, summing to the true dwell. Also fixed `computeYesterdayKey` to use the home timezone (was the system default) so the day window and the pipeline-assigned dayKeys agree. See Part B.
 
-### W1.8 — Timeline reconciliation / day rebuild · Status: [ ] verified  [ ] improved
+### W1.8 — Timeline reconciliation / day rebuild · Status: [ ] verified (device rebuild test pending)  [x] improved 2026-06-11
 **What it does:** Rebuilds a day's segments/visits from raw samples on demand.
 **Key functions / files:** `domain/usecase/TimelineReconciler.kt`, `TimelineRepository.rebuildDay`.
 **How to travel-test:** After a correction or import, trigger a rebuild; confirm the day regenerates consistently with no duplicates.
 **Flagship bar:** Idempotent rebuilds; fast; preserves user corrections.
+**Verification (2026-06-11, code-level — device rebuild test pending):** ✅ `TimelineReconciler` is pure: noise filter (keeps GAPs, drops sub-threshold transients), same-place visit-flush coalescing (placeless merges gated by time gap), same-type movement merge (≤2min gap), and optional unified-travel (dominant mode by distance, sub-segments preserved for evidence, >5min gap breaks the chain). New `TimelineReconcilerTest` (5 cases) — previously untested.
+> - **Observation (not changed):** in the composed `reconcile()`, `filterNoise` runs before `absorbOrphanedDwells` and already removes the placeless sub-3min DWELLs that pass targets, making it a no-op in that path (it still works when called directly). Harmless; noted for a future tidy rather than reordered on a verify card.
 
 ## Wave 2 — Place intelligence & naming: *right names, right categories?*
 
@@ -565,7 +570,7 @@ Each cross-links to the Part A wave it degrades. Source: `~/.claude/plans/yes-fi
 | T8 | Place-match search radius fixed at 200m | W1.5 | ✅ 2026-06-11 — search radius already adaptive on GPS accuracy; also made the reachability gate honor the place's own footprint (`max(searchRadius, place.radiusM+buffer)`) so large venues match in good GPS. Tests added. |
 | T9 | Kalman reference doesn't reset on long travel | W1.1 | ✅ 2026-06-11 — already implemented (25km reanchor in `LocationKalmanFilter.filter()`); verified + locked with a re-anchor unit test. |
 | T10 | Visit dwell uses wrong timestamp | W1.4 | ✅ 2026-06-11 — departure now recorded at the last in-place sample (`lastInsideSampleAt`), not the exit-confirming sample that inflated dwell by the exit-hysteresis + walk-out. Test added. |
-| T11 | Day-boundary overnight stays double-count | W1.7 | ☐ |
+| T11 | Day-boundary overnight stays double-count | W1.7 | ✅ 2026-06-11 — daily-rollup dwell now clamps each visit to the day window (`overlapMs` over overlapping visits) instead of dumping the full overnight dwell on the arrival day; rollup dayKey uses home tz. Tests added. |
 | T12 | BatteryBudgetController computed but never applied | W0.2 | ✅ 2026-06-10 — worker applies + is scheduled (6h) + live re-apply on next motion transition; now also **surfaces** the downgrade to the user via `showTrackingAlert` (was silent, violating the controller's contract). UI to *enable* a budget = F2 (planned). |
 | T13 | FLIGHT threshold 200 m/s misses takeoff/landing | W1.3 | ✅ 2026-06-11 — already fixed (sustained ≥80 m/s ×2 trigger alongside the 200 m/s single-sample bar); now locked with cruise + sustained tests. |
 | T14 | No place-confidence decay | W2.7 | ☐ |
