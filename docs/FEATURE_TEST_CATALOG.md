@@ -103,17 +103,23 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 > - **T3 ✅ (real bug):** `closeStaleVisits` closed a stranded visit at the **selection cutoff** (`lastKnownAlive − 30 min`), truncating its dwell by the whole stale-gap window. Split the API into `staleBeforeMs` (selection) + `closeAtMs` (departure); the cold-start path now closes at the true last-known-alive sample time (dwell clamped ≥ 0). See Part B.
 > - **Note (observed, not changed):** two recovery paths can touch the open visit — the coordinator's `recoverSession` (service/boot/health-check; preserves <1h gaps) and the Application cold-start net. They're complementary, but a future pass could unify them so the anti-fragmentation window applies consistently across both.
 
-### W0.7 — Reliability / health & OEM-kill detection · Status: [ ] verified  [ ] improved
+### W0.7 — Reliability / health & OEM-kill detection · Status: [ ] verified (device OEM test pending)  [x] improved 2026-06-10
 **What it does:** Detects aggressive OEMs, sample gaps, and surfaces fix-it guidance.
-**Key functions / files:** `presentation/screen/reliability/ReliabilityScreen.kt`+VM, `HealthLogEntity/Dao`, `TrackingHealthCheckWorker`, `components/ForceStopBanner`.
-**How to travel-test:** On a Xiaomi/Samsung device, leave the app overnight; confirm a gap is detected and the screen recommends battery whitelist + dontkillmyapp.
+**Key functions / files:** `presentation/screen/reliability/ReliabilityScreen.kt`+VM, `reliability/OemReliability.kt`, `HealthLogEntity/Dao`, `TrackingHealthCheckWorker`, `reliability/ForceStopBanner.kt`.
+**How to travel-test:** On a Xiaomi/Samsung device, leave the app overnight; confirm a gap is detected and the guide button opens the *device-specific* dontkillmyapp page.
 **Flagship bar:** Accurate manufacturer detection; honest "hours since last sample"; actionable, non-alarmist guidance.
+**Verification (2026-06-10, code-level — device OEM test pending):** ✅ 12-OEM aggressive-device list; `TrackingHealthCheckWorker` restarts a silently-dead service after 3 min (no battery constraint; delegates GAP creation to `restoreFromCrash`); screen shows a gap self-test hero + OEM autostart card + privacy reassurance. OEM logic extracted to pure `OemReliability` with `OemReliabilityTest` (5 cases).
+> - **R1 ✅ (actionability):** the "Open setup guide for {manufacturer}" button opened the **generic** `dontkillmyapp.com/` homepage. Now deep-links to the device-specific page (`/samsung`, `/xiaomi`, …), with sub-brands (Redmi/POCO) mapped to the parent guide.
+> - **R2 (copy):** sub-hour gaps rendered as "0h ago" — now "less than an hour"; ≥24h shows days.
+> - **R3 (cleanup):** removed dead code in `TrackingHealthCheckWorker` (unused `MovementSegmentDao`, `dayKeyFormatter`, and 7 imports left over after GAP creation moved to `restoreFromCrash`).
 
-### W0.8 — Permissions (fine/bg/AR/notif/battery) + rough mode · Status: [ ] verified  [ ] improved
+### W0.8 — Permissions (fine/bg/AR/notif/battery) + rough mode · Status: [ ] verified (device permission-matrix test pending)  [x] improved 2026-06-11
 **What it does:** Tracks granular permission state and degrades gracefully to coarse "rough" mode.
-**Key functions / files:** `platform/coordinator/PermissionMonitor.kt` (`refresh`, `buildSnapshot`, coarse-only detection), `components/RoughLocationBanner`, `components/PermissionRequestCard`.
-**How to travel-test:** Grant only approximate location; confirm the rough-mode banner appears and the timeline still renders sensibly.
+**Key functions / files:** `platform/coordinator/PermissionMonitor.kt` (`refresh`, `buildSnapshot`, `accuracyTag`, coarse-only detection), `onboarding/PermissionReminderBanner.kt` (`RoughLocationBanner`), `components/PermissionRequestCard`.
+**How to travel-test:** Grant only approximate location; confirm the rough-mode banner appears (Timeline) and the timeline still renders sensibly. Toggle each permission off mid-session; confirm capture guards (FLP/AR re-register) don't crash.
 **Flagship bar:** Every permission downgrade has a clear, non-blocking in-app explanation; revoking mid-session is handled.
+**Verification (2026-06-11, code-level — device permission-matrix test pending):** ✅ Granular snapshot (fine/coarse/bg/AR/notif/battery) with API-level gating; `isApproximateLocationOnly` correctly drives rough mode (`coarse && !fine`); revocation is guarded in `LocationCapture.updateSamplingPolicy` and AR re-register. `PermissionSnapshot` is pure → `PermissionSnapshotTest` (5 cases).
+> - **P1 ✅ (data-integrity bug):** `getPermissionSnapshot()` mapped the **composite** `PermissionState` to a tag, so `FULL` (fine+bg+AR) fell through to `"none"` and fine-without-background returned `"coarse"` — i.e. every fully-permissioned sample's provenance tag (stored on each row + exported in backups) was wrong. Now derived straight from the location grants via `PermissionSnapshot.accuracyTag` (`fine` whenever fine is granted).
 
 ## Wave 1 — Timeline correctness: *is what it recorded actually true?*
 

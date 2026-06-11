@@ -32,6 +32,17 @@ data class PermissionSnapshot(
      */
     val isApproximateLocationOnly get() = hasCoarseLocation && !hasFineLocation
 
+    /**
+     * Accuracy provenance tag stored on every raw sample ("fine"/"coarse"/"none").
+     * Derived straight from the location grants — independent of background/AR, which
+     * have nothing to do with a fix's accuracy.
+     */
+    val accuracyTag: String get() = when {
+        hasFineLocation -> "fine"
+        hasCoarseLocation -> "coarse"
+        else -> "none"
+    }
+
     val isComplete get() = hasFineLocation && hasBackgroundLocation && hasActivityRecognition && hasNotifications && isBatteryOptimizationExempt
     val missingCount get() = listOf(
         !hasFineLocation,
@@ -93,11 +104,10 @@ class PermissionMonitor @Inject constructor(
         return state == PermissionState.FULL || state == PermissionState.FINE_LOCATION || state == PermissionState.COARSE_LOCATION
     }
 
-    fun getPermissionSnapshot(): String {
-        return when (checkCurrentState()) {
-            PermissionState.FINE_LOCATION -> "fine"
-            PermissionState.COARSE_LOCATION -> "coarse"
-            else -> "none"
-        }
-    }
+    /**
+     * Per-sample accuracy tag. Derived from the raw location grants — NOT [checkCurrentState],
+     * whose composite values (FULL, FINE_LOCATION, COARSE_LOCATION) fold in background/AR and
+     * previously mislabelled fully-permissioned samples as "none".
+     */
+    fun getPermissionSnapshot(): String = buildSnapshot().accuracyTag
 }

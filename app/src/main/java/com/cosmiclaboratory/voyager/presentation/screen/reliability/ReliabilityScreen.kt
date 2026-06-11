@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.LocalContext
@@ -23,11 +25,20 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cosmiclaboratory.voyager.presentation.theme.CardVariant
+import com.cosmiclaboratory.voyager.presentation.theme.PulsingDot
 import com.cosmiclaboratory.voyager.presentation.theme.SectionHeader
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerButton
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerCard
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerColors
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerGradients
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerSurfaces
+
+/** Human-friendly "time ago" from whole hours — avoids the odd "0h ago" for sub-hour gaps. */
+private fun agoLabel(hours: Long): String = when {
+    hours <= 0L -> "less than an hour"
+    hours < 24L -> "${hours}h"
+    else -> "${hours / 24}d"
+}
 
 /**
  * Reliability check — explains why background tracking can stop on aggressive
@@ -51,27 +62,38 @@ fun ReliabilityScreen(
     ) {
         SectionHeader(title = "Tracking health")
 
-        // ── Sample-gap self-test ──────────────────────────────────────────
+        // ── Sample-gap self-test — tracking-state hero ────────────────────
+        val healthy = !state.hasRecentGap && state.hoursSinceLastSample != null
         VoyagerCard(
             modifier = Modifier.fillMaxWidth(),
-            variant = if (state.hasRecentGap) CardVariant.HIGHLIGHTED else CardVariant.FLAT
+            variant = CardVariant.GLASS,
+            tint = if (healthy) VoyagerSurfaces.auroraActive else null
         ) {
-            Text(
-                text = if (state.hasRecentGap) "Tracking gap detected" else "Tracking looks healthy",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = if (state.hasRecentGap) VoyagerColors.Warning else VoyagerColors.Success
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                PulsingDot(
+                    size = 10.dp,
+                    color = if (state.hasRecentGap) VoyagerColors.Warning else VoyagerColors.Success
+                )
+                Text(
+                    text = if (state.hasRecentGap) "Tracking gap detected" else "Tracking looks healthy",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (state.hasRecentGap) VoyagerColors.Warning else VoyagerColors.Success
+                )
+            }
             Spacer(Modifier.height(4.dp))
             Text(
                 text = when {
                     state.hoursSinceLastSample == null ->
                         "No location samples yet — start tracking to begin your timeline."
                     state.hasRecentGap ->
-                        "Last location was ${state.hoursSinceLastSample}h ago. The app was " +
+                        "Last location was ${agoLabel(state.hoursSinceLastSample!!)} ago. The app was " +
                             "likely stopped by the system. Re-enabling autostart (below) usually fixes this."
                     else ->
-                        "Last location was ${state.hoursSinceLastSample}h ago — within normal range."
+                        "Last location was ${agoLabel(state.hoursSinceLastSample!!)} ago — within normal range."
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = VoyagerColors.OnSurfaceVariant
@@ -81,7 +103,7 @@ fun ReliabilityScreen(
         // ── OEM autostart guidance ────────────────────────────────────────
         VoyagerCard(
             modifier = Modifier.fillMaxWidth(),
-            variant = if (state.isAggressiveOem) CardVariant.HIGHLIGHTED else CardVariant.FLAT
+            variant = if (state.isAggressiveOem) CardVariant.HIGHLIGHTED else CardVariant.GLASS
         ) {
             Text(
                 text = "Your device: ${state.manufacturer}",
@@ -107,7 +129,7 @@ fun ReliabilityScreen(
                 onClick = {
                     runCatching {
                         context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse("https://dontkillmyapp.com/"))
+                            Intent(Intent.ACTION_VIEW, Uri.parse(state.dontKillMyAppUrl))
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         )
                     }

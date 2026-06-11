@@ -15,6 +15,8 @@ data class ReliabilityUiState(
     val manufacturer: String = Build.MANUFACTURER.replaceFirstChar { it.uppercase() },
     /** OEMs known to aggressively kill background apps (dontkillmyapp.com). */
     val isAggressiveOem: Boolean = false,
+    /** Device-specific dontkillmyapp guide for this manufacturer. */
+    val dontKillMyAppUrl: String = OemReliability.dontKillMyAppUrl(Build.MANUFACTURER),
     val lastSampleAt: Long? = null,
     /** Whole hours since the last accepted sample, null if never sampled. */
     val hoursSinceLastSample: Long? = null,
@@ -27,10 +29,6 @@ class ReliabilityViewModel @Inject constructor(
 ) : ViewModel() {
 
     companion object {
-        private val AGGRESSIVE_OEMS = listOf(
-            "xiaomi", "redmi", "poco", "huawei", "honor", "oppo",
-            "vivo", "oneplus", "realme", "samsung", "meizu", "asus"
-        )
         private const val GAP_THRESHOLD_MS = 24L * 60 * 60 * 1000
     }
 
@@ -41,7 +39,8 @@ class ReliabilityViewModel @Inject constructor(
             val last = health.lastSampleAt
             ReliabilityUiState(
                 manufacturer = manufacturer.replaceFirstChar { it.uppercase() },
-                isAggressiveOem = AGGRESSIVE_OEMS.any { manufacturer.contains(it, ignoreCase = true) },
+                isAggressiveOem = OemReliability.isAggressive(manufacturer),
+                dontKillMyAppUrl = OemReliability.dontKillMyAppUrl(manufacturer),
                 lastSampleAt = last,
                 hoursSinceLastSample = last?.let { (now - it) / (60L * 60 * 1000) },
                 hasRecentGap = last != null && last > 0L && now - last > GAP_THRESHOLD_MS

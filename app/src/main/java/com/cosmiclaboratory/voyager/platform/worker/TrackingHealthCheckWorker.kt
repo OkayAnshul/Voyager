@@ -4,19 +4,12 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.cosmiclaboratory.voyager.domain.model.enums.GapReason
-import com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
 import com.cosmiclaboratory.voyager.platform.coordinator.TrackingRuntimeCoordinator
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
 import com.cosmiclaboratory.voyager.storage.database.dao.HealthLogDao
-import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
 import com.cosmiclaboratory.voyager.storage.database.entity.HealthLogEntity
-import com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 /**
  * Periodic health check that detects when the tracking service has silently died
@@ -34,7 +27,6 @@ class TrackingHealthCheckWorker @AssistedInject constructor(
     private val stateStore: TimelineStateStore,
     private val coordinator: TrackingRuntimeCoordinator,
     private val healthLogDao: HealthLogDao,
-    private val movementSegmentDao: MovementSegmentDao
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -42,8 +34,6 @@ class TrackingHealthCheckWorker @AssistedInject constructor(
         /** If no sample for this long while tracking is active, consider the service dead */
         private const val MAX_SILENCE_MS = 180_000L // 3 minutes
     }
-
-    private val dayKeyFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
     override suspend fun doWork(): Result {
         val state = stateStore.getState()
