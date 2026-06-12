@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.cosmiclaboratory.voyager.domain.usecase.RetentionPolicy
 import com.cosmiclaboratory.voyager.storage.database.dao.CorrectionFeedbackDao
 import com.cosmiclaboratory.voyager.storage.database.dao.DailyRollupDao
 import com.cosmiclaboratory.voyager.storage.database.dao.GeocodeCandidateDao
@@ -52,9 +53,7 @@ class DataRetentionWorker @AssistedInject constructor(
     companion object {
         const val WORK_NAME = "data_retention"
 
-        private const val OPS_RETENTION_DAYS = 30L
-
-        private const val MS_PER_DAY = 24L * 60 * 60 * 1000
+        private const val OPS_RETENTION_DAYS = 30
     }
 
     override suspend fun doWork(): Result {
@@ -70,38 +69,41 @@ class DataRetentionWorker @AssistedInject constructor(
             // but never beyond the user-configured raw retention.
             val dbFile = applicationContext.getDatabasePath("voyager_database")
             val dbSizeMb = dbFile.length() / (1024 * 1024)
-            val rawRetentionDays = settings.rawSampleRetentionDays.toLong()
-            val effectiveRawRetention = when {
-                dbSizeMb > 1024 -> minOf(30L, rawRetentionDays)   // >1GB: aggressive trim
-                dbSizeMb > 500 -> minOf(60L, rawRetentionDays)    // >500MB: moderate trim
-                else -> rawRetentionDays
+            val effectiveRawRetention =
+                RetentionPolicy.effectiveRawRetentionDays(settings.rawSampleRetentionDays, dbSizeMb)
+
+            // --- Raw tier --- (a negative window = keep forever ⇒ null cutoff ⇒ skip)
+            RetentionPolicy.cutoffMs(now, effectiveRawRetention)?.let { rawCutoffMs ->
+                totalDeleted += rawLocationSampleDao.deleteOlderThan(rawCutoffMs)
+                totalDeleted += rawActivitySampleDao.deleteOlderThan(rawCutoffMs)
+                totalDeleted += rawStepSampleDao.deleteOlderThan(rawCutoffMs)
             }
 
-            // --- Raw tier ---
-            val rawCutoffMs = now - effectiveRawRetention * MS_PER_DAY
-            totalDeleted += rawLocationSampleDao.deleteOlderThan(rawCutoffMs)
-            totalDeleted += rawActivitySampleDao.deleteOlderThan(rawCutoffMs)
-            totalDeleted += rawStepSampleDao.deleteOlderThan(rawCutoffMs)
+            // --- Derived tier (segments + visits) ---
+            RetentionPolicy.cutoffMs(now, settings.derivedDataRetentionDays)?.let { derivedCutoffMs ->
+                totalDeleted += movementSegmentDao.deleteOlderThan(derivedCutoffMs)
+                totalDeleted += visitDao.deleteOlderThan(derivedCutoffMs)
+            }
 
-            // --- Derived tier ---
-            val derivedCutoffMs = now - settings.derivedDataRetentionDays.toLong() * MS_PER_DAY
-            val derivedCutoffDayKey = millisToDayKey(derivedCutoffMs)
-            totalDeleted += movementSegmentDao.deleteOlderThan(derivedCutoffMs)
-            totalDeleted += visitDao.deleteOlderThan(derivedCutoffMs)
-            totalDeleted += dailyRollupDao.deleteOlderThan(derivedCutoffDayKey)
-            // Weekly rollups: compute week key for cutoff
-            val derivedCutoffWeekKey = millisToWeekKey(derivedCutoffMs)
-            totalDeleted += weeklyRollupDao.deleteOlderThan(derivedCutoffWeekKey)
+            // --- Rollup tier --- rollups are tiny and power multi-year insights, so they honour
+            // their own retention (default: keep forever). Previously they were wrongly trimmed
+            // on the derived (365-day) window.
+            RetentionPolicy.cutoffMs(now, settings.rollupRetentionDays)?.let { rollupCutoffMs ->
+                totalDeleted += dailyRollupDao.deleteOlderThan(millisToDayKey(rollupCutoffMs))
+                totalDeleted += weeklyRollupDao.deleteOlderThan(millisToWeekKey(rollupCutoffMs))
+            }
 
             // --- Ops tier: 30 days ---
-            val opsCutoffMs = now - OPS_RETENTION_DAYS * MS_PER_DAY
-            totalDeleted += healthLogDao.deleteOlderThan(opsCutoffMs)
-            totalDeleted += pendingPlaceUpdateDao.deleteConsumedOlderThan(opsCutoffMs)
+            RetentionPolicy.cutoffMs(now, OPS_RETENTION_DAYS)?.let { opsCutoffMs ->
+                totalDeleted += healthLogDao.deleteOlderThan(opsCutoffMs)
+                totalDeleted += pendingPlaceUpdateDao.deleteConsumedOlderThan(opsCutoffMs)
+            }
             totalDeleted += geocodeCandidateDao.deleteExpired(now)
 
             // --- Feedback tier ---
-            val feedbackCutoffMs = now - settings.correctionFeedbackRetentionDays.toLong() * MS_PER_DAY
-            totalDeleted += correctionFeedbackDao.deleteOlderThan(feedbackCutoffMs)
+            RetentionPolicy.cutoffMs(now, settings.correctionFeedbackRetentionDays)?.let { feedbackCutoffMs ->
+                totalDeleted += correctionFeedbackDao.deleteOlderThan(feedbackCutoffMs)
+            }
 
             logCompletion(totalDeleted, dbSizeMb, effectiveRawRetention)
             Result.success()
@@ -131,7 +133,7 @@ class DataRetentionWorker @AssistedInject constructor(
         )
     }
 
-    private suspend fun logCompletion(totalDeleted: Int, dbSizeMb: Long, effectiveRetention: Long) {
+    private suspend fun logCompletion(totalDeleted: Int, dbSizeMb: Long, effectiveRetention: Int) {
         healthLogDao.insert(
             HealthLogEntity(
                 eventType = HEALTH_EVENT_WORKER_COMPLETE,

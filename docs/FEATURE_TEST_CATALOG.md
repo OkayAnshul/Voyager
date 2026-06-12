@@ -509,11 +509,15 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 > - **Bug fixed — motorcycle mis-mapped to CYCLE:** `mapActivity` checked `contains("CYCL")` (bicycle) before the DRIVE branch, and **`"MOTORCYCLING".contains("CYCL")` is true** — so motorcycle trips imported as bicycle rides, even though `MOTORCYCLE` was (unreachably) listed under DRIVE. Added an explicit `MOTORCYCL`/`MOPED` → DRIVE check ahead of the cycle check; bicycles still map to CYCLE.
 > - **Tests:** `GoogleTimelineImporterTest` 7 → 8 cases (added motorcycle/moped → DRIVE while bicycle stays CYCLE). The full `import` (Room transaction + DAOs + `contentResolver`) is integration territory; `parseAndMap` itself is stream-pure and already exercised by the legacy/new/dedup/Records cases.
 
-### W7.4 — Data retention & cleanup · Status: [ ] verified  [ ] improved
+### W7.4 — Data retention & cleanup · Status: [x] verified (code-level) 2026-06-12  · [x] improved 2026-06-12
 **What it does:** Deletes old raw samples per retention policy.
-**Key functions / files:** `worker/DataRetentionWorker`.
+**Key functions / files:** `domain/usecase/RetentionPolicy.kt`, `worker/DataRetentionWorker`.
 **How to travel-test:** Set a short retention; confirm old raw samples prune while derived data stays.
 **Flagship bar:** Respects policy exactly; never deletes derived history unexpectedly.
+**Verification (2026-06-12, code-level):** ✅ Tiered cleanup (raw / derived / rollup / ops / feedback), gated by `autoCleanupEnabled`, batched per DAO, size-adaptive raw trim, daily at 04:00. Found + fixed two real issues by extracting a pure `RetentionPolicy`:
+> - **Bug — `rollupRetentionDays` (default −1 = forever) was ignored:** rollups were deleted on the *derived* 365-day window, silently trimming the tiny pre-aggregates that power multi-year stats / "on this day". Rollups now honour their own retention (default forever ⇒ never deleted).
+> - **Safety — a "forever" (negative) value was a data-wipe landmine:** every tier computed `now − days × MS_PER_DAY`, so a negative window put the cutoff in the *future* and `deleteOlderThan(future)` would wipe the whole table. `RetentionPolicy.cutoffMs` returns null for negative days, and the worker skips deletion on null — so "keep forever" keeps, on every tier. The size-adaptive trim also never overrides a forever setting.
+> - **Tests:** `RetentionPolicyTest` (8 cases: positive/zero/negative cutoffs, the no-future-cutoff guard, size trims at 500 MB / 1 GB, trim never lengthens, forever survives the trim). The worker's DAO orchestration is integration territory.
 
 ### W7.5 — Diagnostics snapshot · Status: [ ] verified  [ ] improved
 **What it does:** Exports internal state for debugging.
