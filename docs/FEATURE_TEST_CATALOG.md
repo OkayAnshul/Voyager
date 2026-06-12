@@ -465,11 +465,12 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 > - **Improvement — deduction math extracted + locked:** the IRS deduction estimate (the legal/financial moat) was buried inside the Android rendering method, so the number a user *files with taxes* was untestable. Extracted to pure `MileageDeduction.estimate` (per-mile rates: BUSINESS 0.70 / MEDICAL 0.21 / CHARITABLE 0.14; personal/unclassified → no rate, $0). Renderer now calls it (identical output). Locked by `MileageDeductionTest` (6 cases: per-rate, multi-purpose sum, non-deductible $0, declaration-order/only-driven, empty log, custom-rate override e.g. HMRC).
 > - **Rollup note (unwired scaffolding):** `MileageSummaryEntity`/`MileageSummaryDao` exist with a "rebuilt by the periodic mileage worker" doc, but **nothing writes or reads them** — the screen and PDF compute totals live from `BuildMileageLogUseCase`. Left as-is: the live path is correct at current scale; the summary table is a pre-built optimization to wire (worker + scheduling) only if profiling shows recompute cost. Tracked here rather than built speculatively.
 
-### W6.7 — Day Story photo journal · Status: [ ] verified  [ ] improved
+### W6.7 — Day Story photo journal · Status: [x] verified (BuildDayStoryUseCaseTest) 2026-06-12  · improved: n/a (sound)
 **What it does:** Photos placed on the day's timeline with location context.
 **Key functions / files:** `presentation/screen/daystory/DayStoryScreen.kt`+VM, `domain/usecase/BuildDayStoryUseCase.kt`, `data/media/MediaStorePhotoLibrary`.
 **How to travel-test:** Take photos during a day; open Day Story; confirm they map to the right places/times.
 **Flagship bar:** Photo permission asked JIT; correlation is accurate; feels like a story.
+**Verification (2026-06-12, code-level):** ✅ Correlation is sound — a photo pins to the visit whose `[arrival, departure]` window (open visit → end-of-day) contains its capture time; among overlapping visits a geotagged photo picks the spatially nearest place (`hasLocation` guards the EXIF `!!`, null centroids deprioritised) and an untagged one the tightest window. The story orders places by arrival and photos by capture time, omits photo-less visits, buckets out-of-window photos as `unplacedPhotos`, and `totalPhotoCount` counts all. Permission is reported via `hasPhotoPermission` (JIT on the screen). `BuildDayStoryUseCaseTest` 7 → 9 cases (added multi-photo/multi-place narrative ordering + photo-less-visit omission, and the "Unknown place" fallback). Photo enumeration is `MediaStorePhotoLibrary` (Android) → device-verify EXIF/`ACCESS_MEDIA_LOCATION`.
 
 ### W6.8 — Workout recording · Status: [ ] verified  [ ] improved
 **What it does:** Live-records a run/walk/cycle route with stats.

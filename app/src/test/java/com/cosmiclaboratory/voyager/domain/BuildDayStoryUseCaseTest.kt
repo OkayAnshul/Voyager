@@ -160,4 +160,47 @@ class BuildDayStoryUseCaseTest {
         assertThat(uc.hasPhotoPermission()).isFalse()
         assertThat(uc.build(DAY).isEmpty).isTrue()
     }
+
+    @Test
+    fun `places order by arrival, photos by time, and a photo-less visit is omitted`() = runTest {
+        coEvery { visitDao.getByDayKey(DAY) } returns listOf(
+            visit(1, 10, arrival = 5_000, departure = 8_000),  // later place (Museum)
+            visit(2, 20, arrival = 1_000, departure = 3_000),  // earlier place (Cafe)
+            visit(3, 30, arrival = 8_500, departure = 9_000)   // no photos → omitted
+        )
+        coEvery { placeDao.getById(10) } returns place(10, "Museum")
+        coEvery { placeDao.getById(20) } returns place(20, "Cafe")
+        coEvery { placeDao.getById(30) } returns place(30, "Office")
+        val uc = useCase(
+            FakePhotoLibrary(
+                listOf(
+                    photo(6_000), photo(5_500), // both in Museum's window, out of order
+                    photo(2_000),               // Cafe
+                    photo(20_000)               // after every window → unplaced
+                )
+            )
+        )
+
+        val story = uc.build(DAY)
+
+        // Chronological by arrival; the Office visit (no photos) is dropped.
+        assertThat(story.places.map { it.displayName }).containsExactly("Cafe", "Museum").inOrder()
+        // Photos within a place are sorted by capture time.
+        assertThat(story.places[1].photos.map { it.takenAt }).containsExactly(5_500L, 6_000L).inOrder()
+        assertThat(story.unplacedPhotos.map { it.takenAt }).containsExactly(20_000L)
+        assertThat(story.totalPhotoCount).isEqualTo(4)
+    }
+
+    @Test
+    fun `a visit whose place can't be resolved shows as Unknown place`() = runTest {
+        coEvery { visitDao.getByDayKey(DAY) } returns listOf(visit(1, 99, 1_000, 5_000))
+        coEvery { placeDao.getById(99) } returns null
+        val uc = useCase(FakePhotoLibrary(listOf(photo(3_000))))
+
+        val story = uc.build(DAY)
+
+        assertThat(story.places).hasSize(1)
+        assertThat(story.places[0].displayName).isEqualTo("Unknown place")
+        assertThat(story.places[0].photos).hasSize(1)
+    }
 }
