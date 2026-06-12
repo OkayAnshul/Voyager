@@ -519,11 +519,12 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 > - **Safety — a "forever" (negative) value was a data-wipe landmine:** every tier computed `now − days × MS_PER_DAY`, so a negative window put the cutoff in the *future* and `deleteOlderThan(future)` would wipe the whole table. `RetentionPolicy.cutoffMs` returns null for negative days, and the worker skips deletion on null — so "keep forever" keeps, on every tier. The size-adaptive trim also never overrides a forever setting.
 > - **Tests:** `RetentionPolicyTest` (8 cases: positive/zero/negative cutoffs, the no-future-cutoff guard, size trims at 500 MB / 1 GB, trim never lengthens, forever survives the trim). The worker's DAO orchestration is integration territory.
 
-### W7.5 — Diagnostics snapshot · Status: [ ] verified  [ ] improved
+### W7.5 — Diagnostics snapshot · Status: [x] verified (DiagnosticSnapshotUseCase) 2026-06-12  · improved: n/a (sound)
 **What it does:** Exports internal state for debugging.
 **Key functions / files:** `domain/usecase/DiagnosticSnapshotUseCase.kt`.
 **How to travel-test:** Generate a snapshot; confirm it captures candidate/pending/correction state.
 **Flagship bar:** Enough to debug a field issue without a rebuild.
+**Verification (2026-06-12, code-level):** ✅ Read-only "is Voyager behaving?" aggregation — passes the battery estimate (incl. null %/day) straight through, counts raw samples and health events over a trailing 24h window measured from `now`, and reports worker failures by `WORKER_FAILURE`. Confirmed the literal matches the logged constant (`HealthEventTypeWorkerFailure = "WORKER_FAILURE"`), so failures aren't silently zero — the literal (rather than importing the platform constant) keeps `domain` from depending on `platform/worker`. Locked by `DiagnosticSnapshotUseCaseTest` (4 cases: field mapping + failure-vs-total counts, the 24h window bounds, null-battery passthrough, clean-zero snapshot).
 
 ## Wave 8 — Onboarding & first-run
 
