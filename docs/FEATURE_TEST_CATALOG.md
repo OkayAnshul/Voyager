@@ -442,17 +442,19 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 **How to travel-test:** Open a trip; export the book; confirm the PDF reads like a story (see Part C C3).
 **Flagship bar:** Polarsteps-quality book; captions/cover editable.
 
-### W6.4 — Mileage log & tax classification · Status: [ ] verified  [ ] improved
+### W6.4 — Mileage log & tax classification · Status: [x] verified (code-level) 2026-06-12  · improved: n/a (sound)
 **What it does:** Lists DRIVE segments with business/personal/medical/charitable purpose.
 **Key functions / files:** `presentation/screen/mileage/MileageScreen.kt`+`MileageViewModel`, `domain/usecase/BuildMileageLogUseCase.kt`, `MileageClassificationDao`.
 **How to travel-test:** Classify a few drives; switch periods; confirm deductible totals update.
 **Flagship bar:** Fast swipe-to-classify; per-row GPS evidence (the MileIQ-beating moat).
+**Verification (2026-06-12, code-level):** ✅ Drive↔classification join is correct: classifications are a sparse table (no row ⇒ `UNCLASSIFIED`, `MileagePurpose.fromName` falls back safely on unknown/legacy strings), `deductibleMeters` sums exactly the business/medical/charitable classes, and the "newest-first" log contract holds (`getByTypesBetween` is `ORDER BY startAt DESC`). `classify` deletes on UNCLASSIFIED+no-note but keeps a row when a note is attached (note survives); revision bumps on upsert. `BuildMileageLogUseCaseTest` 4 → 11 cases (all three deductible classes, no-drive purpose ⇒ 0, unknown-purpose fallback, out-of-range classification ignored, clearClassification, UNCLASSIFIED-with-note retention).
 
-### W6.5 — Mileage calculator & vehicles · Status: [ ] verified  [ ] improved
+### W6.5 — Mileage calculator & vehicles · Status: [x] verified (MileageCalculatorTest) 2026-06-12  · improved: n/a (math verified correct)
 **What it does:** Fuel/cost/CO₂ math + vehicle profiles, fuel price history, service log, auto-assignment.
 **Key functions / files:** `domain/usecase/MileageCalculator.kt` (`fuelUsed`, `costMinor`, `co2Kg`), `VehicleAutoAssignmentEngine`, `VehicleDao`, `FuelPriceHistory`, `VehicleServiceLog`.
 **How to travel-test:** Add a vehicle with efficiency + price; confirm a drive shows fuel/cost/CO₂; confirm auto-assignment picks the right vehicle.
 **Flagship bar:** Correct math across fuel types/units; sensible vehicle auto-assignment.
+**Verification (2026-06-12, code-level):** ✅ Pure math checks out — MPG_US (×0.42514) and MPG_UK (×0.35400) factors match miles/gallon→km/L exactly; KM_PER_L and L_PER_100KM agree on units-per-km for equivalent efficiencies; EV/kWh path and the EV/HYBRID/CNG CO₂ factors are correct; `costMinor` rounds to minor units and rejects negative prices. `MileageCalculatorTest` 8 → 14 cases (MPG_UK, unit equivalence, EV kWh, EV/HYBRID/CNG CO₂, EV end-to-end forSegment, negative-price guard). Vehicle auto-assignment/profiles are DAO-coupled → integration-test territory.
 
 ### W6.6 — Mileage rollups & PDF export · Status: [ ] verified  [ ] improved
 **What it does:** Pre-aggregated mileage totals + IRS-style PDF.
