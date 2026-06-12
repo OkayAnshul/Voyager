@@ -293,13 +293,15 @@ class GoogleTimelineImporter @Inject constructor(
         return when {
             a.contains("WALK") -> SegmentType.WALK.name
             a.contains("RUN") || a.contains("JOG") -> SegmentType.RUN.name
+            // Motorcycle is motorised road transport — check it before CYCL, since
+            // "MOTORCYCLING".contains("CYCL") would otherwise mis-map it to CYCLE.
+            a.contains("MOTORCYCL") || a.contains("MOPED") -> SegmentType.DRIVE.name
             a.contains("CYCL") || a.contains("BICYCL") || a.contains("BIKE") -> SegmentType.CYCLE.name
             a.contains("FLY") || a.contains("FLIGHT") -> SegmentType.FLIGHT.name
             a.contains("BUS") || a.contains("TRAIN") || a.contains("SUBWAY") ||
                 a.contains("TRAM") || a.contains("FERRY") || a.contains("RAIL") ||
                 a.contains("TRANSIT") -> SegmentType.TRANSIT.name
-            a.contains("VEHICLE") || a.contains("DRIV") || a.contains("CAR") ||
-                a.contains("MOTORCYCLE") -> SegmentType.DRIVE.name
+            a.contains("VEHICLE") || a.contains("DRIV") || a.contains("CAR") -> SegmentType.DRIVE.name
             else -> SegmentType.UNKNOWN_MOTION.name
         }
     }

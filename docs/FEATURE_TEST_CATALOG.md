@@ -500,11 +500,14 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 > - **Format contract locked:** `VoyagerJsonFormatTest` (5 cases) pins the evolution promise — a v1 file (no `rawSamples`) parses with the field defaulting empty, unknown future fields are ignored (forward-compatible), the envelope and the heaviest wire type (`RawSampleWire`, all optional fields) round-trip losslessly, and the parsed version drives the newer-than-app gate.
 > - The full `importData` (Room transaction + 5 DAOs + `contentResolver`) is integration territory → instrumented round-trip test candidate (Part C **K6**).
 
-### W7.3 — Google Timeline import · Status: [ ] verified  [ ] improved
+### W7.3 — Google Timeline import · Status: [x] verified (GoogleTimelineImporterTest) 2026-06-12  · [x] improved 2026-06-12
 **What it does:** Imports Google Location History JSON.
-**Key functions / files:** `data/import/GoogleTimelineImporter`, `GoogleTimelineImportScreen`+VM.
+**Key functions / files:** `data/imports/GoogleTimelineImporter.kt` (`parseAndMap`, `mapActivity`, `mapCategory`, `parseLatLng`, `parseTimestamp`), `GoogleTimelineImportScreen`+VM.
 **How to travel-test:** Import a real Takeout file; confirm places/segments populate sensibly.
 **Flagship bar:** "Lost your Timeline? Bring it home" works on real exports; clear summary.
+**Verification (2026-06-12, code-level):** ✅ Auto-detects both schemas (legacy `timelineObjects`, new `semanticSegments`), maps place visits + activity segments, dedups places by placeId/geohash (keeping earliest `createdAt`, filling a missing name), rejects raw `Records.json`, and inserts in batched checkpoint transactions. Parsing helpers are pure + tested (E7/latLng/timestamp/category).
+> - **Bug fixed — motorcycle mis-mapped to CYCLE:** `mapActivity` checked `contains("CYCL")` (bicycle) before the DRIVE branch, and **`"MOTORCYCLING".contains("CYCL")` is true** — so motorcycle trips imported as bicycle rides, even though `MOTORCYCLE` was (unreachably) listed under DRIVE. Added an explicit `MOTORCYCL`/`MOPED` → DRIVE check ahead of the cycle check; bicycles still map to CYCLE.
+> - **Tests:** `GoogleTimelineImporterTest` 7 → 8 cases (added motorcycle/moped → DRIVE while bicycle stays CYCLE). The full `import` (Room transaction + DAOs + `contentResolver`) is integration territory; `parseAndMap` itself is stream-pure and already exercised by the legacy/new/dedup/Records cases.
 
 ### W7.4 — Data retention & cleanup · Status: [ ] verified  [ ] improved
 **What it does:** Deletes old raw samples per retention policy.

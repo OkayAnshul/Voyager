@@ -124,6 +124,17 @@ class GoogleTimelineImporterTest {
     }
 
     @Test
+    fun `motorcycle is motorised driving, not cycling`() {
+        // "MOTORCYCLING".contains("CYCL") is true — it must not fall into the CYCLE branch.
+        assertThat(importer.mapActivity("MOTORCYCLING")).isEqualTo("DRIVE")
+        assertThat(importer.mapActivity("motorcycle")).isEqualTo("DRIVE")
+        assertThat(importer.mapActivity("MOPED")).isEqualTo("DRIVE")
+        // A real bicycle still classifies as CYCLE.
+        assertThat(importer.mapActivity("IN_BICYCLE")).isEqualTo("CYCLE")
+        assertThat(importer.mapActivity("bike")).isEqualTo("CYCLE")
+    }
+
+    @Test
     fun `latLng string parsing handles the degree-symbol format`() {
         assertThat(importer.parseLatLng("40.7128°, -74.0060°"))
             .isEqualTo(40.7128 to -74.0060)
