@@ -34,4 +34,31 @@ object CorrectionCalibration {
         CorrectionType.RENAME.name,
         CorrectionType.RECATEGORIZE.name,
     )
+
+    // ── Segment reclassification: detect systematic bias (do NOT auto-tune) ──
+
+    /** A classifier→user correction pattern that the user repeats. */
+    data class MisclassificationPattern(val from: String, val to: String, val count: Int)
+
+    /** Number of times one (classifier → user) correction must recur to be "systematic". */
+    const val SYSTEMATIC_MIN_COUNT = 3
+
+    /**
+     * Systematic transport-mode misclassifications: (classifierType → userType) corrections that
+     * recur at least [minCount] times. Deliberately **report-only** — calibration here surfaces a
+     * consistent bias (e.g. "DRIVE keeps being corrected to CYCLE") for diagnostics and a future,
+     * carefully-validated tuning pass. It never auto-adjusts global detection, because a handful
+     * of corrections must not swing behaviour for everyone (the flagship "conservative" bar).
+     */
+    fun systematicMisclassifications(
+        classifierToUser: List<Pair<String, String>>,
+        minCount: Int = SYSTEMATIC_MIN_COUNT,
+    ): List<MisclassificationPattern> =
+        classifierToUser
+            .filter { it.first != it.second }
+            .groupingBy { it }
+            .eachCount()
+            .filter { it.value >= minCount }
+            .map { (pair, count) -> MisclassificationPattern(pair.first, pair.second, count) }
+            .sortedByDescending { it.count }
 }

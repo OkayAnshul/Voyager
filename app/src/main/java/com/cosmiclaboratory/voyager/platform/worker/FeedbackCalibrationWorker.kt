@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.cosmiclaboratory.voyager.domain.model.enums.CorrectionType
 import com.cosmiclaboratory.voyager.domain.usecase.CorrectionCalibration
 import com.cosmiclaboratory.voyager.storage.database.dao.CorrectionFeedbackDao
 import com.cosmiclaboratory.voyager.storage.database.dao.HealthLogDao
+import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
 import com.cosmiclaboratory.voyager.storage.database.entity.CorrectionFeedbackEntity
@@ -34,18 +36,21 @@ class FeedbackCalibrationWorker @AssistedInject constructor(
     private val correctionFeedbackDao: CorrectionFeedbackDao,
     private val placeDao: PlaceDao,
     private val visitDao: VisitDao,
+    private val movementSegmentDao: MovementSegmentDao,
     private val healthLogDao: HealthLogDao,
 ) : CoroutineWorker(context, params) {
 
     companion object {
         const val WORK_NAME = "feedback_calibration"
+        /** Window over which reclassification corrections are scanned for systematic bias. */
+        private const val BIAS_WINDOW_MS = 30L * 24 * 60 * 60 * 1000
     }
 
     override suspend fun doWork(): Result {
         return try {
             val unpropagated = correctionFeedbackDao.getUnpropagated()
             if (unpropagated.isEmpty()) {
-                logCompletion(processed = 0, calibrated = 0)
+                logCompletion(processed = 0, calibrated = 0, biasPatterns = 0)
                 return Result.success()
             }
 
@@ -66,12 +71,49 @@ class FeedbackCalibrationWorker @AssistedInject constructor(
                 }
             }
 
-            logCompletion(processed = processed, calibrated = calibrated)
+            // Aggregate pass (report-only): surface systematic transport-mode bias.
+            val biasPatterns = detectSystematicReclassBias()
+            if (biasPatterns.isNotEmpty()) logSystematicBias(biasPatterns)
+
+            logCompletion(processed = processed, calibrated = calibrated, biasPatterns = biasPatterns.size)
             Result.success()
         } catch (e: Exception) {
             logFailure(e)
             Result.retry()
         }
+    }
+
+    /**
+     * Recurring (classifier → user) transport-mode corrections over the last [BIAS_WINDOW_MS].
+     * Reads the segment itself (segmentType = classifier label, userOverrideType = the user's
+     * choice) rather than the correction's before/after JSON, which some entry paths leave null.
+     * Uses `getByCorrectionTypeSince` so it sees corrections regardless of the propagated flag.
+     */
+    private suspend fun detectSystematicReclassBias(): List<CorrectionCalibration.MisclassificationPattern> {
+        val sinceMs = System.currentTimeMillis() - BIAS_WINDOW_MS
+        val types = listOf(CorrectionType.RECLASSIFY_SEGMENT.name, CorrectionType.CHANGE_TRANSPORT_MODE.name)
+        val pairs = types
+            .flatMap { correctionFeedbackDao.getByCorrectionTypeSince(it, sinceMs) }
+            .filter { it.entityType.equals("segment", ignoreCase = true) }
+            .mapNotNull { feedback ->
+                val seg = movementSegmentDao.getById(feedback.entityId) ?: return@mapNotNull null
+                val userType = seg.userOverrideType ?: return@mapNotNull null
+                seg.segmentType to userType
+            }
+        return CorrectionCalibration.systematicMisclassifications(pairs)
+    }
+
+    private suspend fun logSystematicBias(patterns: List<CorrectionCalibration.MisclassificationPattern>) {
+        val json = patterns.joinToString(",", "[", "]") {
+            """{"from":"${it.from}","to":"${it.to}","count":${it.count}}"""
+        }
+        healthLogDao.insert(
+            HealthLogEntity(
+                eventType = "SYSTEMATIC_MISCLASSIFICATION",
+                eventAt = System.currentTimeMillis(),
+                detailsJson = """{"worker":"$WORK_NAME","patterns":$json}""",
+            )
+        )
     }
 
     /** Raise the corrected place's confidence to the user-validated floor. Returns true if changed. */
@@ -92,12 +134,12 @@ class FeedbackCalibrationWorker @AssistedInject constructor(
         else -> null
     }
 
-    private suspend fun logCompletion(processed: Int, calibrated: Int) {
+    private suspend fun logCompletion(processed: Int, calibrated: Int, biasPatterns: Int) {
         healthLogDao.insert(
             HealthLogEntity(
                 eventType = HEALTH_EVENT_WORKER_COMPLETE,
                 eventAt = System.currentTimeMillis(),
-                detailsJson = """{"worker":"$WORK_NAME","processed":$processed,"calibrated":$calibrated}""",
+                detailsJson = """{"worker":"$WORK_NAME","processed":$processed,"calibrated":$calibrated,"biasPatterns":$biasPatterns}""",
             )
         )
     }

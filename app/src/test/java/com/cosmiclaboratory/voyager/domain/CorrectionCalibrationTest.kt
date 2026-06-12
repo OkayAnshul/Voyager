@@ -34,4 +34,37 @@ class CorrectionCalibrationTest {
     fun `calibration is monotonic - it never lowers an already-higher confidence`() {
         assertEquals(0.98f, CorrectionCalibration.boostedConfidence(0.98f), 1e-6f)
     }
+
+    @Test
+    fun `a misclassification recurring at least the threshold is reported as systematic`() {
+        val corrections = List(3) { "DRIVE" to "CYCLE" }
+        val out = CorrectionCalibration.systematicMisclassifications(corrections)
+        assertEquals(1, out.size)
+        assertEquals("DRIVE", out.first().from)
+        assertEquals("CYCLE", out.first().to)
+        assertEquals(3, out.first().count)
+    }
+
+    @Test
+    fun `a misclassification below the threshold is not reported`() {
+        val corrections = List(2) { "DRIVE" to "CYCLE" }
+        assertTrue(CorrectionCalibration.systematicMisclassifications(corrections).isEmpty())
+    }
+
+    @Test
+    fun `corrections that keep the same type are not misclassifications`() {
+        val corrections = List(5) { "WALK" to "WALK" }
+        assertTrue(CorrectionCalibration.systematicMisclassifications(corrections).isEmpty())
+    }
+
+    @Test
+    fun `patterns are sorted by descending recurrence count`() {
+        val corrections = List(3) { "DRIVE" to "CYCLE" } + List(5) { "WALK" to "RUN" }
+        val out = CorrectionCalibration.systematicMisclassifications(corrections)
+        assertEquals(2, out.size)
+        assertEquals("WALK" to "RUN", out[0].from to out[0].to)
+        assertEquals(5, out[0].count)
+        assertEquals("DRIVE" to "CYCLE", out[1].from to out[1].to)
+        assertEquals(3, out[1].count)
+    }
 }
