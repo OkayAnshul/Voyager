@@ -360,55 +360,56 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 
 ## Wave 5 — Insights & analytics (the "wow")
 
-### W5.1 — Period summary / rollups · Status: [ ] verified  [ ] improved
+### W5.1 — Period summary / rollups · Status: [x] verified (ComputePeriodSummaryUseCaseTest) 2026-06-12  · [x] improved (T11 dwell clamp landed in W1.7)
 **What it does:** Pre-aggregates daily/weekly metrics for fast dashboards.
 **Key functions / files:** `domain/usecase/ComputePeriodSummaryUseCase.kt`, `worker/DailyRollupWorker`, `WeeklyRollupWorker`, rollup entities.
 **How to travel-test:** Compare a day's dashboard totals against the raw timeline.
 **Flagship bar:** Rollups match raw within rounding; dashboards read a single indexed row.
 
-### W5.2 — Statistics screen · Status: [ ] verified  [ ] improved
+### W5.2 — Statistics screen · Status: [x] verified (code-level) 2026-06-12  · improved: n/a (sound; `compute*` helpers are DB-coupled → integration-test territory)
 **What it does:** Period selector, week/month comparisons, movement stats, social/variety, anomalies, carbon.
 **Key functions / files:** `presentation/screen/analytics/StatisticsScreen.kt`+`StatisticsViewModel` (`selectPeriod`, `refresh`).
 **How to travel-test:** Switch periods (week/month/custom); confirm comparisons and trends look right.
 **Flagship bar:** Insightful, not just numeric; Pro gating is clear and fair.
 
-### W5.3 — Place statistics · Status: [ ] verified  [ ] improved
+### W5.3 — Place statistics · Status: [x] verified (ComputePlaceStatisticsUseCaseTest) 2026-06-12
 **What it does:** Per-place frequency, dwell distribution, dominant time/day.
 **Key functions / files:** `domain/usecase/ComputePlaceStatisticsUseCase.kt`.
 **How to travel-test:** Open a frequent place; confirm visit count, avg dwell, typical days match memory.
 **Flagship bar:** Stats feel personal and accurate.
 
-### W5.4 — Anomaly detection & alerts · Status: [ ] verified  [ ] improved
+### W5.4 — Anomaly detection & alerts · Status: [ ] verified (device alert test pending)  [x] improved 2026-06-12
 **What it does:** Flags unusual trips/places/records and can alert.
+**Verification (2026-06-12):** ✅ Locked `DetectNotableEventsUseCase` via its existing pure seams (`computeFirstVisits`, `computeLongestDistanceDay`) — first-visit-in-window detection and record-day-beats-history — with `DetectNotableEventsUseCaseTest` (3 cases). `AnomalyAlertWorker` surfaces them on a schedule (integration-level).
 **Key functions / files:** `domain/model/Anomaly.kt`, `DetectNotableEventsUseCase`, `worker/AnomalyAlertWorker`.
 **How to travel-test:** Do something unusual (new far city); confirm it's flagged with sensible severity.
 **Flagship bar:** Signal over noise; alerts are rare and meaningful.
 
-### W5.5 — Recurring patterns · Status: [ ] verified  [ ] improved
+### W5.5 — Recurring patterns · Status: [x] verified (DetectRecurringPatternsUseCaseTest) 2026-06-12
 **What it does:** Identifies routines (commute, gym schedule).
 **Key functions / files:** `domain/usecase/DetectRecurringPatternsUseCase.kt`.
 **How to travel-test:** After a regular week, confirm commute/routine is recognized.
 **Flagship bar:** Recognizes real routines without over-claiming.
 
-### W5.6 — On-this-day memories · Status: [ ] verified  [ ] improved
+### W5.6 — On-this-day memories · Status: [x] verified (BuildOnThisDayUseCaseTest) 2026-06-12
 **What it does:** Resurfaces the same day from past years.
 **Key functions / files:** `domain/usecase/BuildOnThisDayUseCase.kt`.
 **How to travel-test:** With history present, confirm a memory card appears (see Part C C4).
 **Flagship bar:** Delightful, well-timed resurfacing.
 
-### W5.7 — Carbon footprint · Status: [ ] verified  [ ] improved
+### W5.7 — Carbon footprint · Status: [x] verified (BuildCarbonFootprintUseCaseTest) 2026-06-12
 **What it does:** CO₂ by transport mode.
 **Key functions / files:** `domain/usecase/BuildCarbonFootprintUseCase.kt`, `domain/model/CarbonFootprint.kt`.
 **How to travel-test:** After mixed travel, confirm per-mode CO₂ totals are plausible.
 **Flagship bar:** Defensible factors; clear units.
 
-### W5.8 — Steps analytics & stride calibration · Status: [ ] verified  [ ] improved
+### W5.8 — Steps analytics & stride calibration · Status: [x] verified (code-level; `StepSyncWorker` integration) 2026-06-12
 **What it does:** Daily/hourly steps + stride calibration for distance.
 **Key functions / files:** `domain/repository/StepsRepository`, `worker/StepSyncWorker`, `StrideCalibration`.
 **How to travel-test:** Walk a measured distance; confirm step→distance is close.
 **Flagship bar:** Calibrated per user; matches a reference within a few %.
 
-### W5.9 — Recap & semantic labeling · Status: [ ] verified  [ ] improved
+### W5.9 — Recap & semantic labeling · Status: [x] verified (code-level; scheduled workers, integration) 2026-06-12
 **What it does:** Evening recap notification + semantic place/activity labels.
 **Key functions / files:** `worker/DailyRecapWorker`, `worker/SemanticLabelWorker`.
 **How to travel-test:** At ~22:00 confirm a recap arrives ("moved 8km, 3 places"); tap to open the day.
