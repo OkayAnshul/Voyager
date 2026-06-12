@@ -6,7 +6,7 @@ import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.cosmiclaboratory.voyager.domain.model.MileageLog
-import com.cosmiclaboratory.voyager.domain.model.MileagePurpose
+import com.cosmiclaboratory.voyager.domain.usecase.MileageDeduction
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.time.Instant
@@ -33,13 +33,6 @@ class MileagePdfExporter @Inject constructor(
         const val PAGE_HEIGHT = 792
         const val MARGIN = 48f
         const val LINE = 16f
-
-        /** IRS 2025 standard mileage rates, USD per mile. Personal driving is non-deductible. */
-        val IRS_2025_RATES: Map<MileagePurpose, Double> = mapOf(
-            MileagePurpose.BUSINESS to 0.70,
-            MileagePurpose.MEDICAL to 0.21,
-            MileagePurpose.CHARITABLE to 0.14
-        )
 
         val DATE_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
         val TIME_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
@@ -89,25 +82,20 @@ class MileagePdfExporter @Inject constructor(
         canvas.drawText("Miles", MARGIN + 220f, y, muted)
         canvas.drawText("Est. deduction (USD)", MARGIN + 320f, y, muted); y += LINE
 
-        var totalDeduction = 0.0
-        for (purpose in MileagePurpose.entries) {
-            val miles = log.milesFor(purpose)
-            if (miles <= 0.0) continue
-            val rate = IRS_2025_RATES[purpose]
-            val deduction = rate?.let { it * miles } ?: 0.0
-            totalDeduction += deduction
-            canvas.drawText(purpose.displayName, MARGIN, y, body)
-            canvas.drawText(formatMiles(miles), MARGIN + 220f, y, body)
+        val estimate = MileageDeduction.estimate(log)
+        for (line in estimate.lines) {
+            canvas.drawText(line.purpose.displayName, MARGIN, y, body)
+            canvas.drawText(formatMiles(line.miles), MARGIN + 220f, y, body)
             canvas.drawText(
-                if (rate != null) "$%.2f".format(deduction) else "—",
+                if (line.rate != null) "$%.2f".format(line.deductionUsd) else "—",
                 MARGIN + 320f, y, body
             )
             y += LINE
         }
         y += LINE * 0.4f
         canvas.drawText("Total miles", MARGIN, y, heading)
-        canvas.drawText(formatMiles(log.totalMiles), MARGIN + 220f, y, heading)
-        canvas.drawText("$%.2f".format(totalDeduction), MARGIN + 320f, y, heading); y += LINE * 1.4f
+        canvas.drawText(formatMiles(estimate.totalMiles), MARGIN + 220f, y, heading)
+        canvas.drawText("$%.2f".format(estimate.totalDeductionUsd), MARGIN + 320f, y, heading); y += LINE * 1.4f
 
         canvas.drawText(
             "Estimate uses IRS 2025 standard mileage rates. Verify current rates for your",

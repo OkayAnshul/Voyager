@@ -456,11 +456,14 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 **Flagship bar:** Correct math across fuel types/units; sensible vehicle auto-assignment.
 **Verification (2026-06-12, code-level):** ✅ Pure math checks out — MPG_US (×0.42514) and MPG_UK (×0.35400) factors match miles/gallon→km/L exactly; KM_PER_L and L_PER_100KM agree on units-per-km for equivalent efficiencies; EV/kWh path and the EV/HYBRID/CNG CO₂ factors are correct; `costMinor` rounds to minor units and rejects negative prices. `MileageCalculatorTest` 8 → 14 cases (MPG_UK, unit equivalence, EV kWh, EV/HYBRID/CNG CO₂, EV end-to-end forSegment, negative-price guard). Vehicle auto-assignment/profiles are DAO-coupled → integration-test territory.
 
-### W6.6 — Mileage rollups & PDF export · Status: [ ] verified  [ ] improved
+### W6.6 — Mileage rollups & PDF export · Status: [x] verified (code-level) 2026-06-12  · [x] improved 2026-06-12
 **What it does:** Pre-aggregated mileage totals + IRS-style PDF.
-**Key functions / files:** `MileageSummaryEntity`, `MileageScreen.exportPdf`.
+**Key functions / files:** `domain/usecase/MileageDeduction.kt`, `platform/export/MileagePdfExporter.kt`, (`MileageSummaryEntity` — see rollup note).
 **How to travel-test:** Export a month's mileage PDF; confirm totals match the log and business/personal split is right.
 **Flagship bar:** Court/IRS-grade PDF with evidence; rollups match raw.
+**Verification (2026-06-12, code-level):** ✅ The PDF (`MileagePdfExporter`) renders the tested `MileageLog` (W6.4) and is the live path the screen uses; it paginates the drive table and labels the deduction an estimate to verify.
+> - **Improvement — deduction math extracted + locked:** the IRS deduction estimate (the legal/financial moat) was buried inside the Android rendering method, so the number a user *files with taxes* was untestable. Extracted to pure `MileageDeduction.estimate` (per-mile rates: BUSINESS 0.70 / MEDICAL 0.21 / CHARITABLE 0.14; personal/unclassified → no rate, $0). Renderer now calls it (identical output). Locked by `MileageDeductionTest` (6 cases: per-rate, multi-purpose sum, non-deductible $0, declaration-order/only-driven, empty log, custom-rate override e.g. HMRC).
+> - **Rollup note (unwired scaffolding):** `MileageSummaryEntity`/`MileageSummaryDao` exist with a "rebuilt by the periodic mileage worker" doc, but **nothing writes or reads them** — the screen and PDF compute totals live from `BuildMileageLogUseCase`. Left as-is: the live path is correct at current scale; the summary table is a pre-built optimization to wire (worker + scheduling) only if profiling shows recompute cost. Tracked here rather than built speculatively.
 
 ### W6.7 — Day Story photo journal · Status: [ ] verified  [ ] improved
 **What it does:** Photos placed on the day's timeline with location context.
