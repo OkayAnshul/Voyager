@@ -31,6 +31,12 @@ class DetectTripsUseCase @Inject constructor(
     companion object {
         /** Minimum start→end day difference for a run to count as a multi-day trip. */
         const val MIN_TRIP_SPAN_DAYS = 1L
+
+        /** Max consecutive data-less days absorbed into a run before it breaks. A phone-off
+         *  day or two mid-trip shouldn't split it, but a longer blackout has no evidence the
+         *  user stayed away — absorbing it would fabricate one continuous "trip" (flagship bar:
+         *  no false trips), so the run ends and a later away-stay starts a fresh one. */
+        const val MAX_ABSORBED_GAP_DAYS = 3L
     }
 
     /** True when trip detection can run — it needs a Home place as the anchor. */
@@ -62,6 +68,15 @@ class DetectTripsUseCase @Inject constructor(
                     current = mutableListOf()
                 }
             } else {
+                // Break the run if a long data blackout separates this away-day from the last
+                // recorded one — see MAX_ABSORBED_GAP_DAYS.
+                val last = current.lastOrNull()
+                val missingDays = if (last == null) 0L
+                    else ChronoUnit.DAYS.between(LocalDate.parse(last.dayKey), LocalDate.parse(dayKey)) - 1
+                if (missingDays > MAX_ABSORBED_GAP_DAYS && current.isNotEmpty()) {
+                    runs.add(current)
+                    current = mutableListOf()
+                }
                 current.add(AwayDay(dayKey, visits))
             }
         }

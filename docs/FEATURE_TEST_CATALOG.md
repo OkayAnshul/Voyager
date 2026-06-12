@@ -427,11 +427,14 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 **How to travel-test:** Open the Proof tab; confirm Trips/Mileage/Export are reachable.
 **Flagship bar:** Clear "proof of where you were" identity.
 
-### W6.2 — Trip detection · Status: [ ] verified  [ ] improved
+### W6.2 — Trip detection · Status: [x] verified (code-level) 2026-06-12  · [x] improved 2026-06-12
 **What it does:** Auto-detects multi-day journeys away from a home anchor.
-**Key functions / files:** `domain/usecase/DetectTripsUseCase.kt`, `worker/TripDetectionWorker`, `presentation/screen/trips/TripsScreen.kt`+VM.
+**Key functions / files:** `domain/usecase/DetectTripsUseCase.kt` (`detect`, `detectAndStore`, away-run scan), `worker/TripDetectionWorker`, `presentation/screen/trips/TripsScreen.kt`+VM.
 **How to travel-test:** Take a 2–3 day trip; confirm it auto-appears with correct dates/destination.
 **Flagship bar:** No false trips; manual re-detect works; home anchor respected.
+**Verification (2026-06-12, code-level):** ✅ Run scan is correct — `VisitDao.getAllDayKeys` is `ORDER BY dayKey ASC … deletedAt IS NULL`, so the oldest→newest, deleted-excluded assumptions hold in production; home days break a run, single-day runs are filtered (`MIN_TRIP_SPAN_DAYS`), titles follow top-dwell place, `isOngoing` covers today/yesterday, distance sums the inclusive range, and `detectAndStore` atomically `replaceAll`s.
+> - **Improvement — false-trip guard (flagship bar):** because `getAllDayKeys` only returns days *with* visits, any data gap mid-run was silently absorbed — a long blackout (e.g. phone off for ~3 weeks between two away-stays) fabricated **one continuous mega-trip**, claiming away-ness with no evidence. Added `MAX_ABSORBED_GAP_DAYS = 3`: a phone-off day or two still merges, but a longer blackout breaks the run so a later stay starts fresh (under-claim over over-claim). 
+> - **Tests:** `DetectTripsUseCaseTest` 7 → 11 cases (short-gap absorbed, long-blackout splits into two trips, unnamed-destination → "N-day trip" title, `detectAndStore` replaceAll).
 
 ### W6.3 — Trip detail & PDF trip-book · Status: [ ] verified  [ ] improved
 **What it does:** Day-by-day journal + photo-forward PDF export.

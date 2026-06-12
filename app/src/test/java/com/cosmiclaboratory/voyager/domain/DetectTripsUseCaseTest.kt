@@ -7,10 +7,12 @@ import com.cosmiclaboratory.voyager.storage.database.dao.TripDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
 import com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.PlaceEntity
+import com.cosmiclaboratory.voyager.storage.database.entity.TripEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import java.time.LocalDate
@@ -175,6 +177,85 @@ class DetectTripsUseCaseTest {
 
         assertThat(trips).hasSize(1)
         assertThat(trips[0].isOngoing).isTrue()
+    }
+
+    @Test
+    fun `a short data gap mid-trip is absorbed into one trip`() = runTest {
+        withHome()
+        coEvery { placeDao.getById(2L) } returns place(2L, "Kyoto")
+        // Jan 2 and Jan 3 have no data at all (absent from dayKeys); a 2-day gap is absorbed.
+        withDays(
+            mapOf(
+                "2026-01-01" to listOf(visit(2L, "2026-01-01")),
+                "2026-01-04" to listOf(visit(2L, "2026-01-04"))
+            )
+        )
+
+        val trips = useCase.detect()
+
+        assertThat(trips).hasSize(1)
+        assertThat(trips[0].startDayKey).isEqualTo("2026-01-01")
+        assertThat(trips[0].endDayKey).isEqualTo("2026-01-04")
+    }
+
+    @Test
+    fun `a long data blackout breaks the run instead of fabricating one mega-trip`() = runTest {
+        withHome()
+        coEvery { placeDao.getById(2L) } returns place(2L, "Cairo")
+        coEvery { placeDao.getById(3L) } returns place(3L, "Athens")
+        // ~3 weeks of no data between two away-stays — no evidence the user stayed away.
+        withDays(
+            mapOf(
+                "2026-03-01" to listOf(visit(2L, "2026-03-01")),
+                "2026-03-02" to listOf(visit(2L, "2026-03-02")),
+                "2026-03-25" to listOf(visit(3L, "2026-03-25")),
+                "2026-03-26" to listOf(visit(3L, "2026-03-26"))
+            )
+        )
+
+        val trips = useCase.detect()
+
+        assertThat(trips).hasSize(2)
+        assertThat(trips[0].endDayKey).isEqualTo("2026-03-02")
+        assertThat(trips[1].startDayKey).isEqualTo("2026-03-25")
+    }
+
+    @Test
+    fun `an unnamed destination falls back to an N-day trip title`() = runTest {
+        withHome()
+        coEvery { placeDao.getById(2L) } returns place(2L, name = null) // no display/provider name
+        withDays(
+            mapOf(
+                "2026-08-01" to listOf(visit(2L, "2026-08-01")),
+                "2026-08-02" to listOf(visit(2L, "2026-08-02")),
+                "2026-08-03" to listOf(visit(2L, "2026-08-03"))
+            )
+        )
+
+        val trips = useCase.detect()
+
+        assertThat(trips).hasSize(1)
+        assertThat(trips[0].title).isEqualTo("3-day trip") // 08-01..08-03 inclusive
+        assertThat(trips[0].placeCount).isEqualTo(1)        // still an identified (if unnamed) place
+    }
+
+    @Test
+    fun `detectAndStore atomically replaces the trips table with the detected trips`() = runTest {
+        withHome()
+        coEvery { placeDao.getById(2L) } returns place(2L, "Lisbon")
+        withDays(
+            mapOf(
+                "2026-07-01" to listOf(visit(2L, "2026-07-01")),
+                "2026-07-02" to listOf(visit(2L, "2026-07-02"))
+            )
+        )
+        val stored = slot<List<TripEntity>>()
+        coEvery { tripDao.replaceAll(capture(stored)) } returns Unit
+
+        useCase.detectAndStore()
+
+        assertThat(stored.captured).hasSize(1)
+        assertThat(stored.captured[0].title).isEqualTo("Trip to Lisbon")
     }
 
     private fun segment(distanceM: Double) = MovementSegmentEntity(
