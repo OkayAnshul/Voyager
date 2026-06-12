@@ -301,47 +301,56 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 
 ## Wave 4 — Corrections & trust: *can I fix what's wrong?*
 
-### W4.1 — Place detail edit · Status: [ ] verified  [ ] improved
+### W4.1 — Place detail edit · Status: [x] verified (code-level) 2026-06-12  · improved: n/a (clean thin VM)
 **What it does:** Rename, set category, emoji, merge, refresh geocode; shows analytics + confidence.
 **Key functions / files:** `presentation/screen/place/PlaceDetailScreen.kt`+VM (`onIntent`: Rename/SetCategory/SetEmoji/MergeWith/RefreshGeocode) → `PlaceRepository`.
 **How to travel-test:** Rename a place, set its category and emoji, refresh its name; reopen to confirm persistence.
 **Flagship bar:** Every edit sticks and feeds the correction loop (W4.6); merge is reversible-feeling.
+**Verification (2026-06-12, code-level):** ✅ Clean thin VM, no change needed — observes the place reactively, loads analytics/evidence/candidates, dispatches each intent to the right `PlaceRepository`/`GeocodingRepository` method, and re-fetches candidates after a geocode refresh. Screen is redesign WIP → device-verify. (The real edit logic lives in the repositories.)
 
-### W4.2 — Visit detail · Status: [ ] verified  [ ] improved
+### W4.2 — Visit detail · Status: [x] verified (code-level) 2026-06-12  · improved: n/a (clean VM)
 **What it does:** Confirm, delete, adjust arrival/departure, rename; confidence card.
 **Key functions / files:** `presentation/screen/visit/VisitDetailSheet.kt`+VM (`onIntent`: ConfirmVisit/DeleteVisit/RenamePlace/AdjustTimes).
 **How to travel-test:** Adjust a visit's times and confirm it; delete a spurious visit.
 **Flagship bar:** Time edits recompute dwell correctly; confirm marks it user-reviewed.
+**Verification (2026-06-12, code-level):** ✅ Correct, no change — loads visit/place/evidence into a `ConfidenceBlock`; each intent applies immediately **and** logs a `CorrectionRepository` entry (Confirm marks user-corrected, Delete removes, Rename updates the display name, **AdjustTimes recomputes `dwellMs = departure − arrival`** and marks corrected). Sheet UI is WIP → device-verify.
 
-### W4.3 — Segment detail · Status: [ ] verified  [ ] improved
+### W4.3 — Segment detail · Status: [ ] verified (device split/merge — sheet is WIP)  [x] improved 2026-06-12
 **What it does:** Reclassify transport mode, split, merge-with-next; evidence + inference explanation.
 **Key functions / files:** `presentation/screen/segment/SegmentDetailSheet.kt`+VM, `domain/usecase/OverrideSegmentTypeUseCase.kt`.
 **How to travel-test:** Reclassify a mislabeled drive→cycle; split a merged segment; confirm corrections log.
 **Flagship bar:** Corrections are one tap, explained, and improve future inference (W4.6).
+**Verification (2026-06-12, code-level):** ✅ `OverrideSegmentTypeUseCase` verified + locked with `OverrideSegmentTypeUseCaseTest` (4 cases): the override is stored separately from the classifier label (reclassification can't stomp it), the linked route's `transportMode` is synced to the effective type (reverting to the classifier label on clear), redundant route writes are skipped, and every change is health-logged. Reclassify is the correction-loop signal (W4.6). Split/merge live in the (WIP) `SegmentDetailSheet`/VM → device-verify.
 
-### W4.4 — Place review queue · Status: [ ] verified  [ ] improved
+### W4.4 — Place review queue · Status: [ ] verified (device badge test pending)  [x] improved 2026-06-12
 **What it does:** Triage queue of low-confidence/unknown places with a nav badge.
 **Key functions / files:** `presentation/screen/review/PlaceReviewScreen.kt`+VM (threshold 0.7; `confirmPlace`, `renamePlace`, `setCategory`).
 **How to travel-test:** Let low-confidence places accrue; clear the queue from the bell icon; confirm the badge count updates.
 **Flagship bar:** Queue is short and high-signal; clearing it visibly raises overall trust.
+**Verification (2026-06-12, code-level):** ✅ Reactively filters the review queue and feeds the nav badge via `SharedUiState`. Extracted the queue predicate into a pure `pendingReviewPlaces` (confidence < 0.7 OR UNKNOWN category, lowest-confidence first) + `PlaceReviewViewModelTest` (2 cases: inclusion rules + ordering).
 
-### W4.5 — Categories management · Status: [ ] verified  [ ] improved
+### W4.5 — Categories management · Status: [x] verified (code-level) 2026-06-12  · improved: n/a (sound)
 **What it does:** Per-category visibility (map/timeline/notifications), assign places, presets.
 **Key functions / files:** `presentation/screen/categories/CategoriesScreen.kt`+VM (`updateCategoryVisibility`, `showAll/hideAll`, `resetToDefaults`, `assignPlaceToCategory`).
 **How to travel-test:** Hide a category from the map; confirm its places disappear there but stay on timeline.
 **Flagship bar:** Visibility toggles apply instantly everywhere; assignment is quick.
+**Verification (2026-06-12, code-level):** ✅ Sound — per-category visibility persisted to DataStore as JSON (defaults to all-visible), counts recomputed on change, show/hide-all + reset + assign all present. The serialize/deserialize round-trip is consistent (matching keys, true-defaults on missing) but uses Android's `org.json` (stubbed in plain unit tests) → an **instrumentation-test candidate**, not a JVM unit test. No change needed.
 
-### W4.6 — Correction feedback loop & calibration · Status: [ ] verified  [ ] improved
+### W4.6 — Correction feedback loop & calibration · Status: [ ] verified  ◐ improved — **learning half is a stub**
 **What it does:** Records user corrections and calibrates detection from them.
 **Key functions / files:** `domain/repository/CorrectionRepository`, `worker/FeedbackCalibrationWorker`.
 **How to travel-test:** Make several corrections of the same kind; over time confirm fewer of those errors recur.
 **Flagship bar:** Measurable error reduction after corrections; calibration is conservative.
+**Verification (2026-06-12, code-level) — partial / real gap found:**
+> - ✅ **Immediate corrections work:** rename / recategorize / reclassify / merge apply right away through the repositories (verified in W4.1/W4.3, with the segment override locked by tests) and are recorded to `correction_feedback`.
+> - ❌ **Calibration (learning) is not built:** `FeedbackCalibrationWorker` reads unpropagated feedback and `markPropagated`s it, but **every branch is a no-op** (`processed++` with "in a full implementation…" comments). Nothing tunes detection from corrections, so the flagship "measurable error reduction" isn't met yet. Worse, it marks feedback **propagated** while doing nothing — so when real calibration ships it won't see the historical backlog. **Recommend a Part C backlog item** (build the calibration: place-confidence/category updates, transport-mode weight tuning) and, until then, consider *not* marking feedback propagated. Left unbuilt here — it's a subsystem, not a verify-card fix.
 
-### W4.7 — Evidence/confidence display & explanations · Status: [ ] verified  [ ] improved
+### W4.7 — Evidence/confidence display & explanations · Status: [ ] verified (device sheet test pending)  [x] improved 2026-06-12
 **What it does:** Shows *why* a classification was made (the explainability moat).
 **Key functions / files:** `components/EvidenceSheet`, `domain/usecase/BuildEvidenceSummaryUseCase.kt`, `ExplainTimelineRowUseCase.kt`, `domain/model/InferenceExplanation.kt`.
 **How to travel-test:** Open the evidence sheet on a drive and a visit; confirm GPS accuracy, speed, AR votes, and a plain-language reason.
 **Flagship bar:** Every row can answer "why did you say that?"; copy is human (see Part C C6).
+**Verification (2026-06-12, code-level):** ✅ Both explainability use cases now tested. `ExplainTimelineRowUseCase` already had `ExplainTimelineRowUseCaseTest`; added `BuildEvidenceSummaryUseCaseTest` (3 cases) for `BuildEvidenceSummaryUseCase` — maps stored signals into an `EvidenceBlock`, labels the explanation by the top activity vote, returns null when there's no evidence, and degrades gracefully on malformed JSON (no crash). The `EvidenceSheet` UI renders it → device-verify.
 
 ### W4.8 — Integrity repair · Status: [ ] verified  [ ] improved
 **What it does:** Cleans orphaned visits, overlapping segments, stale candidates.

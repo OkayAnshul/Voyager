@@ -27,16 +27,10 @@ class PlaceReviewViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(PlaceReviewUiState())
     val uiState: StateFlow<PlaceReviewUiState> = _uiState.asStateFlow()
 
-    /** Threshold below which places are shown for review */
-    private val confidenceThreshold = 0.7f
-
     init {
         viewModelScope.launch {
             placeRepository.observePlaces()
-                .map { places ->
-                    places.filter { it.confidence < confidenceThreshold || it.category == PlaceCategory.UNKNOWN }
-                        .sortedBy { it.confidence }
-                }
+                .map { pendingReviewPlaces(it) }
                 .collect { pending ->
                     _uiState.update {
                         it.copy(pendingPlaces = pending, isLoading = false)
@@ -68,5 +62,19 @@ class PlaceReviewViewModel @Inject constructor(
 
     fun clearMessage() {
         _uiState.update { it.copy(message = null) }
+    }
+
+    companion object {
+        /** Confidence below which a place is surfaced for review. */
+        const val CONFIDENCE_THRESHOLD = 0.7f
+
+        /**
+         * The review queue: places that are either low-confidence or still uncategorised,
+         * lowest-confidence first (most-uncertain at the top). Exposed for testing.
+         */
+        internal fun pendingReviewPlaces(places: List<TimelinePlace>): List<TimelinePlace> =
+            places
+                .filter { it.confidence < CONFIDENCE_THRESHOLD || it.category == PlaceCategory.UNKNOWN }
+                .sortedBy { it.confidence }
     }
 }
