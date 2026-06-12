@@ -55,15 +55,10 @@ class DashboardViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            val activeDays = dailyRollupDao.getActiveDayKeys()
-            val activeDaySet = activeDays.toHashSet()
-            var streak = 0
-            var date = java.time.LocalDate.now()
-            while (activeDaySet.contains(date.toString())) {
-                streak++
-                date = date.minusDays(1)
-            }
-            _streakDays.value = streak
+            _streakDays.value = computeStreak(
+                dailyRollupDao.getActiveDayKeys().toHashSet(),
+                java.time.LocalDate.now()
+            )
         }
         viewModelScope.launch {
             _batteryPerDay.value = batteryUsageReporter.estimate().percentPerDay
@@ -122,4 +117,21 @@ class DashboardViewModel @Inject constructor(
             isLoading = false
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())
+
+    companion object {
+        /**
+         * Consecutive active days ending at the latest active day. If [today] has no
+         * activity *yet*, the streak isn't broken until the day actually ends — so count
+         * from yesterday rather than resetting to 0 every morning. Exposed for testing.
+         */
+        internal fun computeStreak(activeDayKeys: Set<String>, today: java.time.LocalDate): Int {
+            var date = if (activeDayKeys.contains(today.toString())) today else today.minusDays(1)
+            var streak = 0
+            while (activeDayKeys.contains(date.toString())) {
+                streak++
+                date = date.minusDays(1)
+            }
+            return streak
+        }
+    }
 }

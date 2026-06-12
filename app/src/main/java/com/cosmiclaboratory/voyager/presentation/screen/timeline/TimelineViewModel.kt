@@ -7,7 +7,6 @@ import com.cosmiclaboratory.voyager.domain.model.enums.CorrectionType
 import com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
 import com.cosmiclaboratory.voyager.domain.model.ids.PlaceId
 import com.cosmiclaboratory.voyager.domain.repository.CorrectionRepository
-import com.cosmiclaboratory.voyager.domain.repository.EvidenceRepository
 import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
 import com.cosmiclaboratory.voyager.domain.repository.TimelineRepository
 import com.cosmiclaboratory.voyager.presentation.state.DayNavigationStateHolder
@@ -24,7 +23,6 @@ data class TimelineUiState(
     val totalSteps: Int = 0,
     val isLoading: Boolean = true,
     val focusedSegmentId: Long? = null,
-    val selectedSegmentEvidence: EvidenceBlock? = null,
     val errorMessage: String? = null,
     val activeVisit: ActiveVisitInfo? = null,
     val pendingCandidate: PendingVisitCandidate? = null,
@@ -47,7 +45,6 @@ sealed interface TimelineIntent {
 @HiltViewModel
 class TimelineViewModel @Inject constructor(
     private val timelineRepository: TimelineRepository,
-    private val evidenceRepository: EvidenceRepository,
     private val correctionRepository: CorrectionRepository,
     private val placeRepository: PlaceRepository,
     private val dayNavigation: DayNavigationStateHolder,
@@ -116,13 +113,10 @@ class TimelineViewModel @Inject constructor(
 
     fun onIntent(intent: TimelineIntent) {
         when (intent) {
-            is TimelineIntent.SelectSegment -> {
+            is TimelineIntent.SelectSegment ->
+                // The detail sheet (SegmentDetailViewModel) loads its own evidence, so just
+                // focus the segment here — no need to fetch-and-discard evidence per tap.
                 dayNavigation.focusSegment(intent.segmentId)
-                viewModelScope.launch {
-                    val evidence = evidenceRepository.getSegmentEvidence(intent.segmentId)
-                    // Evidence is available for segment detail sheet
-                }
-            }
             is TimelineIntent.ClearSelection -> dayNavigation.clearFocus()
             is TimelineIntent.CorrectSegmentType -> viewModelScope.launch {
                 correctionRepository.applyCorrection(

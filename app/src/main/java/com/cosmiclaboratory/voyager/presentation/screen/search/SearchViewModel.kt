@@ -64,26 +64,31 @@ class SearchViewModel @Inject constructor(
     fun onIntent(intent: SearchIntent) {
         when (intent) {
             is SearchIntent.UpdateQuery -> _query.value = intent.query
-            is SearchIntent.ToggleCategoryFilter -> {
-                val current = _filters.value.placeCategories?.toMutableSet() ?: mutableSetOf()
-                if (current.contains(intent.category)) current.remove(intent.category)
-                else current.add(intent.category)
+            is SearchIntent.ToggleCategoryFilter ->
                 _filters.value = _filters.value.copy(
-                    placeCategories = current.ifEmpty { null }
+                    placeCategories = toggleFilter(_filters.value.placeCategories, intent.category)
                 )
-            }
-            is SearchIntent.ToggleTransportFilter -> {
-                val current = _filters.value.transportModes?.toMutableSet() ?: mutableSetOf()
-                if (current.contains(intent.mode)) current.remove(intent.mode)
-                else current.add(intent.mode)
+            is SearchIntent.ToggleTransportFilter ->
                 _filters.value = _filters.value.copy(
-                    transportModes = current.ifEmpty { null }
+                    transportModes = toggleFilter(_filters.value.transportModes, intent.mode)
                 )
-            }
             is SearchIntent.SetDateRange -> {
                 _filters.value = _filters.value.copy(dateRange = intent.range)
             }
             is SearchIntent.ClearFilters -> _filters.value = SearchFilters()
+        }
+    }
+
+    companion object {
+        /**
+         * Toggle [item] in a nullable filter set: add if absent, remove if present.
+         * Returns null when the set becomes empty — the repository treats null as
+         * "no filter on this dimension". Exposed for testing.
+         */
+        internal fun <T> toggleFilter(current: Set<T>?, item: T): Set<T>? {
+            val next = current?.toMutableSet() ?: mutableSetOf()
+            if (!next.add(item)) next.remove(item) // add() returns false when already present
+            return next.ifEmpty { null }
         }
     }
 }

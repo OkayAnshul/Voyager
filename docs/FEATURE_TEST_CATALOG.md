@@ -258,35 +258,46 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 
 ## Wave 3 — Viewing & navigating the timeline (daily-use screens)
 
-### W3.1 — Timeline screen · Status: [ ] verified  [ ] improved
+### W3.1 — Timeline screen · Status: [ ] verified (device — screen is redesign WIP)  [x] improved 2026-06-12
 **What it does:** Vertical rail of segments with day nav, live in-progress segment, active-visit overlay, quick reclassification.
 **Key functions / files:** `presentation/screen/timeline/TimelineScreen.kt`+`TimelineViewModel` (`onIntent`: SelectSegment, CorrectSegmentType, SelectGeocodeName, RenamePlace, NavigatePrev/Next).
 **How to travel-test:** Open today mid-trip; confirm the in-progress segment updates live and day nav works.
 **Flagship bar:** Continuous Arc-style spine (no card gaps — see Part C A4); instant day switching.
+**Verification (2026-06-12, code-level):** ✅ `TimelineViewModel` flow is correct — merges DB segments with the live in-progress segment, dedups segments overlapping the active-visit window (no double display), counts movement-only distance, and surfaces rough-mode. `TimelineScreen.kt` is the user's redesign WIP → device-verify, not touched.
+> - **Cleanup:** `SelectSegment` fetched segment evidence and **discarded it** every tap; the detail sheet (`SegmentDetailViewModel`) loads its own. Removed the wasted per-tap DB read, the never-read `selectedSegmentEvidence` field, and the now-unused `EvidenceRepository` injection.
+> - **Follow-up (test gap):** the merge/dedup/distance combine is valuable to lock but needs 6 mocked deps + StateFlow collection — candidate for Part C **K3** (ViewModel tests), not done here.
 
-### W3.2 — Map screen · Status: [ ] verified  [ ] improved
+### W3.2 — Map screen · Status: [ ] verified (device — screen is redesign WIP)  [x] improved 2026-06-12
 **What it does:** Mapbox/MapLibre routes + visit markers, fit-bounds, center-on-me, transport-mode colors.
 **Key functions / files:** `presentation/screen/map/MapScreen.kt`+`MapViewModel` (`onIntent`: TapMarker/TapRoute/CenterOnUser/FitBounds), `MapRepository`.
 **How to travel-test:** Open a travel day; tap a route and a marker; use fit-bounds and center-on-me.
 **Flagship bar:** Smooth pan/zoom; markers/routes tappable; camera persists (see Part C C5).
+**Verification (2026-06-12, code-level):** ✅ `MapViewModel` is sound — reactive day data + settings toggles (markers/polylines/colour-by-mode apply live), routes decoded from the already-reconciled segments (continuous polylines), focus collectors for segment/visit, live-location + active-visit observers, one-shot center/fit requests with consume-handlers. `MapScreen.kt` is redesign WIP → device-verify, not touched.
+> - **Cleanup:** transport-colour `else` now reuses the `NEUTRAL_ROUTE_COLOR` constant instead of a duplicated literal.
+> - **Finding (not changed):** an unmatched VISIT segment falls back to `visitMarkers.firstOrNull()` — could focus an *arbitrary* marker (wrong-place highlight). Left for on-device judgement since it's map-focus UX; candidate to return null instead.
 
-### W3.3 — Dashboard / home · Status: [ ] verified  [ ] improved
+### W3.3 — Dashboard / home · Status: [ ] verified (device — screen is redesign WIP)  [x] improved 2026-06-12
 **What it does:** Live tracking status, daily stats, streak, battery/day, insights, active visit.
 **Key functions / files:** `presentation/screen/dashboard/DashboardScreen.kt`+`DashboardViewModel`.
 **How to travel-test:** Walk for a few minutes from a cold start; confirm live distance/steps move before any place exists (see Part C A10).
 **Flagship bar:** No empty first hour; numbers count up smoothly; honest battery/day.
+**Verification (2026-06-12, code-level):** ✅ `DashboardViewModel` composes dashboard + steps + tracking + live-timeline + settings into one reactive state; session start ticks immediately on start; honest battery/day from `BatteryUsageReporter`. `DashboardScreen.kt` is redesign WIP → device-verify.
+> - **Bug fixed (streak):** the consecutive-days streak counted from **today**, so it showed **0 every morning** until you generated activity — even mid-streak. Extracted a pure `computeStreak` that counts from yesterday when today isn't active yet (a streak isn't broken until the day ends). New `DashboardViewModelTest` (5 cases).
 
-### W3.4 — Cross-screen day sync · Status: [ ] verified  [ ] improved
+### W3.4 — Cross-screen day sync · Status: [x] verified (code-level) 2026-06-12  [x] improved (tests added)
 **What it does:** Keeps the selected day/segment in sync across Timeline/Map/Insights.
 **Key functions / files:** `presentation/state/DayNavigationStateHolder.kt`, `SharedUiState.kt`.
 **How to travel-test:** Change the day on Timeline; switch to Map — same day shown; tap a segment — it's focused on both.
 **Flagship bar:** Zero desync; focus follows you across tabs.
+**Verification (2026-06-12, code-level):** ✅ Sound, no change needed — single `@ActivityRetainedScoped` holder is the shared source of truth across screens. `focusSegment`/`focusVisit` are mutually exclusive (each clears the other — the right place to prevent the focus race noted in W3.2), `navigateNextDay` is future-guarded (can't pass today), day arithmetic uses `LocalDate` (month/year boundaries) with a malformed-key fallback, and any day change clears focus. New `DayNavigationStateHolderTest` (6 cases) — no deps, so directly testable.
 
-### W3.5 — Search · Status: [ ] verified  [ ] improved
+### W3.5 — Search · Status: [ ] verified (device — screen is redesign WIP)  [x] improved 2026-06-12
 **What it does:** Debounced full-text search over places/segments with category/mode/date filters.
 **Key functions / files:** `presentation/screen/search/SearchScreen.kt`+`SearchViewModel`, `domain/usecase/SearchTimelineUseCase.kt`, `worker/SearchIndexWorker`.
 **How to travel-test:** Search a place name and filter by date range; tap a result to open it.
 **Flagship bar:** Sub-second results; filters compose; demoable "ask my timeline" moment.
+**Verification (2026-06-12, code-level):** ✅ `SearchViewModel` is sound — 300ms-debounced query+filters via `flatMapLatest`, a ≥2-char gate (no search on a single letter), `isSearching` emitted on start. `SearchScreen.kt` is redesign WIP → device-verify.
+> - **Cleanup + lock:** the two near-duplicate hand-rolled filter-toggle blocks (category/transport, with null-when-empty) are now one pure `toggleFilter` helper. New `SearchViewModelTest` (4 cases: add to empty, add new, remove present, collapse-to-null).
 
 ## Wave 4 — Corrections & trust: *can I fix what's wrong?*
 

@@ -180,6 +180,6 @@ class MapViewModel @Inject constructor(
         "CYCLE" -> 0xFF2196F3.toInt()
         "DRIVE" -> 0xFF9C27B0.toInt()
         "TRANSIT" -> 0xFFFF5722.toInt()
-        else -> 0xFF757575.toInt()
+        else -> NEUTRAL_ROUTE_COLOR
     }
 }
