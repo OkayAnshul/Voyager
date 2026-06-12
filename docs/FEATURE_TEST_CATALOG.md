@@ -242,17 +242,19 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 **Verification (2026-06-11, code-level — device merge test pending):** ✅ Conservative + safe: only CANDIDATE→CONFIRMED merges, requires a non-empty **exact name match** (case-insensitive), and reassigns visits + segments and marks MERGED inside one transaction (no dangling FKs). New `MergePlacesWorkerTest` (2 cases).
 > - **T5 (merge half) ✅:** `nearestMergeable` capped the merge at a flat 200m from the confirmed centroid, so same-named fragments inside a large venue (campus/airport, >200m) never collapsed. Now uses `mergeDistanceLimitM = max(200m, confirmed.radiusM + buffer)`, honoring the footprint — safe because an exact name match is already required. Completes T5 (discovery half landed in W2.5).
 
-### W2.7 — Confidence & decay · Status: [ ] verified  [ ] improved
+### W2.7 — Confidence & decay · Status: [ ] verified (device long-absence test pending)  [x] improved (already at bar) 2026-06-11
 **What it does:** Scores place confidence and decays it when not revisited.
 **Key functions / files:** `domain/usecase/PlaceConfidenceDecay.kt`, `worker/ConfidenceDecayWorker`, `domain/model/EvidenceBlock.kt`.
 **How to travel-test:** Stop visiting a place for weeks; confirm its confidence decays and it drops out of "frequent" (see T14).
 **Flagship bar:** Stale places fade; confidence shown is trustworthy.
+**Verification (2026-06-11, code-level — device long-absence test pending):** ✅ Fully wired, **no change needed**: `PlaceConfidenceDecay.decay` (grace period, daily multiplicative decay toward a floor) is **pure + tested** (`PlaceConfidenceDecayTest`); `ConfidenceDecayWorker` applies it to every active place (with a `MIN_DELTA` churn guard) and is **scheduled** daily at 03:30 (`WorkerScheduler.scheduleConfidenceDecay`, wired into `scheduleAll`). A revisit re-bumps confidence via the discovery/linking path. T14 ("no confidence decay") is already false.
 
-### W2.8 — Geocode backfill · Status: [ ] verified  [ ] improved
+### W2.8 — Geocode backfill · Status: [x] verified (code-level) 2026-06-12  · improved: n/a (sound, no change needed)
 **What it does:** Fills missing names for older places when connectivity returns.
 **Key functions / files:** `worker/GeocodeBackfillWorker`.
 **How to travel-test:** Track offline, then reconnect; confirm previously-unnamed places get names.
 **Flagship bar:** No permanently-unnamed places once online.
+**Verification (2026-06-12, code-level — device offline→online test pending):** ✅ Sound, no change needed: backfills unnamed places (`bestProviderName == null`) in batches of 20 via the tested `refreshGeocodeForPlace`, respects the auto-geocode privacy lever (no network when off), continues past individual failures and only `retry`s when *all* fail (transient network). Scheduled every 4h with **network constraints** (`scheduleAll` → `scheduleGeocodeBackfill`), so it naturally fires when connectivity returns — offline-tolerant by design.
 
 ## Wave 3 — Viewing & navigating the timeline (daily-use screens)
 
@@ -586,7 +588,7 @@ Each cross-links to the Part A wave it degrades. Source: `~/.claude/plans/yes-fi
 | T11 | Day-boundary overnight stays double-count | W1.7 | ✅ 2026-06-11 — daily-rollup dwell now clamps each visit to the day window (`overlapMs` over overlapping visits) instead of dumping the full overnight dwell on the arrival day; rollup dayKey uses home tz. Tests added. |
 | T12 | BatteryBudgetController computed but never applied | W0.2 | ✅ 2026-06-10 — worker applies + is scheduled (6h) + live re-apply on next motion transition; now also **surfaces** the downgrade to the user via `showTrackingAlert` (was silent, violating the controller's contract). UI to *enable* a budget = F2 (planned). |
 | T13 | FLIGHT threshold 200 m/s misses takeoff/landing | W1.3 | ✅ 2026-06-11 — already fixed (sustained ≥80 m/s ×2 trigger alongside the 200 m/s single-sample bar); now locked with cruise + sustained tests. |
-| T14 | No place-confidence decay | W2.7 | ☐ |
+| T14 | No place-confidence decay | W2.7 | ✅ — already implemented: pure tested `PlaceConfidenceDecay` applied daily by `ConfidenceDecayWorker` (scheduled 03:30, wired into `scheduleAll`), revisits re-bump. Verified, no change needed. |
 | T15 | isMock catches only API-flagged spoofers | W0.1 | ☐ |
 | I1 | 3 remaining `!!` in screen code (ship-blocker) | W3.x / W9.1 | ☐ |
 
