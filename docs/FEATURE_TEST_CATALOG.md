@@ -490,11 +490,15 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 **Flagship bar:** Lossless round-trip; standards-valid GPX/KML.
 **Verification (2026-06-12, code-level):** ✅ Two route codecs verified standards-compliant against the **canonical Google encoded-polyline vector**: `PolylineCodec` (data-layer, used by the JSON export — already had `PolylineCodecTest`) and `PolylineEncoder` (domain util used by **6 call sites** — map/reconciler/segmenter/workout/GPX — and previously **untested**). Added `PolylineEncoderTest` (7 cases: canonical encode + decode, multi-hemisphere round-trip, empty, single point, `mergePolylines` concatenation, empty-merge). Privacy stripping is sound — `stripPolylineIf` decodes→rounds(~1.1 km)→re-encodes so redaction reaches route geometry, not just point coords. The format assemblers (`buildGpx`/`buildGeoJson`/`buildCsv`/`buildVoyagerJson`) and `ExportWorker` are DAO/coroutine-coupled → integration-test territory; standards-validity of the emitted GPX/KML → device/file verify.
 
-### W7.2 — Import / restore · Status: [ ] verified  [ ] improved
+### W7.2 — Import / restore · Status: [x] verified (code-level) 2026-06-12  · [x] improved 2026-06-12
 **What it does:** Restores from a Voyager JSON backup.
-**Key functions / files:** `ExportRepository.import`, `presentation/screen/onboarding/RestoreScreen.kt`.
+**Key functions / files:** `data/repository/ExportRepositoryImpl.importData`, `VoyagerJsonFormat`, `presentation/screen/onboarding/RestoreScreen.kt`.
 **How to travel-test:** Export, wipe (pre-production OK), restore; confirm data returns intact.
 **Flagship bar:** Round-trip identical; clear summary; handles signing-key change (see Part C K6).
+**Verification (2026-06-12, code-level):** ✅ ID-rewiring is sound — places insert first into `placeIdMap`, segments remap `placeId` (and attach their route to the new segment id), visits remap via `placeIdMap[..] ?: continue` (orphan visits skipped, no dangling FKs); raw samples (v2+) are parented to one synthetic `IMPORT` session; re-imports dedup by `getOverlapping`; version is gated (`<= CURRENT_VERSION`).
+> - **Bug fixed — wrong `visitsImported` in the summary:** `duplicates` is incremented for **both** segment and visit duplicates, but `visitsImported` was computed as `visits.size − duplicates` — so skipped *segments* wrongly reduced the reported *visit* count, and visits dropped for an unmapped place weren't accounted for at all. Now counts visits actually inserted (`visitsImported++` per insert); `duplicatesSkipped` stays the combined total.
+> - **Format contract locked:** `VoyagerJsonFormatTest` (5 cases) pins the evolution promise — a v1 file (no `rawSamples`) parses with the field defaulting empty, unknown future fields are ignored (forward-compatible), the envelope and the heaviest wire type (`RawSampleWire`, all optional fields) round-trip losslessly, and the parsed version drives the newer-than-app gate.
+> - The full `importData` (Room transaction + 5 DAOs + `contentResolver`) is integration territory → instrumented round-trip test candidate (Part C **K6**).
 
 ### W7.3 — Google Timeline import · Status: [ ] verified  [ ] improved
 **What it does:** Imports Google Location History JSON.

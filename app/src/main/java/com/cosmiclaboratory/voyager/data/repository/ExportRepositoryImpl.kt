@@ -127,6 +127,7 @@ class ExportRepositoryImpl @Inject constructor(
         val placeIdMap = mutableMapOf<Long, Long>()
         val segmentIdMap = mutableMapOf<Long, Long>()
         var duplicates = 0
+        var visitsImported = 0
         var rawSamplesImported = 0
 
         database.withTransaction {
@@ -226,6 +227,7 @@ class ExportRepositoryImpl @Inject constructor(
                         centroidLng = visit.centroidLng
                     )
                 )
+                visitsImported++
             }
 
             // Raw GPS samples (VoyagerJSON v2+). Every sample needs a parent
@@ -252,7 +254,7 @@ class ExportRepositoryImpl @Inject constructor(
 
         ImportSummary(
             segmentsImported = segmentIdMap.size,
-            visitsImported = parsed.visits.size - duplicates.coerceAtMost(parsed.visits.size),
+            visitsImported = visitsImported,
             placesImported = placeIdMap.size,
             duplicatesSkipped = duplicates,
             rawSamplesImported = rawSamplesImported
