@@ -93,7 +93,7 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 **Verification (2026-06-10, code-level — device walk/reboot test pending):** ✅ Correct cumulative-counter→delta conversion; reboot detected by negative delta (baseline reset, no spurious spike); a process restart re-baselines on the first event (no double-count). Logic extracted to pure `StepDeltaResolver` with `StepDeltaResolverTest` (8 cases incl. reboot-no-spike + no-double-count).
 > - **SC1 ✅ (accuracy leak):** the buffered tail (steps since the last 5s batch) was **dropped on every `stop()`** — each pause/resume and the end-of-day stop lost up to a window of steps. `stop()` now `flush()`es the pending delta.
 > - **SC2 ✅ (lost writes):** `stop()` cancelled the per-session scope, which could **abort an in-flight batch insert**. Writes now go on the app-lifetime `VoyagerApplicationScope`, so they always complete; the per-session scope is gone.
-> - **Note:** this is capture-side correctness. **T7** ("step-rate fusion misfires") is a separate fix in `FuseActivityStateUseCase` (W1.2) — accurate batches here help, but the fusion threshold work lands there.
+> - **Note:** this is capture-side correctness. **T7** ("step-rate fusion misfires") turned out to be the *cadence derivation* (extrapolating a short burst over a tiny bucket span), now fixed in `StepRateCalculator` and consumed by fusion (W1.2) — accurate batches here feed it.
 
 ### W0.6 — Crash/boot recovery & session lifecycle · Status: [ ] verified (device crash/reboot test pending)  [x] improved 2026-06-10
 **What it does:** Restores an active tracking session after crash/reboot/app-update; cleanly closes segments/visits on stop.
@@ -135,12 +135,12 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 
 ### W1.2 — Motion fusion (AR + GPS + steps) · Status: [ ] verified (device drive/congestion test pending)  [x] improved 2026-06-11
 **What it does:** Fuses activity recognition, GPS speed, and step rate into one motion state.
-**Key functions / files:** `domain/usecase/FuseActivityStateUseCase.kt` (`fuse`, hysteresis dead zones, vehicle context, >140 spm→RUN / >100 spm→WALK, speed sanity).
-**How to travel-test:** Walk, then sit in slow traffic; confirm slow traffic is **drive**, not cycle (see T4), and brisk walking isn't called running.
-**Flagship bar:** No mode flips at boundaries; step override never misfires while in a vehicle (see T7).
+**Key functions / files:** `domain/usecase/FuseActivityStateUseCase.kt` (`fuse`, hysteresis dead zones, vehicle context, >140 spm→RUN / >100 spm→WALK, speed sanity); cadence from `pipeline/stage/StepRateCalculator.kt` (T7).
+**How to travel-test:** Walk, then sit in slow traffic; confirm slow traffic is **drive**, not cycle (see T4), and brisk walking isn't called running. Shuffle at a desk; confirm it is **not** called running (see T7).
+**Flagship bar:** No mode flips at boundaries; step override never misfires from a desk shuffle or while in a vehicle (see T7).
 **Verification (2026-06-11, code-level — device drive/congestion test pending):** ✅ Speed validated against accuracy (rejects phantom spikes), wide hysteresis dead zones at band boundaries, AR gated by user confidence threshold, weighted fusion. Extended `FuseActivityStateUseCaseTest` with 4 vehicle-context cases (26 total).
 > - **T4 ✅:** the prior fix covered the 3.0–4.5 m/s band, but **4.5–6.5 m/s still hard-mapped to CYCLING** — a car crawling in congestion with AR stale read as cycling. Added **vehicle context**: a confident IN_VEHICLE (AR) or clearly-driving (>8.5 m/s) reading arms it, and while armed a cycling-speed reading resolves to IN_VEHICLE. It's sticky across red lights and cleared only by real walking steps or a confident non-vehicle AR reading — so genuine cyclists (no prior driving) still classify as CYCLING. See Part B.
-> - **T7 (note):** step-rate thresholds already appear tuned (RUN >140, WALK >100, the 80–100 desk-shuffle band excluded, STILL on <5 spm with AR walking) and are covered by existing tests; capture-side accuracy was handled in W0.5. Left as-is pending a real-device misfire report.
+> - **T7 ✅ (2026-06-12 — root cause was the rate, not the thresholds):** the fusion thresholds (RUN >140, WALK >100, 80–100 desk-shuffle band excluded, STILL <5 spm with AR walking) were already tuned — but the *cadence feeding them* was computed as `totalSteps / bucketSpan`, dividing by the buckets' own covered period. A brief shuffle — 5 steps in a 2 s bucket — extrapolated to `(5/2 s)×60 = 150 spm` → **RUNNING**, defeating the thresholds entirely. Extracted `StepRateCalculator` (pure) that floors the denominator at 30 s: a real walk fills that window (~108 spm → WALK), a short burst divides by the floor instead of its own span (5 steps → 10 spm, correctly not walking), and genuine stillness still reads near-zero (preserves the STILL correction). Wired into `PipelineConsumer.computeStepRate`; locked by `StepRateCalculatorTest` (8 cases). See Part B.
 
 ### W1.3 — Segmenter (WALK/RUN/DRIVE/CYCLE/FLIGHT/VISIT/DWELL/GAP) · Status: [ ] verified (device flight/walk test pending)  [x] improved 2026-06-11
 **What it does:** Turns the fused stream into typed segments with distance, evidence, and routes.
@@ -597,6 +597,8 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 These are known defects in *already-built* features — the reason "implemented" ≠ "flagship."
 Each cross-links to the Part A wave it degrades. Source: `~/.claude/plans/yes-finish-phase-4-radiant-rabin.md` (Wave 6 trust fixes). Mark status against that logbook as you confirm.
 
+**Status: all 15 trust items (T1–T15) are ✅ cleared (as of 2026-06-12)** — each fixed (or verified already-correct) at code level and locked with unit tests; device travel-tests still confirm them end-to-end. The only remaining Part B row is the **I1** ship-blocker (3 `!!` in screen code), which lives in the in-progress redesign WIP and is owned there.
+
 | ID | Symptom | Degrades | Status |
 |----|---------|----------|--------|
 | T1 | Long walks fragment into multiple segments (time-flush flaw) | W1.3 | ✅ — already fixed (no time-only flush for non-VISIT segments) + covered by existing test. |
@@ -605,7 +607,7 @@ Each cross-links to the Part A wave it degrades. Source: `~/.claude/plans/yes-fi
 | T4 | Slow traffic classified as cycling | W1.2 / W1.3 | ✅ 2026-06-11 — prior fix handled 3.0–4.5 m/s; added vehicle-context so the 4.5–6.5 m/s cycling band reads as slow traffic once driving, cleared by walking-steps/AR. Tests added. |
 | T5 | Place fragmentation (same building → multiple places) | W2.5 / W2.6 | ✅ 2026-06-11 — both halves footprint-aware: discovery merges new clusters within an existing place's radius (W2.5 `mergeRadiusM`); the merge worker collapses same-named fragments within a confirmed venue's radius (W2.6 `mergeDistanceLimitM`). Tests added. |
 | T6 | Quick-return continuation overeager | W1.4 | ✅ 2026-06-12 — extracted to pure `QuickReturnPolicy`; "moved away" now also breaks on TRANSIT and on a meaningful on-foot excursion (gap WALK ≥ max(2×radius, 100 m)), so walk-and-transit round trips become separate visits. PROCESS_DEAD bridging (no gap segments) is unaffected. Locked by `QuickReturnPolicyTest` (12) + 3 wiring cases. |
-| T7 | Step-rate fusion misfires | W0.5 / W1.2 | ☐ |
+| T7 | Step-rate fusion misfires | W0.5 / W1.2 | ✅ 2026-06-12 — root cause was the cadence, not the thresholds: it was `totalSteps / bucketSpan`, so a 5-step / 2 s desk shuffle extrapolated to 150 spm → RUNNING. Extracted pure `StepRateCalculator` flooring the denominator at 30 s (burst → ~10 spm; real walk → ~108 spm; stillness → ~0). Locked by `StepRateCalculatorTest` (8). |
 | T8 | Place-match search radius fixed at 200m | W1.5 | ✅ 2026-06-11 — search radius already adaptive on GPS accuracy; also made the reachability gate honor the place's own footprint (`max(searchRadius, place.radiusM+buffer)`) so large venues match in good GPS. Tests added. |
 | T9 | Kalman reference doesn't reset on long travel | W1.1 | ✅ 2026-06-11 — already implemented (25km reanchor in `LocationKalmanFilter.filter()`); verified + locked with a re-anchor unit test. |
 | T10 | Visit dwell uses wrong timestamp | W1.4 | ✅ 2026-06-11 — departure now recorded at the last in-place sample (`lastInsideSampleAt`), not the exit-confirming sample that inflated dwell by the exit-hysteresis + walk-out. Test added. |

@@ -360,13 +360,8 @@ class PipelineConsumer @Inject constructor(
         try { ActivityType.valueOf(name) } catch (_: IllegalArgumentException) { null }
 
     private suspend fun computeStepRate(currentTimeMs: Long): Float? {
-        val windowMs = 60_000L
-        val recentSteps = pipelineGateway.stepBuckets(currentTimeMs - windowMs, currentTimeMs)
-        if (recentSteps.isEmpty()) return null
-        val totalSteps = recentSteps.sumOf { it.stepCount }
-        val spanMs = recentSteps.last().periodEnd - recentSteps.first().periodStart
-        if (spanMs <= 0) return null
-        return (totalSteps.toFloat() / spanMs) * 60_000f
+        val recentSteps = pipelineGateway.stepBuckets(currentTimeMs - StepRateCalculator.WINDOW_MS, currentTimeMs)
+        return StepRateCalculator.stepsPerMinute(recentSteps)
     }
 
     private fun mapToSamplingMotionState(
