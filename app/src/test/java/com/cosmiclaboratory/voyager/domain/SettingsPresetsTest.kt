@@ -41,6 +41,37 @@ class SettingsPresetsTest {
     }
 
     @Test
+    fun `every preset in the catalogue resolves to itself by id`() {
+        // Stronger than the hardcoded list above — covers any preset added later.
+        SettingsPresets.all.forEach { preset ->
+            assertEquals(
+                "forId(${preset.id}) must return that preset's settings",
+                preset.settings,
+                SettingsPresets.forId(preset.id)
+            )
+        }
+    }
+
+    @Test
+    fun `preset ids are unique`() {
+        val ids = SettingsPresets.all.map { it.id }
+        assertEquals("Duplicate preset ids would be masked by forId", ids.size, ids.toSet().size)
+    }
+
+    @Test
+    fun `every preset is a sane tracking profile`() {
+        SettingsPresets.all.forEach { p ->
+            val s = p.settings
+            assertTrue("${p.id}: displayName blank", p.displayName.isNotBlank())
+            assertTrue("${p.id}: description blank", p.description.isNotBlank())
+            assertTrue("${p.id}: minDwellMinutes must be positive", s.minDwellMinutes > 0)
+            assertTrue("${p.id}: placeRadiusM must be positive", s.placeRadiusM > 0)
+            assertTrue("${p.id}: raw retention out of range", s.rawSampleRetentionDays in 1..3650)
+            assertTrue("${p.id}: battery threshold out of range", s.batterySaverThresholdPct in 0..100)
+        }
+    }
+
+    @Test
     fun `presets are comprehensive — they differ across many fields`() {
         // The old bug: presets only changed ~5 values. Confirm presets now diverge
         // across the full behaviour surface.

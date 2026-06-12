@@ -540,11 +540,12 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 **How to travel-test:** First run; confirm foreground location first, background asked JIT, notification optional.
 **Flagship bar:** Value before permissions; JIT background request feels self-evident.
 
-### W8.3 — Persona pick (presets) · Status: [ ] verified  [ ] improved
+### W8.3 — Persona pick (presets) · Status: [x] verified (code-level) 2026-06-12  · [x] improved 2026-06-12 (catalogue integrity locked)
 **What it does:** Choose a persona that applies a settings preset.
-**Key functions / files:** `presentation/screen/onboarding/PersonaPickScreen.kt`+VM, `domain/model/SettingsPresets.kt`.
+**Key functions / files:** `presentation/screen/onboarding/PersonaPickScreen.kt`+VM, `domain/model/SettingsPresets.kt`, `SettingsRepository.applyPreset`.
 **How to travel-test:** Pick each persona; confirm defaults change accordingly.
 **Flagship bar:** One choice configures the app (ties to Part C B1/B2 5-persona model).
+**Verification (2026-06-12, code-level):** ✅ 11 presets, each a full `UserSettings` behaviour profile. Confirmed `applyPreset` (`SettingsRepositoryImpl`) writes **every field the presets vary** (sampling, dwell, radius, battery threshold, step/motion toggles, insights, retention, geocode toggle, polyline/marker display) — so a persona choice fully takes effect — and **deliberately omits identity/geocoding-provider keys** (home timezone, provider order), so switching a persona never clobbers the user's identity (matches the documented contract). Catalogue integrity locked: `SettingsPresetsTest` 4 → 7 cases (every preset resolves to itself by id, ids are unique, each is a sane profile — positive dwell/radius, retention 1–3650 d, battery threshold 0–100). Shared with **W9.2**.
 
 ### W8.4 — Feature walkthrough · Status: [ ] verified  [ ] improved
 **What it does:** One-time tour of core modules.
@@ -566,11 +567,12 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 **How to travel-test:** Change representative settings in each section; confirm they persist and take effect.
 **Flagship bar:** "Essentials + Everything" structure (see Part C B4); no setting is dead.
 
-### W9.2 — Presets / profiles · Status: [ ] verified  [ ] improved
+### W9.2 — Presets / profiles · Status: [x] verified (SettingsPresetsTest) 2026-06-12  · improved: n/a (sound)
 **What it does:** Apply preset bundles (battery-saver, commuter, traveler).
-**Key functions / files:** `SettingsPresets`, `SettingsViewModel.applyPreset`.
+**Key functions / files:** `domain/model/SettingsPresets.kt`, `SettingsRepository.applyPreset`, `SettingsViewModel.applyPreset`.
 **How to travel-test:** Apply a preset; confirm the bundle of settings changes coherently.
 **Flagship bar:** Presets are meaningful and reversible.
+**Verification (2026-06-12, code-level):** ✅ Same `SettingsPresets`/`applyPreset` core verified + locked under **W8.3** — `applyPreset` writes the full varied behaviour surface while preserving identity/geocoding-provider settings; catalogue integrity (resolve-by-id, unique ids, sane profiles) locked by `SettingsPresetsTest` (7 cases). "Reversible" = re-applying a different preset (or DAILY_COMMUTER for defaults) re-writes the same keys; an unknown id throws `IllegalArgumentException` rather than partially applying.
 
 ### W9.3 — Data management · Status: [ ] verified  [ ] improved
 **What it does:** Export/import settings, delete all data.
