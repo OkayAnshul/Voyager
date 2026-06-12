@@ -4,28 +4,36 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.cosmiclaboratory.voyager.domain.model.enums.CorrectionType
+import com.cosmiclaboratory.voyager.domain.usecase.CorrectionCalibration
 import com.cosmiclaboratory.voyager.storage.database.dao.CorrectionFeedbackDao
 import com.cosmiclaboratory.voyager.storage.database.dao.HealthLogDao
+import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
+import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
+import com.cosmiclaboratory.voyager.storage.database.entity.CorrectionFeedbackEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.HealthLogEntity
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
 /**
- * Processes accumulated correction_feedback to update calibration parameters.
+ * Processes accumulated correction_feedback into calibration adjustments.
  *
- * Examines unpropagated feedback entries and applies calibration adjustments:
- * - RENAME/RECATEGORIZE: updates place metadata confidence
- * - RECLASSIFY_SEGMENT: feeds into transport mode detection tuning
- * - CONFIRM: boosts place confidence
+ * Implemented slice — **place trust** ([CorrectionCalibration]): a CONFIRM / CONFIRM_VISIT /
+ * RENAME / RECATEGORIZE means the user validated a place's identity, so the place's confidence
+ * is raised toward a high floor (monotonic — only ever raises). Validated places then drop out
+ * of the review queue and decay from a high base.
  *
- * Marks feedback as propagated once processed.
+ * Other correction types (segment reclassification, place merge/split, time adjustments) are
+ * still consumed here but don't yet drive per-entry calibration; their aggregate calibration
+ * slices read from [CorrectionFeedbackDao.getByCorrectionTypeSince] (independent of the
+ * propagated flag), so marking entries propagated here doesn't lose them.
  */
 @HiltWorker
 class FeedbackCalibrationWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val correctionFeedbackDao: CorrectionFeedbackDao,
+    private val placeDao: PlaceDao,
+    private val visitDao: VisitDao,
     private val healthLogDao: HealthLogDao,
 ) : CoroutineWorker(context, params) {
 
@@ -36,52 +44,29 @@ class FeedbackCalibrationWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         return try {
             val unpropagated = correctionFeedbackDao.getUnpropagated()
-
             if (unpropagated.isEmpty()) {
-                logCompletion(processed = 0)
+                logCompletion(processed = 0, calibrated = 0)
                 return Result.success()
             }
 
             var processed = 0
+            var calibrated = 0
 
             for (feedback in unpropagated) {
                 try {
-                    when (feedback.correctionType) {
-                        CorrectionType.RENAME.name,
-                        CorrectionType.RECATEGORIZE.name,
-                        CorrectionType.CONFIRM.name -> {
-                            // These corrections affect place confidence and naming.
-                            // In a full implementation, this would update PlaceEvidenceEntity
-                            // fields like userConfirmationCount and categoryReasoningJson.
-                            processed++
-                        }
-                        CorrectionType.RECLASSIFY_SEGMENT.name -> {
-                            // Segment reclassification feeds into transport mode heuristic tuning.
-                            // This would update calibration weights in a config or evidence table.
-                            processed++
-                        }
-                        CorrectionType.MERGE_PLACE.name,
-                        CorrectionType.SPLIT_PLACE.name -> {
-                            // Place merge/split corrections affect clustering parameters.
-                            processed++
-                        }
-                        CorrectionType.DELETE_VISIT.name,
-                        CorrectionType.ADJUST_TIMES.name -> {
-                            // Time-based corrections affect visit detection thresholds.
-                            processed++
-                        }
-                        else -> {
-                            processed++
-                        }
+                    if (CorrectionCalibration.isPlaceTrustSignal(feedback.correctionType)) {
+                        if (applyPlaceTrustBoost(feedback)) calibrated++
                     }
-
+                    // Non-place-trust corrections are consumed without per-entry action yet —
+                    // their calibration slices aggregate via getByCorrectionTypeSince.
                     correctionFeedbackDao.markPropagated(feedback.feedbackId)
+                    processed++
                 } catch (e: Exception) {
-                    // Skip individual failures; they will be retried on the next run
+                    // Skip individual failures; they retry on the next run.
                 }
             }
 
-            logCompletion(processed = processed)
+            logCompletion(processed = processed, calibrated = calibrated)
             Result.success()
         } catch (e: Exception) {
             logFailure(e)
@@ -89,12 +74,30 @@ class FeedbackCalibrationWorker @AssistedInject constructor(
         }
     }
 
-    private suspend fun logCompletion(processed: Int) {
+    /** Raise the corrected place's confidence to the user-validated floor. Returns true if changed. */
+    private suspend fun applyPlaceTrustBoost(feedback: CorrectionFeedbackEntity): Boolean {
+        val placeId = resolvePlaceId(feedback) ?: return false
+        val place = placeDao.getById(placeId) ?: return false
+        val boosted = CorrectionCalibration.boostedConfidence(place.confidence)
+        if (boosted <= place.confidence) return false
+        placeDao.update(place.copy(confidence = boosted))
+        return true
+    }
+
+    /** The place a correction is about — directly for "place", via the visit for "visit". */
+    private suspend fun resolvePlaceId(feedback: CorrectionFeedbackEntity): Long? = when {
+        feedback.entityType.equals("place", ignoreCase = true) -> feedback.entityId.takeIf { it > 0 }
+        feedback.entityType.equals("visit", ignoreCase = true) ->
+            visitDao.getById(feedback.entityId)?.placeId?.takeIf { it != 0L }
+        else -> null
+    }
+
+    private suspend fun logCompletion(processed: Int, calibrated: Int) {
         healthLogDao.insert(
             HealthLogEntity(
                 eventType = HEALTH_EVENT_WORKER_COMPLETE,
                 eventAt = System.currentTimeMillis(),
-                detailsJson = """{"worker":"$WORK_NAME","processed":$processed}""",
+                detailsJson = """{"worker":"$WORK_NAME","processed":$processed,"calibrated":$calibrated}""",
             )
         )
     }

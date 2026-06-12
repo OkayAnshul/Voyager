@@ -336,14 +336,15 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 **Flagship bar:** Visibility toggles apply instantly everywhere; assignment is quick.
 **Verification (2026-06-12, code-level):** ✅ Sound — per-category visibility persisted to DataStore as JSON (defaults to all-visible), counts recomputed on change, show/hide-all + reset + assign all present. The serialize/deserialize round-trip is consistent (matching keys, true-defaults on missing) but uses Android's `org.json` (stubbed in plain unit tests) → an **instrumentation-test candidate**, not a JVM unit test. No change needed.
 
-### W4.6 — Correction feedback loop & calibration · Status: [ ] verified  ◐ improved — **learning half is a stub**
+### W4.6 — Correction feedback loop & calibration · Status: [ ] verified (device error-reduction test pending)  ◐ improved — first slice built, more to come
 **What it does:** Records user corrections and calibrates detection from them.
-**Key functions / files:** `domain/repository/CorrectionRepository`, `worker/FeedbackCalibrationWorker`.
-**How to travel-test:** Make several corrections of the same kind; over time confirm fewer of those errors recur.
+**Key functions / files:** `domain/repository/CorrectionRepository`, `domain/usecase/CorrectionCalibration.kt`, `worker/FeedbackCalibrationWorker`.
+**How to travel-test:** Confirm/rename a few low-confidence places; confirm they drop out of the review queue and stay out (don't re-prompt).
 **Flagship bar:** Measurable error reduction after corrections; calibration is conservative.
-**Verification (2026-06-12, code-level) — partial / real gap found:**
-> - ✅ **Immediate corrections work:** rename / recategorize / reclassify / merge apply right away through the repositories (verified in W4.1/W4.3, with the segment override locked by tests) and are recorded to `correction_feedback`.
-> - ❌ **Calibration (learning) is not built:** `FeedbackCalibrationWorker` reads unpropagated feedback and `markPropagated`s it, but **every branch is a no-op** (`processed++` with "in a full implementation…" comments). Nothing tunes detection from corrections, so the flagship "measurable error reduction" isn't met yet. Worse, it marks feedback **propagated** while doing nothing — so when real calibration ships it won't see the historical backlog. **Recommend a Part C backlog item** (build the calibration: place-confidence/category updates, transport-mode weight tuning) and, until then, consider *not* marking feedback propagated. Left unbuilt here — it's a subsystem, not a verify-card fix.
+**Status (2026-06-12) — first calibration slice landed (branch `w4.6-feedback-calibration`):**
+> - ✅ **Immediate corrections** already applied through the repositories (W4.1/W4.3) and recorded to `correction_feedback`.
+> - ✅ **Place-trust calibration (new):** `FeedbackCalibrationWorker` no longer no-ops — for CONFIRM / CONFIRM_VISIT / RENAME / RECATEGORIZE it raises the corrected place's confidence to a high floor (`CorrectionCalibration`, monotonic — only ever raises), so user-validated places leave the W4.4 review queue and decay (W2.7) from a high base. Pure policy locked by `CorrectionCalibrationTest` (4 cases). Resolves the earlier "marks propagated while doing nothing" concern: non-place-trust types are consumed here, but their future aggregate slices read via `getByCorrectionTypeSince` (propagated-flag-independent).
+> - ☐ **Remaining slices (Part C):** RECLASSIFY_SEGMENT → transport-mode weight tuning; MERGE/SPLIT_PLACE → clustering params; DELETE_VISIT/ADJUST_TIMES → visit-detection thresholds. These are heuristic-tuning subsystems, deferred.
 
 ### W4.7 — Evidence/confidence display & explanations · Status: [ ] verified (device sheet test pending)  [x] improved 2026-06-12
 **What it does:** Shows *why* a classification was made (the explainability moat).
