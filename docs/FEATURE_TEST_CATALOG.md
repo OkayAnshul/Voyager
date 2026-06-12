@@ -472,11 +472,14 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 **Flagship bar:** Photo permission asked JIT; correlation is accurate; feels like a story.
 **Verification (2026-06-12, code-level):** ✅ Correlation is sound — a photo pins to the visit whose `[arrival, departure]` window (open visit → end-of-day) contains its capture time; among overlapping visits a geotagged photo picks the spatially nearest place (`hasLocation` guards the EXIF `!!`, null centroids deprioritised) and an untagged one the tightest window. The story orders places by arrival and photos by capture time, omits photo-less visits, buckets out-of-window photos as `unplacedPhotos`, and `totalPhotoCount` counts all. Permission is reported via `hasPhotoPermission` (JIT on the screen). `BuildDayStoryUseCaseTest` 7 → 9 cases (added multi-photo/multi-place narrative ordering + photo-less-visit omission, and the "Unknown place" fallback). Photo enumeration is `MediaStorePhotoLibrary` (Android) → device-verify EXIF/`ACCESS_MEDIA_LOCATION`.
 
-### W6.8 — Workout recording · Status: [ ] verified  [ ] improved
+### W6.8 — Workout recording · Status: [x] verified (code-level) 2026-06-12  · [x] improved 2026-06-12
 **What it does:** Live-records a run/walk/cycle route with stats.
 **Key functions / files:** `domain/usecase/WorkoutRecorder.kt`, `WorkoutStatsCalculator`, `ActivityDao`.
 **How to travel-test:** Record a short run; confirm distance/pace and the saved route.
 **Flagship bar:** Strava-grade live stats; clean GPX-per-activity (ties to Part C D1 fitness subsystem).
+**Verification (2026-06-12, code-level):** ✅ `WorkoutRecorder` switches to the WORKOUT tier on `start`, accumulates plausible legs into live stats, persists an `ActivityEntity` (encoded polyline, day-key) and restores the prior tier on `stop`, discarding routes with < 2 points.
+> - **Improvement — saved distance now matches the live distance (glitch consistency):** `WorkoutStatsCalculator.summarize` (the authoritative save-time summary) added *every* leg's distance, gating only `maxSpeed` on plausibility — so a GPS glitch leg (~1 km in 100 ms) was dropped from peak speed but still **inflated the saved total distance**, disagreeing with the live number the user watched (the recorder already gates distance). Fixed `summarize` to drop implausible (> 50 m/s) and out-of-order (dt ≤ 0) legs from distance too, matching the recorder.
+> - **Tests:** `WorkoutStatsCalculatorTest` 3 → 5 (glitch excluded from distance, out-of-order leg contributes nothing) + `WorkoutRecorderTest` 2 → 3 (a glitch fix inflates neither live nor persisted distance; the two now agree).
 
 ## Wave 7 — Data portability
 

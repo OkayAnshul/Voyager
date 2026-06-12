@@ -14,7 +14,10 @@ object WorkoutStatsCalculator {
 
     /**
      * A single implausible jump (GPS glitch / tunnel re-acquire) shouldn't become a
-     * 300 m/s "max speed". Segment speeds above this are ignored for the peak.
+     * 300 m/s "max speed" — nor inflate the total distance. Legs whose implied speed exceeds
+     * this (or with a non-positive time delta) are dropped from both distance and peak speed,
+     * matching [WorkoutRecorder]'s live accumulation so the saved summary agrees with what the
+     * user watched.
      */
     private const val MAX_PLAUSIBLE_SPEED_MPS = 50f // ~180 km/h
 
@@ -26,15 +29,13 @@ object WorkoutStatsCalculator {
         for (i in 1 until points.size) {
             val prev = points[i - 1]
             val cur = points[i]
-            val segDist = LocationUtils.calculateDistance(prev.lat, prev.lng, cur.lat, cur.lng)
-            distance += segDist
             val dtMs = cur.timeMs - prev.timeMs
-            if (dtMs > 0) {
-                val segSpeed = LocationUtils.speedMps(segDist, dtMs)
-                if (segSpeed in 0f..MAX_PLAUSIBLE_SPEED_MPS && segSpeed > maxSpeed) {
-                    maxSpeed = segSpeed
-                }
-            }
+            if (dtMs <= 0) continue // can't validate an out-of-order / zero-duration leg
+            val segDist = LocationUtils.calculateDistance(prev.lat, prev.lng, cur.lat, cur.lng)
+            val segSpeed = LocationUtils.speedMps(segDist, dtMs)
+            if (segSpeed !in 0f..MAX_PLAUSIBLE_SPEED_MPS) continue // drop the glitch leg entirely
+            distance += segDist
+            if (segSpeed > maxSpeed) maxSpeed = segSpeed
         }
         val duration = points.last().timeMs - points.first().timeMs
         val avgSpeed = if (duration > 0) LocationUtils.speedMps(distance, duration) else 0f

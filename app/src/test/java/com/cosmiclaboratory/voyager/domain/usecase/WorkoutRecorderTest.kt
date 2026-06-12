@@ -68,4 +68,22 @@ class WorkoutRecorderTest {
         assertNull(activity)
         coVerify(exactly = 0) { activityDao.insert(any()) }
     }
+
+    @Test
+    fun `a glitch fix inflates neither the live nor the persisted distance`() = runTest {
+        val slot = slot<ActivityEntity>()
+        coEvery { activityDao.insert(capture(slot)) } returns 7L
+
+        recorder.start(WorkoutType.RUN, nowMs = 0L)
+        recorder.onLocation(0.0, 0.0, 0L)
+        recorder.onLocation(0.001, 0.0, 10_000L)   // ~111 m, plausible
+        val afterClean = recorder.liveStats.value!!.distanceMeters
+        recorder.onLocation(0.01, 0.0, 10_100L)    // ~1 km in 100 ms — glitch
+        val afterGlitch = recorder.liveStats.value!!.distanceMeters
+        assertEquals("glitch leg must not add to live distance", afterClean, afterGlitch, 0.001)
+
+        recorder.stop()
+        // The authoritative summarize now agrees with the live (plausible-only) distance.
+        assertEquals(afterClean, slot.captured.distanceMeters, 0.001)
+    }
 }
