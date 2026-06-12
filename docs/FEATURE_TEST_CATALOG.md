@@ -594,11 +594,12 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 **How to travel-test:** Open the paywall from a gated feature; confirm products render and the flow starts (full transaction blocked on Part C J1/J2).
 **Flagship bar:** Honest value framing; works on Play and degrades on F-Droid.
 
-### W10.2 — Entitlements & feature gating · Status: [ ] verified  [ ] improved
+### W10.2 — Entitlements & feature gating · Status: [x] verified (code-level) 2026-06-12  · improved: n/a (sound)
 **What it does:** Gates Pro features behind entitlement state.
-**Key functions / files:** `EntitlementViewModel` (`isPro`), `ProEntitlementManager`, `BillingGateway`.
+**Key functions / files:** `domain/billing/ProEntitlementManager.kt`, `EntitlementSource` (flavor-bound), `BillingModels` (`ProCatalog`), `EntitlementViewModel` (`isPro`).
 **How to travel-test:** Toggle entitlement (test path); confirm gated features lock/unlock consistently.
 **Flagship bar:** No gate leaks; restore works; consistent across screens.
+**Verification (2026-06-12, code-level):** ✅ Single app-wide `isPro` StateFlow that every gate observes (consistency by construction). Entitlement logic sound: `effectivePro = cached || (DEBUG && override)` so a **debug override can't grant Pro in release** (`BuildConfig.DEBUG` false), `setDebugProOverride` early-returns off-debug, and `isPro` is seeded from the DataStore cache so it resolves correctly offline on next launch — with the cache documented as a UX convenience the `play` `EntitlementSource` re-verifies (not a security boundary). No unit test added: this surface is DataStore + coroutine + `BuildConfig`-coupled, and there is **no pure gating-decision function** to lock — gated features observe `isPro` directly and `BillingModels` is declarative (product-ID constants + DTOs + `PurchaseFlowState`). End-to-end purchase/restore is blocked on Part C **J1/J2** and is instrumented/manual territory.
 
 ### W10.3 — Design system · Status: [ ] verified  [ ] improved
 **What it does:** Colors, gradients, spacing, shapes, motion, surfaces, components.
