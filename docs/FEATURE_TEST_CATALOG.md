@@ -483,11 +483,12 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 
 ## Wave 7 — Data portability
 
-### W7.1 — Export (Voyager JSON / KML / CSV / GPX) · Status: [ ] verified  [ ] improved
+### W7.1 — Export (Voyager JSON / KML / CSV / GPX) · Status: [x] verified (code-level) 2026-06-12  · [x] improved 2026-06-12 (PolylineEncoder locked)
 **What it does:** Exports a day/range in multiple formats.
-**Key functions / files:** `presentation/screen/export/ExportScreen.kt`+VM, `data/repository/ExportRepositoryImpl.kt`, `VoyagerJsonFormat`, `PolylineCodec`, `worker/ExportWorker`.
+**Key functions / files:** `presentation/screen/export/ExportScreen.kt`+VM, `data/repository/ExportRepositoryImpl.kt`, `VoyagerJsonFormat`, `PolylineCodec`, `domain/util/PolylineEncoder.kt`, `worker/ExportWorker`.
 **How to travel-test:** Export a range as GPX and JSON; open the files; confirm completeness.
 **Flagship bar:** Lossless round-trip; standards-valid GPX/KML.
+**Verification (2026-06-12, code-level):** ✅ Two route codecs verified standards-compliant against the **canonical Google encoded-polyline vector**: `PolylineCodec` (data-layer, used by the JSON export — already had `PolylineCodecTest`) and `PolylineEncoder` (domain util used by **6 call sites** — map/reconciler/segmenter/workout/GPX — and previously **untested**). Added `PolylineEncoderTest` (7 cases: canonical encode + decode, multi-hemisphere round-trip, empty, single point, `mergePolylines` concatenation, empty-merge). Privacy stripping is sound — `stripPolylineIf` decodes→rounds(~1.1 km)→re-encodes so redaction reaches route geometry, not just point coords. The format assemblers (`buildGpx`/`buildGeoJson`/`buildCsv`/`buildVoyagerJson`) and `ExportWorker` are DAO/coroutine-coupled → integration-test territory; standards-validity of the emitted GPX/KML → device/file verify.
 
 ### W7.2 — Import / restore · Status: [ ] verified  [ ] improved
 **What it does:** Restores from a Voyager JSON backup.
