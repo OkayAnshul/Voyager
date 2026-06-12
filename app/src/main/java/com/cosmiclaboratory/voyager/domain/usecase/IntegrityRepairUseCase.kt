@@ -67,27 +67,47 @@ class IntegrityRepairUseCase @Inject constructor(
                 if (seg.segmentType in stationaryTypes) continue
                 val visitDeparture = visit.departureAt!!
                 if (seg.startAt < visitDeparture && seg.endAt > visit.arrivalAt) {
-                    if (seg.startAt >= visit.arrivalAt && seg.endAt <= visitDeparture) {
-                        // Segment fully enclosed within visit — delete it
-                        movementSegmentDao.delete(seg)
-                        audit(
-                            "REPAIR_SEGMENT_DELETED",
-                            """{"segmentId":${seg.segmentId},"type":"${seg.segmentType}","reason":"enclosed within visit ${visit.visitId}"}"""
-                        )
-                    } else if (seg.startAt < visit.arrivalAt) {
-                        // Segment starts before visit — trim end
-                        movementSegmentDao.update(seg.copy(endAt = visit.arrivalAt))
-                        audit(
-                            "REPAIR_SEGMENT_TRIMMED",
-                            """{"segmentId":${seg.segmentId},"side":"end","oldEnd":${seg.endAt},"newEnd":${visit.arrivalAt}}"""
-                        )
-                    } else {
-                        // Segment ends after visit — trim start
-                        movementSegmentDao.update(seg.copy(startAt = visitDeparture))
-                        audit(
-                            "REPAIR_SEGMENT_TRIMMED",
-                            """{"segmentId":${seg.segmentId},"side":"start","oldStart":${seg.startAt},"newStart":$visitDeparture}"""
-                        )
+                    val enclosed = seg.startAt >= visit.arrivalAt && seg.endAt <= visitDeparture
+                    val spansVisit = seg.startAt < visit.arrivalAt && seg.endAt > visitDeparture
+                    when {
+                        enclosed -> {
+                            // Segment fully enclosed within visit — delete it
+                            movementSegmentDao.delete(seg)
+                            audit(
+                                "REPAIR_SEGMENT_DELETED",
+                                """{"segmentId":${seg.segmentId},"type":"${seg.segmentType}","reason":"enclosed within visit ${visit.visitId}"}"""
+                            )
+                        }
+                        spansVisit -> {
+                            // Segment straddles the whole visit — split it so the post-departure
+                            // travel isn't dropped (which would leave a timeline gap). Keep the
+                            // original as the pre-arrival half and insert a fresh post-departure
+                            // half; distance stays on the original to avoid inflating the total.
+                            val afterId = movementSegmentDao.insert(
+                                seg.copy(segmentId = 0, startAt = visitDeparture, distanceM = 0.0)
+                            )
+                            movementSegmentDao.update(seg.copy(endAt = visit.arrivalAt))
+                            audit(
+                                "REPAIR_SEGMENT_SPLIT",
+                                """{"segmentId":${seg.segmentId},"newSegmentId":$afterId,"visitId":${visit.visitId},"arrival":${visit.arrivalAt},"departure":$visitDeparture,"reason":"split around enclosed visit"}"""
+                            )
+                        }
+                        seg.startAt < visit.arrivalAt -> {
+                            // Segment starts before visit — trim end
+                            movementSegmentDao.update(seg.copy(endAt = visit.arrivalAt))
+                            audit(
+                                "REPAIR_SEGMENT_TRIMMED",
+                                """{"segmentId":${seg.segmentId},"side":"end","oldEnd":${seg.endAt},"newEnd":${visit.arrivalAt}}"""
+                            )
+                        }
+                        else -> {
+                            // Segment ends after visit — trim start
+                            movementSegmentDao.update(seg.copy(startAt = visitDeparture))
+                            audit(
+                                "REPAIR_SEGMENT_TRIMMED",
+                                """{"segmentId":${seg.segmentId},"side":"start","oldStart":${seg.startAt},"newStart":$visitDeparture}"""
+                            )
+                        }
                     }
                     fixed++
                 }

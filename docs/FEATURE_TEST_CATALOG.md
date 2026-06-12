@@ -355,11 +355,12 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 **Flagship bar:** Every row can answer "why did you say that?"; copy is human (see Part C C6).
 **Verification (2026-06-12, code-level):** ✅ Both explainability use cases now tested. `ExplainTimelineRowUseCase` already had `ExplainTimelineRowUseCaseTest`; added `BuildEvidenceSummaryUseCaseTest` (3 cases) for `BuildEvidenceSummaryUseCase` — maps stored signals into an `EvidenceBlock`, labels the explanation by the top activity vote, returns null when there's no evidence, and degrades gracefully on malformed JSON (no crash). The `EvidenceSheet` UI renders it → device-verify.
 
-### W4.8 — Integrity repair · Status: [ ] verified  [ ] improved
+### W4.8 — Integrity repair · Status: [x] verified (code-level) 2026-06-12  · [x] improved 2026-06-12
 **What it does:** Cleans orphaned visits, overlapping segments, stale candidates.
-**Key functions / files:** `domain/usecase/IntegrityRepairUseCase.kt`, `worker/IntegrityRepairWorker`.
+**Key functions / files:** `domain/usecase/IntegrityRepairUseCase.kt` (`repairDay`, `closeStaleVisits`), `worker/IntegrityRepairWorker`.
 **How to travel-test:** After crashes/imports, run/await repair; confirm no overlaps or orphans remain.
 **Flagship bar:** Self-healing; never shows contradictory data.
+**Verification (2026-06-12, code-level):** ✅ `repairDay` clamps overlapping visit departures to the next arrival and trims/deletes movement segments that collide with completed-visit windows; `closeStaleVisits` was already locked for the T3 dwell-truncation fix. Found + fixed one real hole: a movement segment **fully spanning a visit** hit the "starts-before → trim end" branch, which trimmed it to the visit arrival and **silently dropped the post-departure travel** — leaving a timeline gap (a "contradictory data" violation of the flagship bar). Now that case **splits** the segment (keep the pre-arrival half, insert a fresh post-departure half; distance stays on the original so the total isn't inflated). `IntegrityRepairUseCaseTest` extended to 11 cases (overlap clamp, enclosed-delete, trim-end, trim-start, span-split, stationary-untouched, clean-day no-op).
 
 ## Wave 5 — Insights & analytics (the "wow")
 
