@@ -360,9 +360,10 @@ class DetectVisitUseCaseTest {
         assertTrue("Expected Departed, got $result3", result3 is VisitDetectionResult.Departed)
     }
 
-    private fun movementSegment(type: String, startAt: Long, endAt: Long) = MovementSegmentEntity(
-        segmentType = type, startAt = startAt, endAt = endAt, dayKey = dayKey
-    )
+    private fun movementSegment(type: String, startAt: Long, endAt: Long, distanceM: Double = 0.0) =
+        MovementSegmentEntity(
+            segmentType = type, startAt = startAt, endAt = endAt, dayKey = dayKey, distanceM = distanceM
+        )
 
     // ── Scenario 11: Departure time is the last in-place sample, not the exit sample (T10) ──
 
@@ -447,6 +448,78 @@ class DetectVisitUseCaseTest {
 
         assertTrue("Expected a fresh candidate, got $result", result is VisitDetectionResult.CandidateStarted)
         // The prior visit is NOT reopened.
+        coVerify(exactly = 0) { visitDao.update(any()) }
+    }
+
+    @Test
+    fun `a long on-foot excursion within the window forces a new visit, not a continuation`() = runTest {
+        val now = System.currentTimeMillis()
+        val depTime = now - 600_000 // 10 min ago, within the window
+        coEvery { stateStore.getState() } returns emptyState.copy(
+            pendingVisitCandidate = null,
+            lastDepartedCentroidLat = baseLat,
+            lastDepartedCentroidLng = baseLng,
+            lastDepartureTime = depTime,
+            lastDepartedVisitId = 42L
+        )
+        // A 300 m walk (> 2 × the 80 m default radius) is a genuine excursion (T6).
+        coEvery { movementSegmentDao.getByDayKey(dayKey) } returns listOf(
+            movementSegment("WALK", startAt = depTime + 30_000, endAt = depTime + 300_000, distanceM = 300.0)
+        )
+
+        val result = useCase.processSample(sample(lat = baseLat, capturedAt = now), dayKey)
+
+        assertTrue("Expected a fresh candidate, got $result", result is VisitDetectionResult.CandidateStarted)
+        coVerify(exactly = 0) { visitDao.update(any()) }
+    }
+
+    @Test
+    fun `a brief step outside within the window still continues the previous visit`() = runTest {
+        val now = System.currentTimeMillis()
+        val depTime = now - 300_000 // 5 min ago
+        val arrival = now - 900_000
+        coEvery { stateStore.getState() } returns emptyState.copy(
+            pendingVisitCandidate = null,
+            lastDepartedCentroidLat = baseLat,
+            lastDepartedCentroidLng = baseLng,
+            lastDepartureTime = depTime,
+            lastDepartedVisitId = 42L
+        )
+        // A 40 m walk (below the 160 m threshold) is just stepping outside — not moved away.
+        coEvery { movementSegmentDao.getByDayKey(dayKey) } returns listOf(
+            movementSegment("WALK", startAt = depTime + 10_000, endAt = depTime + 60_000, distanceM = 40.0)
+        )
+        coEvery { visitDao.getById(42L) } returns VisitEntity(
+            visitId = 42L, placeId = 7L, arrivalAt = arrival, departureAt = depTime,
+            dwellMs = depTime - arrival, source = "LIVE_DETECTION", confidence = 0.7f,
+            dayKey = dayKey, centroidLat = baseLat, centroidLng = baseLng
+        )
+
+        val result = useCase.processSample(sample(lat = baseLat, capturedAt = now), dayKey)
+
+        assertTrue("Expected continuation, got $result", result is VisitDetectionResult.Accumulating)
+        coVerify { visitDao.update(match { it.departureAt == null && it.dwellMs == null }) }
+    }
+
+    @Test
+    fun `taking transit within the window forces a new visit, not a continuation`() = runTest {
+        val now = System.currentTimeMillis()
+        val depTime = now - 600_000
+        coEvery { stateStore.getState() } returns emptyState.copy(
+            pendingVisitCandidate = null,
+            lastDepartedCentroidLat = baseLat,
+            lastDepartedCentroidLng = baseLng,
+            lastDepartureTime = depTime,
+            lastDepartedVisitId = 42L
+        )
+        // A TRANSIT hop is unambiguous displacement away from the place (T6).
+        coEvery { movementSegmentDao.getByDayKey(dayKey) } returns listOf(
+            movementSegment("TRANSIT", startAt = depTime + 60_000, endAt = depTime + 240_000, distanceM = 1500.0)
+        )
+
+        val result = useCase.processSample(sample(lat = baseLat, capturedAt = now), dayKey)
+
+        assertTrue("Expected a fresh candidate, got $result", result is VisitDetectionResult.CandidateStarted)
         coVerify(exactly = 0) { visitDao.update(any()) }
     }
 }

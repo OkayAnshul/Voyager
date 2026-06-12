@@ -1,7 +1,6 @@
 package com.cosmiclaboratory.voyager.domain.usecase
 
 import com.cosmiclaboratory.voyager.domain.model.PendingVisitCandidate
-import com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
 import com.cosmiclaboratory.voyager.domain.model.enums.VisitSource
 import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import com.cosmiclaboratory.voyager.domain.util.LocationUtils
@@ -26,10 +25,6 @@ class DetectVisitUseCase @Inject constructor(
     private val settingsRepository: SettingsRepository
 ) {
     companion object {
-        /** Max time window to treat a return as continuation of the previous visit.
-         *  30 minutes covers typical 15-30 min PROCESS_DEAD gaps while the place radius
-         *  provides spatial gating to prevent false joins at nearby places. */
-        private const val RETURN_WINDOW_MS = 1_800_000L // 30 minutes
         /** Radius expansion factor after visit confirmation (prevents GPS jitter departures) */
         private const val CONFIRMED_RADIUS_MULTIPLIER = 1.2
         /** Grace period before Accumulating suppresses motion state in the pipeline.
@@ -39,15 +34,6 @@ class DetectVisitUseCase @Inject constructor(
         /** Known/matched places confirm faster than unknown ones — fraction of the
          *  user-configured min dwell applied to matched-place candidates. */
         private const val KNOWN_PLACE_DWELL_FRACTION = 2.0 / 3.0
-        /** Segment types that indicate a genuine displacement since the prior visit's
-         *  departure. If any of these closed inside the return window, we treat the
-         *  return as a new visit, not a continuation. */
-        private val MOVEMENT_SEGMENT_TYPES = setOf(
-            SegmentType.DRIVE.name,
-            SegmentType.CYCLE.name,
-            SegmentType.RUN.name,
-            SegmentType.FLIGHT.name
-        )
     }
 
     var consecutiveOutsideSamples = 0
@@ -223,30 +209,29 @@ class DetectVisitUseCase @Inject constructor(
             val depTime = state.lastDepartureTime
             val depVisitId = state.lastDepartedVisitId
             if (depLat != null && depLng != null && depTime != null) {
-                val timeSinceDeparture = sample.capturedAt - depTime
-                if (timeSinceDeparture > RETURN_WINDOW_MS) {
-                    // Window expired — clear memory, proceed with new candidate
-                    clearDepartureMemory()
-                } else {
-                    val distFromPrevious = LocationUtils.calculateDistance(
-                        depLat, depLng, sample.lat, sample.lng
-                    )
-                    // A genuine drive/cycle/run/flight between departure and now is hard
-                    // evidence that the user moved away — clearing the return memory
-                    // forces a fresh visit instead of resurrecting the prior one (which
-                    // would otherwise paper over a real round-trip detour).
-                    val movedAwayInWindow = movementSegmentDao
-                        .getByDayKey(dayKey)
-                        .any { seg ->
-                            seg.segmentType in MOVEMENT_SEGMENT_TYPES &&
-                                seg.endAt > depTime &&
-                                seg.endAt <= sample.capturedAt
-                        }
-                    if (movedAwayInWindow) {
-                        clearDepartureMemory()
-                    } else if (distFromPrevious <= placeRadiusM && depVisitId != null) {
+                val distFromPrevious = LocationUtils.calculateDistance(
+                    depLat, depLng, sample.lat, sample.lng
+                )
+                // Movement that closed during the departure→return gap. A motorised hop
+                // (drive/cycle/run/flight/transit) or a meaningful on-foot excursion is hard
+                // evidence the user genuinely moved away — see QuickReturnPolicy (T6).
+                val gapSegments = movementSegmentDao
+                    .getByDayKey(dayKey)
+                    .filter { it.endAt > depTime && it.endAt <= sample.capturedAt }
+                    .map { QuickReturnPolicy.GapSegment(it.segmentType, it.distanceM) }
+                val decision = QuickReturnPolicy.decide(
+                    timeSinceDepartureMs = sample.capturedAt - depTime,
+                    distFromPreviousM = distFromPrevious,
+                    placeRadiusM = placeRadiusM,
+                    hasPreviousVisit = depVisitId != null,
+                    gapSegments = gapSegments,
+                )
+                when (decision) {
+                    QuickReturnPolicy.Decision.CLEAR_MEMORY -> clearDepartureMemory()
+                    QuickReturnPolicy.Decision.KEEP_WAITING -> { /* retain memory; start fresh below */ }
+                    QuickReturnPolicy.Decision.CONTINUE -> {
                         // Quick return — reopen previous visit as continuation
-                        val previousVisit = visitDao.getById(depVisitId)
+                        val previousVisit = depVisitId?.let { visitDao.getById(it) }
                         if (previousVisit != null) {
                             visitDao.update(previousVisit.copy(departureAt = null, dwellMs = null))
                             stateStore.setLastConfirmedVisitId(depVisitId)
