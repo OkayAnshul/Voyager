@@ -436,11 +436,12 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 > - **Improvement — false-trip guard (flagship bar):** because `getAllDayKeys` only returns days *with* visits, any data gap mid-run was silently absorbed — a long blackout (e.g. phone off for ~3 weeks between two away-stays) fabricated **one continuous mega-trip**, claiming away-ness with no evidence. Added `MAX_ABSORBED_GAP_DAYS = 3`: a phone-off day or two still merges, but a longer blackout breaks the run so a later stay starts fresh (under-claim over over-claim). 
 > - **Tests:** `DetectTripsUseCaseTest` 7 → 11 cases (short-gap absorbed, long-blackout splits into two trips, unnamed-destination → "N-day trip" title, `detectAndStore` replaceAll).
 
-### W6.3 — Trip detail & PDF trip-book · Status: [ ] verified  [ ] improved
+### W6.3 — Trip detail & PDF trip-book · Status: [x] verified (BuildTripDetailUseCaseTest) 2026-06-12  · improved: n/a (sound)
 **What it does:** Day-by-day journal + photo-forward PDF export.
-**Key functions / files:** `presentation/screen/trips/TripDetailScreen.kt`+VM, `domain/model/TripDetail.kt`/`TripDay.kt`.
+**Key functions / files:** `domain/usecase/BuildTripDetailUseCase.kt`, `platform/export/TripBookPdfExporter.kt`, `presentation/screen/trips/TripDetailScreen.kt`+VM, `domain/model/Trip.kt` (`TripDetail`/`TripDay`).
 **How to travel-test:** Open a trip; export the book; confirm the PDF reads like a story (see Part C C3).
 **Flagship bar:** Polarsteps-quality book; captions/cover editable.
+**Verification (2026-06-12, code-level):** ✅ `BuildTripDetailUseCase` re-derives the day-by-day breakdown from visits (the trips table only stores the summary): days walked start→end, each active day's places sorted by arrival with `displayName()`/"Unknown place" fallback, per-day distance summed, **deleted visits excluded**, and **empty days omitted**. Locked by `BuildTripDetailUseCaseTest` (5 cases: unknown-id → null, arrival ordering + distance sum, gap-day omission, unresolved-place fallback, deleted-visit exclusion). `TripBookPdfExporter` renders this `TripDetail` (only trivial km formatting — no logic to extract); the screen + editable captions/cover are WIP → device-verify.
 
 ### W6.4 — Mileage log & tax classification · Status: [x] verified (code-level) 2026-06-12  · improved: n/a (sound)
 **What it does:** Lists DRIVE segments with business/personal/medical/charitable purpose.
@@ -574,11 +575,14 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 **Flagship bar:** Presets are meaningful and reversible.
 **Verification (2026-06-12, code-level):** ✅ Same `SettingsPresets`/`applyPreset` core verified + locked under **W8.3** — `applyPreset` writes the full varied behaviour surface while preserving identity/geocoding-provider settings; catalogue integrity (resolve-by-id, unique ids, sane profiles) locked by `SettingsPresetsTest` (7 cases). "Reversible" = re-applying a different preset (or DAILY_COMMUTER for defaults) re-writes the same keys; an unknown id throws `IllegalArgumentException` rather than partially applying.
 
-### W9.3 — Data management · Status: [ ] verified  [ ] improved
+### W9.3 — Data management · Status: [x] verified (SettingsBackupTest) 2026-06-12  · [x] improved 2026-06-12
 **What it does:** Export/import settings, delete all data.
-**Key functions / files:** `SettingsViewModel` (`exportData`, `exportSettings`, `importSettings`, `deleteAllData`).
+**Key functions / files:** `data/repository/SettingsBackup.kt`, `SettingsRepositoryImpl.exportSettings/importSettings`, `SettingsViewModel` (`exportData`, `deleteAllData`).
 **How to travel-test:** Export settings, change some, re-import; confirm restoration. Delete-all from a test profile.
 **Flagship bar:** Destructive actions confirmed; settings round-trip cleanly.
+**Verification (2026-06-12, code-level):** Found + fixed a real import bug and locked the codec:
+> - **Bug — value-shape typing could abort the whole import:** import inferred a value's type from its shape (`"true"` ⇒ Boolean, digits ⇒ Int) then cast to the key's type, so a string-typed setting whose value looked boolean/numeric threw `ClassCastException` and (via `runCatching`) failed the **entire** restore. Typing is now **key-driven** via pure `SettingsBackup.coerce` (the key decides the type), and import is **per-line resilient** — an unknown key or unparseable value skips that line instead of aborting. Locked by `SettingsBackupTest` (7 cases incl. the "string value that looks boolean/numeric stays a String" regression, URL-with-`=`, strict-bool, unknown-key skip).
+> - **Known limitation (documented, not fixed here):** `exportSettings` dumps every stored preference but `importSettings` restores only the ~18 keys in `SettingsBackup.KEY_TYPES`, so a backup→restore round trip is lossy. Widening it wants a typed key registry (follow-up) rather than a hand-maintained map. Delete-all is a confirmed destructive action in the (WIP) screen → device-verify.
 
 ### W9.4 — Per-section config behaviors · Status: [ ] verified  [ ] improved
 **What it does:** The individual toggles actually change engine behavior.

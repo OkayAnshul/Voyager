@@ -288,17 +288,13 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 
     override suspend fun importSettings(json: String): Result<Unit> = runCatching {
-        val lines = json.lines().filter { it.contains("=") }
-        // Atomic batch write — partial import on crash is impossible
+        // Atomic batch write — partial import on crash is impossible. Typing is driven by the
+        // key (SettingsBackup), not the value's shape, so a string setting that looks numeric
+        // can't crash the import; unknown keys / unparseable values skip that one line.
         dataStore.edit { prefs ->
-            for (line in lines) {
-                val key = line.substringBefore("=").trim()
-                val value = line.substringAfter("=").trim()
-                when {
-                    value == "true" || value == "false" -> applyPref(prefs, key, value.toBoolean())
-                    value.toIntOrNull() != null -> applyPref(prefs, key, value.toInt())
-                    else -> applyPref(prefs, key, value)
-                }
+            for (line in SettingsBackup.parseLines(json)) {
+                val value = SettingsBackup.coerce(line.key, line.rawValue) ?: continue
+                applyPref(prefs, line.key, value)
             }
         }
     }
