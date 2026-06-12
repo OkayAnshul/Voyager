@@ -53,6 +53,7 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 > - **F5 ✅** Extracted the dedup/sanity logic into pure `SampleAdmissionGate` and added `SampleAdmissionGateTest` (11 cases incl. concurrency) → contributes to Part C **K2**.
 > - **F6 ✅ (found during F5):** dedup accepted *equal* timestamps, so the same fix delivered by both active+passive callbacks could pass twice. Fixed to strictly-greater (`getAndUpdate`); concurrent same-timestamp admits now accept exactly one.
 > - **F1 / F2 (low, accepted):** out-of-order-within-10min fixes are dropped as duplicates (documented in a test), and the cold-start seed race is covered downstream by `QualityScorer` staleness. Left as-is — low risk, defense-in-depth exists.
+> - **T15 ✅ (2026-06-12 — spoof detection beyond the OS flag):** `Location.isFromMockProvider` only catches the official mock-location API; rooted-device injectors feed coordinates without it. Added a pure `SpoofHeuristics` (in `pipeline/stage`) that flags **teleportation** — a jump from the last accepted fix that implies a physically impossible speed (> ~340 m/s ≈ Mach 1, above any commercial jet). Wired into `PipelineConsumer` right after dedup and **before Kalman** (so a spoofed point can't corrupt the filter's reference) — implausible jumps are dropped like a mock fix. Conservative by design: only fires inside continuous tracking (1 s–10 min deltas; large deltas are treated as legit travel-while-untracked) and above a 1 km jump floor, so real flights and GPS jitter are never flagged. Locked by `SpoofHeuristicsTest` (8 cases: teleport, cruise-speed flight, gap straddle, sub-second/negative deltas, jitter floor, ceiling boundary). Doubles as gross-glitch rejection. See Part B.
 
 ### W0.2 — Adaptive sampling & battery tiers · Status: [ ] verified (device drain-test pending)  [x] improved 2026-06-10
 **What it does:** Scales GPS frequency to motion state and a battery budget.
@@ -125,9 +126,9 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 
 ### W1.1 — Pipeline: normalize → dedup → Kalman → quality · Status: [ ] verified (device intercity test pending)  [x] improved 2026-06-11
 **What it does:** Cleans each raw sample before segmentation.
-**Key functions / files:** `pipeline/stage/SampleNormalizer.kt`, `DedupSuppressor.kt` (accuracy-aware jitter), `LocationKalmanFilter.kt` (4-state, 25km auto-anchor), `QualityScorer.kt`, orchestrated by `pipeline/PipelineConsumer.kt`.
+**Key functions / files:** `pipeline/stage/SampleNormalizer.kt`, `DedupSuppressor.kt` (accuracy-aware jitter), `SpoofHeuristics.kt` (teleport gate), `LocationKalmanFilter.kt` (4-state, 25km auto-anchor), `QualityScorer.kt`, orchestrated by `pipeline/PipelineConsumer.kt`.
 **How to travel-test:** Drive across a city, then a long intercity leg; check the route is smooth, not jittery, and bearings look right after the long leg (see T9).
-**Flagship bar:** No GPS-jitter zigzag; Kalman reference resets on long travel; mock/low-accuracy fixes rejected.
+**Flagship bar:** No GPS-jitter zigzag; Kalman reference resets on long travel; mock/spoofed/low-accuracy fixes rejected (see T15).
 **Verification (2026-06-11, code-level — device intercity test pending):** ✅ All four stages sound: normalize (7-dp round, speed clamp, bearing), dedup (out-of-order reject + accuracy-aware noise floor), quality (mock / `>200m` / motion-aware staleness / score bands), Kalman (4-state, Joseph-form covariance for multi-day numerical stability, 25km reanchor, 300s-gap reset). Added **4 test files (~19 cases)** — the stages previously had only an integration test (contributes to Part C **K2**).
 > - **T9 ✅ — already implemented** (`referenceResetDistanceM = 25_000` + long-haul reanchor in `filter()`); now locked with a `LocationKalmanFilter` re-anchor test. See Part B.
 > - **Tiny fix:** `SampleNormalizer` bearing used `% 360`, which keeps the sign for negatives; now normalized to `[0,360)`.
@@ -612,7 +613,7 @@ Each cross-links to the Part A wave it degrades. Source: `~/.claude/plans/yes-fi
 | T12 | BatteryBudgetController computed but never applied | W0.2 | ✅ 2026-06-10 — worker applies + is scheduled (6h) + live re-apply on next motion transition; now also **surfaces** the downgrade to the user via `showTrackingAlert` (was silent, violating the controller's contract). UI to *enable* a budget = F2 (planned). |
 | T13 | FLIGHT threshold 200 m/s misses takeoff/landing | W1.3 | ✅ 2026-06-11 — already fixed (sustained ≥80 m/s ×2 trigger alongside the 200 m/s single-sample bar); now locked with cruise + sustained tests. |
 | T14 | No place-confidence decay | W2.7 | ✅ — already implemented: pure tested `PlaceConfidenceDecay` applied daily by `ConfidenceDecayWorker` (scheduled 03:30, wired into `scheduleAll`), revisits re-bump. Verified, no change needed. |
-| T15 | isMock catches only API-flagged spoofers | W0.1 | ☐ |
+| T15 | isMock catches only API-flagged spoofers | W0.1 | ✅ 2026-06-12 — added pure `SpoofHeuristics` (teleport / physically-impossible-speed gate, > ~340 m/s within continuous tracking) wired into `PipelineConsumer` before Kalman; complements `isFromMockProvider` to catch non-API injectors. Conservative (gap-aware, 1 km jump floor) so real flights/jitter never trip. Locked by `SpoofHeuristicsTest` (8). |
 | I1 | 3 remaining `!!` in screen code (ship-blocker) | W3.x / W9.1 | ☐ |
 
 > Note: several T-items may already be resolved/merged in the source logbook — confirm

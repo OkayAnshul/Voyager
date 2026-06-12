@@ -171,6 +171,20 @@ class PipelineConsumer @Inject constructor(
         // 2a. Dedup on RAW data (before Kalman shift)
         if (dedupSuppressor.shouldSuppress(normalized)) return
 
+        // 2a-bis. Anti-spoof: a physically-impossible jump from the last accepted fix is a
+        // spoofer that doesn't set the mock-provider flag (or a gross GPS glitch). Drop it on
+        // the RAW position and before Kalman, so it can't corrupt the filter's reference (T15).
+        lastAcceptedSample?.let { prev ->
+            if (SpoofHeuristics.isImplausibleJump(
+                    SpoofHeuristics.Fix(prev.lat, prev.lng, prev.capturedAt),
+                    SpoofHeuristics.Fix(normalized.lat, normalized.lng, normalized.capturedAt)
+                )
+            ) {
+                logger.d("PipelineConsumer", "Discarded sample: implausible jump (likely spoof)")
+                return
+            }
+        }
+
         // 2b. Kalman filter
         val filtered = kalmanFilter.filter(normalized.lat, normalized.lng, normalized.accuracyM, normalized.capturedAt)
         val smoothed = normalized.copy(
