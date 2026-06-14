@@ -1,5 +1,6 @@
 package com.cosmiclaboratory.voyager.pipeline
 
+import com.cosmiclaboratory.voyager.domain.model.AccelSignature
 import com.cosmiclaboratory.voyager.domain.model.UserSettings
 import com.cosmiclaboratory.voyager.domain.model.enums.ActivityType
 import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
@@ -252,5 +253,57 @@ class FuseActivityStateUseCaseTest {
         // No vehicle context ever armed → cycling speed classifies as cycling.
         val result = useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 5.0f, stepRatePerMinute = null)
         assertEquals(ActivityType.CYCLING, result.activityType)
+    }
+
+    // ── Accelerometer signature fusion (C2) ──
+
+    @Test
+    fun `accel ON_FOOT votes walking when no other signal speaks`() {
+        val result = useCase.fuse(
+            arActivity = null, arConfidence = 0f, speedMps = null, stepRatePerMinute = null,
+            accelSignature = AccelSignature.ON_FOOT,
+        )
+        assertEquals(ActivityType.WALKING, result.activityType)
+    }
+
+    @Test
+    fun `accel STILL votes still`() {
+        val result = useCase.fuse(
+            arActivity = null, arConfidence = 0f, speedMps = null, stepRatePerMinute = null,
+            accelSignature = AccelSignature.STILL,
+        )
+        assertEquals(ActivityType.STILL, result.activityType)
+    }
+
+    @Test
+    fun `accel SMOOTH_MOTION stays silent so a cyclist is not pushed to vehicle`() {
+        // Cycling-band speed + "riding" accel must remain CYCLING — SMOOTH_MOTION can't tell
+        // cycling from driving, so it never votes.
+        val result = useCase.fuse(
+            arActivity = null, arConfidence = 0f, speedMps = 5.0f, stepRatePerMinute = null,
+            accelSignature = AccelSignature.SMOOTH_MOTION,
+        )
+        assertEquals(ActivityType.CYCLING, result.activityType)
+    }
+
+    @Test
+    fun `accel striding clears a previously armed vehicle context`() {
+        useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 15.0f, stepRatePerMinute = null) // arm vehicle
+        useCase.fuse(
+            arActivity = null, arConfidence = 0f, speedMps = null, stepRatePerMinute = null,
+            accelSignature = AccelSignature.ON_FOOT, // striding clears it
+        )
+        val result = useCase.fuse(arActivity = null, arConfidence = 0f, speedMps = 5.0f, stepRatePerMinute = null)
+        assertEquals(ActivityType.CYCLING, result.activityType)
+    }
+
+    @Test
+    fun `accel votes are gated by the motion-detection setting`() {
+        settingsFlow.value = UserSettings(motionDetectionEnabled = false)
+        val result = useCase.fuse(
+            arActivity = null, arConfidence = 0f, speedMps = null, stepRatePerMinute = null,
+            accelSignature = AccelSignature.ON_FOOT,
+        )
+        assertEquals(ActivityType.UNKNOWN, result.activityType)
     }
 }

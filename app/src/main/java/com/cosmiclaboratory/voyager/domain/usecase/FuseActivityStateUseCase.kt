@@ -1,5 +1,6 @@
 package com.cosmiclaboratory.voyager.domain.usecase
 
+import com.cosmiclaboratory.voyager.domain.model.AccelSignature
 import com.cosmiclaboratory.voyager.domain.model.UserCalibrationProfile
 import com.cosmiclaboratory.voyager.domain.model.enums.ActivityType
 import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
@@ -34,7 +35,8 @@ class FuseActivityStateUseCase @Inject constructor(
         speedMps: Float?,
         stepRatePerMinute: Float?,
         calibration: UserCalibrationProfile = UserCalibrationProfile(),
-        accuracyM: Float? = null
+        accuracyM: Float? = null,
+        accelSignature: AccelSignature? = null
     ): FusedMotionState {
         // Validate GPS speed against accuracy — poor accuracy produces phantom speed spikes.
         // Real data showed 24.67 m/s "speed" on stationary segments with ~13m avg accuracy.
@@ -106,7 +108,10 @@ class FuseActivityStateUseCase @Inject constructor(
             stepActivity == ActivityType.WALKING || stepActivity == ActivityType.RUNNING ||
                 effectiveArActivity == ActivityType.WALKING ||
                 effectiveArActivity == ActivityType.RUNNING ||
-                effectiveArActivity == ActivityType.ON_BICYCLE ->
+                effectiveArActivity == ActivityType.ON_BICYCLE ||
+                // Accel says striding (C2) — you're on foot, not riding. Safe to clear; cycling
+                // reads SMOOTH_MOTION (non-striding), so a real cyclist never trips this.
+                accelSignature == AccelSignature.ON_FOOT ->
                 inVehicleContext = false
             // else: hold context through ambiguous slow patches / brief stops
         }
@@ -134,6 +139,18 @@ class FuseActivityStateUseCase @Inject constructor(
                 candidates[it] = (candidates[it] ?: 0f) + stepConf * calibration.stepRateWeight
             }
         }
+        // Accelerometer signature (C2) — only its unambiguous directions vote: striding ⇒ on
+        // foot, near-zero ⇒ still. SMOOTH_MOTION is deliberately silent (it can't tell cycling
+        // from driving), so a cyclist is never pushed toward a wrong mode.
+        if (settings.motionDetectionEnabled) {
+            when (accelSignature) {
+                AccelSignature.ON_FOOT ->
+                    candidates[ActivityType.WALKING] = (candidates[ActivityType.WALKING] ?: 0f) + ACCEL_VOTE
+                AccelSignature.STILL ->
+                    candidates[ActivityType.STILL] = (candidates[ActivityType.STILL] ?: 0f) + ACCEL_VOTE
+                else -> {} // SMOOTH_MOTION / null — no vote
+            }
+        }
 
         val best = candidates.maxByOrNull { it.value }
         // Require minimum weighted confidence to avoid noise-driven classifications.
@@ -152,5 +169,8 @@ class FuseActivityStateUseCase @Inject constructor(
     private companion object {
         /** Above bike top-speed → unambiguously driving; arms the vehicle context. */
         const val VEHICLE_CONTEXT_SPEED_MPS = 8.5f
+        /** Weight of an unambiguous accelerometer vote (ON_FOOT / STILL). Meaningful but below
+         *  the pedometer's clear-band confidence so steps still lead when both speak. */
+        const val ACCEL_VOTE = 0.5f
     }
 }
