@@ -10,6 +10,7 @@ import com.cosmiclaboratory.voyager.domain.usecase.DetectVisitUseCase
 import com.cosmiclaboratory.voyager.domain.usecase.FuseActivityStateUseCase
 import com.cosmiclaboratory.voyager.domain.usecase.MatchPlaceLiveUseCase
 import com.cosmiclaboratory.voyager.domain.usecase.VisitDetectionResult
+import com.cosmiclaboratory.voyager.domain.usecase.WorkoutRecorder
 import com.cosmiclaboratory.voyager.domain.util.LocationUtils
 import com.cosmiclaboratory.voyager.pipeline.stage.*
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
@@ -46,6 +47,7 @@ class PipelineConsumer @Inject constructor(
     private val stateCommitter: StateCommitter,
     private val pipelineGateway: PipelineGateway,
     private val detectVisitUseCase: DetectVisitUseCase,
+    private val workoutRecorder: WorkoutRecorder,
     private val matchPlaceLiveUseCase: MatchPlaceLiveUseCase,
     private val adaptiveSamplingPolicy: AdaptiveSamplingPolicy,
     private val locationCapture: LocationCapture,
@@ -243,6 +245,10 @@ class PipelineConsumer @Inject constructor(
             homeTimeZone = daySettings.homeTimeZone,
             sampleTimeZone = smoothed.localTimeZone
         )
+
+        // Feed an active workout recording with the cleaned (Kalman-smoothed, deduped,
+        // spoof-checked) fix. No-op unless a workout is in progress (WorkoutRecorder guards it).
+        workoutRecorder.onLocation(smoothed.lat, smoothed.lng, smoothed.capturedAt)
 
         // 5. Displacement-based movement detection
         val prevSample = lastAcceptedSample
