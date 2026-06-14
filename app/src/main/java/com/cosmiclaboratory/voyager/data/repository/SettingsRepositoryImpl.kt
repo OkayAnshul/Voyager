@@ -288,37 +288,14 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 
     override suspend fun importSettings(json: String): Result<Unit> = runCatching {
-        // Atomic batch write — partial import on crash is impossible. Typing is driven by the
-        // key (SettingsBackup), not the value's shape, so a string setting that looks numeric
-        // can't crash the import; unknown keys / unparseable values skip that one line.
+        // Atomic batch write — partial import on crash is impossible. SettingsBackup drives
+        // typing by the key (not the value's shape) and reconstructs each DataStore key from
+        // its name + type, so the full settings surface round-trips; unknown keys / unparseable
+        // values skip that one line rather than aborting the restore.
         dataStore.edit { prefs ->
             for (line in SettingsBackup.parseLines(json)) {
-                val value = SettingsBackup.coerce(line.key, line.rawValue) ?: continue
-                applyPref(prefs, line.key, value)
+                SettingsBackup.applyTo(prefs, line.key, line.rawValue)
             }
-        }
-    }
-
-    private fun applyPref(prefs: MutablePreferences, key: String, value: Any) {
-        when (key) {
-            "tracking_enabled" -> prefs[TRACKING_ENABLED] = value as Boolean
-            "sampling_preset" -> prefs[SAMPLING_PRESET] = value as String
-            "min_dwell_minutes" -> prefs[MIN_DWELL_MINUTES] = value as Int
-            "place_radius_m" -> prefs[PLACE_RADIUS_M] = value as Int
-            "day_boundary_mode" -> prefs[DAY_BOUNDARY_MODE] = value as String
-            "home_timezone" -> prefs[HOME_TIMEZONE] = value as String
-            "sleep_detection_enabled" -> prefs[SLEEP_DETECTION_ENABLED] = value as Boolean
-            "step_counting_enabled" -> prefs[STEP_COUNTING_ENABLED] = value as Boolean
-            "active_preset" -> prefs[ACTIVE_PRESET] = value as String
-            "active_job" -> prefs[ACTIVE_JOB] = value as String
-            "battery_saver_threshold" -> prefs[BATTERY_SAVER_THRESHOLD] = value as Int
-            "auto_geocode_new_places" -> prefs[AUTO_GEOCODE] = value as Boolean
-            "daily_insights_enabled" -> prefs[DAILY_INSIGHTS_ENABLED] = value as Boolean
-            "weekly_insights_enabled" -> prefs[WEEKLY_INSIGHTS_ENABLED] = value as Boolean
-            "raw_sample_retention_days" -> prefs[RAW_RETENTION_DAYS] = value as Int
-            "show_route_polylines" -> prefs[SHOW_ROUTE_POLYLINES] = value as Boolean
-            "show_visit_markers" -> prefs[SHOW_VISIT_MARKERS] = value as Boolean
-            "photon_server_url" -> prefs[PHOTON_SERVER_URL] = value as String
         }
     }
 }
