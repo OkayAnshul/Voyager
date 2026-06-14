@@ -679,7 +679,7 @@ its own P0–P3 roadmap. IDs are 1:1 with that doc.
 
 ### P2 — Differentiators & depth (each its own plan)
 - **D1** Fitness/workout subsystem (unblocks Athlete persona; extends W6.8)
-- **C1** POI prior into confirmation · **C2** Accelerometer signature · **C3** Trip storytelling depth · **C5** Offline tiles + camera persistence · **C4** "On this day"
+- **C1** POI prior into confirmation · **C2** Accelerometer signature ✅ 2026-06-14 (pure `AccelSignatureClassifier` + fusion vote + burst-sampling `AccelCapture`; ON_FOOT/STILL vote, SMOOTH_MOTION silent so cyclists aren't misread; device-verify) · **C3** Trip storytelling depth · **C5** Offline tiles + camera persistence · **C4** "On this day"
 - **A8** Iconography & illustration set · **B5** Progressive Insights tabs · **B6** Privacy-first modifier · **B8** Internationalization · **L1** Geocoding quality · **L2** Category-inference quality
 - **D4** OSM contribution loop · **D2** Family one-bit handshake ⊘ _(security review)_ · **D3** Duress mode / panic-wipe ⊘ _(security review)_
 
