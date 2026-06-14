@@ -52,4 +52,26 @@ class PlaceConfidenceDecayTest {
         val out = PlaceConfidenceDecay.decay(0.9f, visited, now)
         assertTrue(out >= PlaceConfidenceDecay.FLOOR)
     }
+
+    // ── Repeatability resists decay (C1) ──
+
+    @Test
+    fun `a recurring place keeps its confidence where a one-off would decay`() {
+        val visited = now - 365 * msPerDay // 185 days past the base grace
+        val oneOff = PlaceConfidenceDecay.decay(0.9f, visited, now, repeatability = 0f)
+        val recurring = PlaceConfidenceDecay.decay(0.9f, visited, now, repeatability = 1f)
+        // The one-off decays to the floor; the recurring place's extended grace spares it.
+        assertEquals(PlaceConfidenceDecay.FLOOR, oneOff, 0.0001f)
+        assertEquals(0.9f, recurring, 0.0001f)
+    }
+
+    @Test
+    fun `a recurring place has a raised floor`() {
+        val visited = now - 5000L * msPerDay // far past any grace
+        val recurring = PlaceConfidenceDecay.decay(0.65f, visited, now, repeatability = 1f)
+        // 0.65 sits below the raised floor (~0.7), so it's preserved, not decayed.
+        assertEquals(0.65f, recurring, 0.0001f)
+        // Same place treated as a one-off would have decayed below 0.65.
+        assertTrue(PlaceConfidenceDecay.decay(0.65f, visited, now, repeatability = 0f) < 0.65f)
+    }
 }

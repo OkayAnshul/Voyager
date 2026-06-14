@@ -18,21 +18,31 @@ object PlaceConfidenceDecay {
     const val DAILY_MULTIPLIER = 0.99
     /** Decay never carries confidence below this — preserves the "known place" signal. */
     const val FLOOR = 0.4f
+    /** A fully-recurring place ([repeatability]=1) earns up to this many extra grace days. */
+    const val REPEAT_GRACE_BONUS_DAYS = 365
+    /** …and a raised floor, so a regular haunt never decays toward "maybe real". */
+    const val REPEAT_FLOOR_MAX = 0.7f
     private const val MS_PER_DAY = 86_400_000L
 
     /**
      * @param currentConfidence the place's current stored confidence.
      * @param lastVisitedAt epoch-millis of the most recent visit; null = never visited.
      * @param now epoch-millis right now (parameterised for testability).
-     * @return the decayed confidence, clamped to [FLOOR, currentConfidence].
+     * @param repeatability 0–1 recurring-haunt score ([PlaceRepeatability]); a higher score
+     *        extends the grace period and raises the floor so regular places resist decay (C1).
+     *        Defaults to 0 — identical to the original behaviour.
+     * @return the decayed confidence, clamped to [effective floor, currentConfidence].
      */
-    fun decay(currentConfidence: Float, lastVisitedAt: Long?, now: Long): Float {
-        if (currentConfidence <= FLOOR) return currentConfidence
+    fun decay(currentConfidence: Float, lastVisitedAt: Long?, now: Long, repeatability: Float = 0f): Float {
+        val repeat = repeatability.coerceIn(0f, 1f)
+        val floor = FLOOR + repeat * (REPEAT_FLOOR_MAX - FLOOR)
+        if (currentConfidence <= floor) return currentConfidence
         if (lastVisitedAt == null) return currentConfidence
         val ageDays = (now - lastVisitedAt) / MS_PER_DAY
-        val decayDays = ageDays - GRACE_DAYS
+        val grace = GRACE_DAYS + (repeat * REPEAT_GRACE_BONUS_DAYS).toInt()
+        val decayDays = ageDays - grace
         if (decayDays <= 0) return currentConfidence
         val factor = DAILY_MULTIPLIER.pow(decayDays.toDouble()).toFloat()
-        return (currentConfidence * factor).coerceAtLeast(FLOOR)
+        return (currentConfidence * factor).coerceAtLeast(floor)
     }
 }

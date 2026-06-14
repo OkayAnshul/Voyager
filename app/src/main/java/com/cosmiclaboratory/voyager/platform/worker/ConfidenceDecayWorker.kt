@@ -5,8 +5,10 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.cosmiclaboratory.voyager.domain.usecase.PlaceConfidenceDecay
+import com.cosmiclaboratory.voyager.domain.usecase.PlaceRepeatability
 import com.cosmiclaboratory.voyager.storage.database.dao.HealthLogDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
+import com.cosmiclaboratory.voyager.storage.database.dao.PlaceRollupDao
 import com.cosmiclaboratory.voyager.storage.database.entity.HealthLogEntity
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -24,6 +26,7 @@ class ConfidenceDecayWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val placeDao: PlaceDao,
+    private val placeRollupDao: PlaceRollupDao,
     private val healthLogDao: HealthLogDao,
 ) : CoroutineWorker(context, params) {
 
@@ -39,10 +42,16 @@ class ConfidenceDecayWorker @AssistedInject constructor(
             val places = placeDao.getAllActive()
             var decayed = 0
             for (place in places) {
+                // Recurring places resist decay (C1) — a weekly haunt keeps its trust.
+                val rollup = placeRollupDao.getByPlaceId(place.placeId)
+                val repeatability = if (rollup != null) {
+                    PlaceRepeatability.score(rollup.totalVisitCount, rollup.visitCountLast30d)
+                } else 0f
                 val newConfidence = PlaceConfidenceDecay.decay(
                     currentConfidence = place.confidence,
                     lastVisitedAt = place.lastVisitedAt,
-                    now = now
+                    now = now,
+                    repeatability = repeatability
                 )
                 if (abs(newConfidence - place.confidence) >= MIN_DELTA) {
                     placeDao.update(place.copy(confidence = newConfidence))
