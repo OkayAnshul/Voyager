@@ -35,6 +35,7 @@ class LocationCaptureService : Service() {
     @Inject lateinit var locationCapture: LocationCapture
     @Inject lateinit var activityCapture: ActivityCapture
     @Inject lateinit var stepCapture: StepCapture
+    @Inject lateinit var accelCapture: com.cosmiclaboratory.voyager.capture.AccelCapture
     @Inject lateinit var coordinator: TrackingRuntimeCoordinator
     @Inject lateinit var notificationManager: VoyagerNotificationManager
     @Inject lateinit var settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
@@ -95,6 +96,7 @@ class LocationCaptureService : Service() {
             locationCapture.start(sessionId)
             if (settings.activityRecognitionEnabled) activityCapture.start(sessionId)
             if (settings.stepCountingEnabled) stepCapture.start(sessionId)
+            if (settings.motionDetectionEnabled) accelCapture.start()
             capturesStarted.set(true)
 
             // Refresh the notification now that the session is live. Matters for the
@@ -116,6 +118,7 @@ class LocationCaptureService : Service() {
         locationCapture.stop()
         activityCapture.stop()
         stepCapture.stop()
+        accelCapture.stop()
         capturesStarted.set(false)
         serviceScope.cancel()
         super.onDestroy()

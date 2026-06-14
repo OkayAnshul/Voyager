@@ -1,5 +1,6 @@
 package com.cosmiclaboratory.voyager.pipeline
 
+import com.cosmiclaboratory.voyager.capture.AccelCapture
 import com.cosmiclaboratory.voyager.capture.ActivityCapture
 import com.cosmiclaboratory.voyager.capture.AdaptiveSamplingPolicy
 import com.cosmiclaboratory.voyager.capture.DormantModeManager
@@ -52,6 +53,7 @@ class PipelineConsumer @Inject constructor(
     private val adaptiveSamplingPolicy: AdaptiveSamplingPolicy,
     private val locationCapture: LocationCapture,
     private val activityCapture: ActivityCapture,
+    private val accelCapture: AccelCapture,
     private val dormantModeManager: DormantModeManager,
     private val geofenceEventHandler: GeofenceEventHandler,
     private val placeLinkingService: PlaceLinkingService,
@@ -213,7 +215,8 @@ class PipelineConsumer @Inject constructor(
         val motionState = fuseActivityStateUseCase.fuse(
             arActivity = arActivity, arConfidence = arConfidence,
             speedMps = smoothed.speedMps, stepRatePerMinute = stepRate,
-            accuracyM = smoothed.accuracyM
+            accuracyM = smoothed.accuracyM,
+            accelSignature = accelCapture.latestSignature(smoothed.capturedAt)
         )
 
         // 4b. Update adaptive sampling with hysteresis
