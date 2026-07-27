@@ -55,8 +55,10 @@ class MapLibreMapEngine @Inject constructor() : MapEngine {
     )
 
     companion object {
-        // OpenFreeMap — full OSM detail, no API key, no rate limits
-        private const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
+        // CARTO dark-matter — OSM-detail dark basemap (no API key) that matches Voyager's
+        // OLED dark UI. Light alternative if ever needed:
+        // "https://tiles.openfreemap.org/styles/liberty" (OpenFreeMap, no rate limits).
+        private const val STYLE_URL = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
         private const val MARKER_TAP_RADIUS_PX = 30.0
         private const val ARROW_ICON_ID = "route-arrow-icon"
         // Current location indicator layer IDs

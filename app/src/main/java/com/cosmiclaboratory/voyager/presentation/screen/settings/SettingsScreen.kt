@@ -767,6 +767,45 @@ private fun GeneralTabContent(
                         tint = VoyagerColors.OnSurfaceVariant
                     )
                 }
+                HorizontalDivider(color = VoyagerColors.SurfaceVariant, thickness = 0.5.dp)
+                val privacyContext = androidx.compose.ui.platform.LocalContext.current
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            runCatching {
+                                privacyContext.startActivity(
+                                    android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse(
+                                            "https://okayanshul.github.io/voyager-site/privacy.html"
+                                        )
+                                    )
+                                )
+                            }
+                        }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = VoyagerColors.OnSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "Privacy Policy",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = VoyagerColors.OnSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = VoyagerColors.OnSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -1456,7 +1495,7 @@ private fun AdvancedTabContent(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
                     ) {
-                        listOf("No Cloud", "No Accounts", "No Ads", "Open Source").forEach { label ->
+                        listOf("No Cloud", "No Accounts", "No Ads", "On-Device").forEach { label ->
                             Box(
                                 modifier = Modifier
                                     .background(

@@ -121,13 +121,13 @@ private fun TripsContent(
                                 color = VoyagerColors.OnSurfaceVariant
                             )
                         }
-                        ProBadge()
+                        if (!com.cosmiclaboratory.voyager.domain.billing.ProEntitlementManager.FREE_EVERYTHING) ProBadge()
                     }
                 }
             } else {
                 SectionHeader(
                     title = "Trips",
-                    trailingAction = { ProBadge() }
+                    trailingAction = { if (!com.cosmiclaboratory.voyager.domain.billing.ProEntitlementManager.FREE_EVERYTHING) ProBadge() }
                 )
             }
         }

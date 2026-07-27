@@ -1,6 +1,6 @@
 # Voyager — Privacy Policy
 
-_Last updated: 2026-05-19_
+_Last updated: 2026-07-27_
 
 Voyager is a private, on-device location-timeline app. This policy explains —
 plainly — what Voyager does and does not do with your data. The short version:
@@ -8,8 +8,8 @@ plainly — what Voyager does and does not do with your data. The short version:
 
 ## 1. Who this is from
 
-Voyager is developed by Cosmic Laboratory. This policy covers the Voyager Android
-app distributed via Google Play and F-Droid.
+Voyager is developed by Anshul (Cosmic Laboratory). This policy covers the Voyager
+Android app distributed via Google Play.
 
 ## 2. What Voyager collects — and where it goes
 
@@ -45,7 +45,7 @@ developer cannot see your location, your places, or anything else in the app.
 
 If you install via Google Play, Google may collect standard install/crash
 telemetry under Google's own policies — this is outside Voyager's control and
-applies to every Play app. The F-Droid build avoids even that.
+applies to every Play app.
 
 ## 5. Your data, your control
 
@@ -68,8 +68,8 @@ it is for any app.
 
 ## 7. Children
 
-Voyager is not directed at children under 13. Onboarding includes an age
-acknowledgement.
+Voyager is not directed at children under 13 and does not knowingly collect data
+from them.
 
 ## 8. Changes
 
@@ -78,8 +78,8 @@ dated above.
 
 ## 9. Contact
 
-Questions about privacy: open an issue on the Voyager repository, or contact the
-developer through the listing on Google Play / F-Droid.
+Questions about privacy: contact the developer through the Voyager listing on
+Google Play.
 
 ---
 

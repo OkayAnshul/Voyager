@@ -23,7 +23,14 @@ import com.cosmiclaboratory.voyager.storage.database.entity.RawLocationSampleEnt
 import com.cosmiclaboratory.voyager.storage.database.entity.TrackingSessionEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.TripEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity
+import com.cosmiclaboratory.voyager.storage.database.entity.ActivityEntity
+import com.cosmiclaboratory.voyager.storage.database.entity.WorkoutSegmentEntity
+import com.cosmiclaboratory.voyager.storage.database.entity.VehicleEntity
+import com.cosmiclaboratory.voyager.storage.database.entity.MileageClassificationEntity
+import com.cosmiclaboratory.voyager.storage.database.entity.DailyRollupEntity
+import com.cosmiclaboratory.voyager.domain.model.WorkoutType
 import com.cosmiclaboratory.voyager.domain.util.GeohashEncoder
+import com.cosmiclaboratory.voyager.domain.util.PolylineEncoder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -96,6 +103,45 @@ fun DebugDataInsertionScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "★ Full Showcase (for screenshots)",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        "Clears the DB, then seeds 40 days of history PLUS workouts, a race " +
+                                "segment, a vehicle with classified business/personal drives, a " +
+                                "place-review queue and a live current visit. Fills every screen — " +
+                                "Timeline, Map, all Insights lenses, Activities, Proof, Mileage, " +
+                                "Trips and Review.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Button(
+                        onClick = { viewModel.insertShowcaseData() },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !state.isLoading
+                    ) {
+                        if (state.isLoading && state.currentOperation == "showcase") {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("Seed Full Showcase Data")
+                    }
                 }
             }
 
@@ -466,6 +512,391 @@ class DebugDataInsertionViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    /**
+     * Full showcase seed for store/LinkedIn screenshots. Clears the database, then seeds
+     * 40 days of history PLUS workouts, a race-yourself segment, a vehicle with classified
+     * business/personal drives, a place-review queue and a live current-location visit —
+     * so no screen is empty (Timeline, Map, every Insights lens, Activities, Proof,
+     * Mileage, Trips, Review).
+     */
+    fun insertShowcaseData() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                _state.value = DebugDataState(isLoading = true, currentOperation = "showcase")
+                database.clearAllTables()
+
+                val days = 40
+                val today = LocalDate.now()
+                val nowMs = System.currentTimeMillis()
+
+                val sessionId = database.trackingSessionDao().insert(
+                    TrackingSessionEntity(
+                        startedAt = today.minusDays(days.toLong()).atStartOfDay().toEpochMs(),
+                        endedAt = nowMs,
+                        startedBy = "USER",
+                        endedBy = "USER",
+                        localTimeZone = timeZone
+                    )
+                )
+
+                val placeIds = HashMap<String, Long>()
+                suspend fun idFor(s: Seed): Long = placeIds.getOrPut(s.name) {
+                    database.placeDao().insert(
+                        PlaceEntity(
+                            centroidLat = s.lat, centroidLng = s.lng, radiusM = s.radiusM,
+                            geohash = GeohashEncoder.encode(s.lat, s.lng),
+                            confidence = 0.9f, lifecycleStatus = "CONFIRMED",
+                            userDisplayName = s.name, category = s.category,
+                            categoryConfidence = 0.85f, createdAt = nowMs, lastVisitedAt = nowMs
+                        )
+                    )
+                }
+
+                val locations = ArrayList<RawLocationSampleEntity>()
+                val driveIds = ArrayList<Long>()
+                var visitCount = 0
+                var segmentCount = 0
+                var driveMeters = 0.0
+
+                // Per-day aggregates so we can seed daily_rollups (Insights Overview distance,
+                // week/month deltas and the tracking streak all read from these rollups).
+                class DayAgg {
+                    var dist = 0.0; var driveMs = 0L; var transitMs = 0L; var walkMs = 0L
+                    var legs = 0; var first = Long.MAX_VALUE; var last = 0L
+                }
+                val dayAgg = HashMap<String, DayAgg>()
+                fun agg(k: String) = dayAgg.getOrPut(k) { DayAgg() }
+
+                suspend fun stay(s: Seed, arrive: LocalDateTime, depart: LocalDateTime) {
+                    val dwell = Duration.between(arrive, depart)
+                    val placeId = idFor(s)
+                    val dayKey = arrive.toLocalDate().toDayKey()
+                    database.visitDao().insert(
+                        VisitEntity(
+                            placeId = placeId, arrivalAt = arrive.toEpochMs(),
+                            departureAt = depart.toEpochMs(), dwellMs = dwell.toMillis(),
+                            source = "BATCH_DISCOVERY", confidence = 0.9f, dayKey = dayKey,
+                            centroidLat = s.lat, centroidLng = s.lng
+                        )
+                    )
+                    visitCount++
+                    database.movementSegmentDao().insert(
+                        MovementSegmentEntity(
+                            segmentType = "VISIT", startAt = arrive.toEpochMs(),
+                            endAt = depart.toEpochMs(), distanceM = 0.0, confidence = 0.9f,
+                            placeId = placeId, dayKey = dayKey
+                        )
+                    )
+                    segmentCount++
+                    val minutes = dwell.toMinutes().coerceAtLeast(1)
+                    val n = (minutes / 20).toInt().coerceIn(3, 12)
+                    locations += generateStationaryLocations(s.lat, s.lng, n, arrive, minutes * 60 / n, sessionId)
+                }
+
+                suspend fun leg(from: Seed, to: Seed, type: String, distanceM: Double, start: LocalDateTime, end: LocalDateTime) {
+                    val segId = database.movementSegmentDao().insert(
+                        MovementSegmentEntity(
+                            segmentType = type, startAt = start.toEpochMs(), endAt = end.toEpochMs(),
+                            distanceM = distanceM, confidence = 0.86f, dayKey = start.toLocalDate().toDayKey()
+                        )
+                    )
+                    segmentCount++
+                    if (type == "DRIVE") { driveMeters += distanceM; driveIds += segId }
+                    agg(start.toLocalDate().toDayKey()).let {
+                        it.dist += distanceM
+                        val durMs = Duration.between(start, end).toMillis()
+                        when (type) {
+                            "DRIVE" -> it.driveMs += durMs
+                            "TRANSIT" -> it.transitMs += durMs
+                            else -> it.walkMs += durMs
+                        }
+                        it.legs++
+                        it.first = minOf(it.first, start.toEpochMs())
+                        it.last = maxOf(it.last, end.toEpochMs())
+                    }
+                    val minutes = Duration.between(start, end).toMinutes().coerceAtLeast(1)
+                    val n = if (distanceM > 50_000) 40 else 10
+                    locations += generateMovementPath(from.lat, from.lng, to.lat, to.lng, n, start, minutes * 60 / n, sessionId)
+                }
+
+                for (offset in (days - 1) downTo 0) {
+                    val d = today.minusDays(offset.toLong())
+                    fun t(h: Int, m: Int): LocalDateTime = d.atTime(h, m)
+                    when (offset) {
+                        9 -> { stay(home, t(6, 30), t(8, 0)); leg(home, hotel, "DRIVE", 126_000.0, t(8, 10), t(12, 40)); stay(hotel, t(13, 0), t(22, 30)) }
+                        8 -> { stay(hotel, t(7, 0), t(9, 0)); leg(hotel, ghat, "DRIVE", 5_200.0, t(9, 10), t(9, 40)); stay(ghat, t(9, 45), t(12, 30)); leg(ghat, hotel, "DRIVE", 5_200.0, t(12, 40), t(13, 10)); stay(hotel, t(13, 30), t(23, 0)) }
+                        7 -> { stay(hotel, t(7, 30), t(9, 30)); leg(hotel, sarnath, "DRIVE", 11_000.0, t(9, 40), t(10, 20)); stay(sarnath, t(10, 25), t(13, 30)); leg(sarnath, ghat, "DRIVE", 9_500.0, t(15, 30), t(16, 10)); stay(ghat, t(16, 15), t(19, 0)); leg(ghat, hotel, "DRIVE", 5_200.0, t(19, 10), t(19, 40)); stay(hotel, t(20, 0), t(23, 30)) }
+                        6 -> { stay(hotel, t(7, 0), t(10, 0)); leg(hotel, home, "DRIVE", 126_000.0, t(10, 30), t(15, 0)); stay(home, t(16, 0), t(23, 30)) }
+                        0 -> { // today: morning routine only — a live ongoing visit is added below
+                            stay(home, t(6, 30), t(8, 30))
+                            leg(home, work, "DRIVE", 3_000.0, t(8, 35), t(9, 0))
+                            stay(work, t(9, 0), t(12, 30))
+                        }
+                        else -> {
+                            val weekend = d.dayOfWeek == DayOfWeek.SATURDAY || d.dayOfWeek == DayOfWeek.SUNDAY
+                            if (weekend) {
+                                stay(home, t(7, 0), t(11, 0)); leg(home, mall, "DRIVE", 3_200.0, t(11, 0), t(11, 22)); stay(mall, t(11, 30), t(13, 30)); leg(mall, cafe, "DRIVE", 1_900.0, t(13, 35), t(13, 48)); stay(cafe, t(13, 50), t(15, 0)); leg(cafe, home, "CYCLE", 4_300.0, t(15, 5), t(15, 40)); stay(home, t(15, 45), t(23, 30))
+                            } else {
+                                stay(home, t(6, 30), t(8, 30))
+                                val outbound = if (offset % 3 == 0) "TRANSIT" else "DRIVE"
+                                leg(home, work, outbound, 3_000.0, t(8, 35), t(9, 0)); stay(work, t(9, 0), t(13, 0)); leg(work, cafe, "DRIVE", 1_700.0, t(13, 5), t(13, 16)); stay(cafe, t(13, 20), t(13, 55)); leg(cafe, work, "DRIVE", 1_700.0, t(14, 0), t(14, 12)); stay(work, t(14, 15), t(18, 15))
+                                if (offset % 2 == 0) { leg(work, gym, "DRIVE", 1_200.0, t(18, 20), t(18, 33)); stay(gym, t(18, 40), t(19, 40)); leg(gym, home, "DRIVE", 3_400.0, t(19, 45), t(20, 8)) } else { leg(work, home, "DRIVE", 3_000.0, t(18, 20), t(18, 48)) }
+                                stay(home, t(20, 15), t(23, 30))
+                            }
+                        }
+                    }
+                }
+
+                // Live "right now" visit at the cafe (ongoing, departureAt = null) for Today + Map.
+                run {
+                    val nowLdt = LocalDateTime.now()
+                    val since = nowLdt.minusMinutes(25)
+                    val cafeId = idFor(cafe)
+                    locations += generateStationaryLocations(cafe.lat, cafe.lng, 15, since, 100, sessionId)
+                    database.visitDao().insert(
+                        VisitEntity(
+                            placeId = cafeId, arrivalAt = since.toEpochMs(), departureAt = null,
+                            dwellMs = Duration.between(since, nowLdt).toMillis(),
+                            source = "LIVE_DETECTION", confidence = 0.9f,
+                            dayKey = nowLdt.toLocalDate().toDayKey(),
+                            centroidLat = cafe.lat, centroidLng = cafe.lng
+                        )
+                    )
+                    visitCount++
+                }
+
+                database.rawLocationSampleDao().insertAll(locations)
+
+                dayAgg.forEach { (dayKey, a) ->
+                    val dominant = listOf("DRIVE" to a.driveMs, "TRANSIT" to a.transitMs, "WALK" to a.walkMs)
+                        .maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first
+                    database.dailyRollupDao().upsert(
+                        DailyRollupEntity(
+                            dayKey = dayKey,
+                            totalDistanceM = a.dist,
+                            totalTransitMs = a.transitMs,
+                            totalWalkMs = a.walkMs,
+                            totalDriveMs = a.driveMs,
+                            placeVisitCount = a.legs,
+                            uniquePlacesVisited = a.legs,
+                            firstActivityAt = a.first.takeIf { it != Long.MAX_VALUE },
+                            lastActivityAt = a.last.takeIf { it != 0L },
+                            dominantTransportMode = dominant,
+                            computedAt = nowMs
+                        )
+                    )
+                }
+
+                database.tripDao().insert(
+                    TripEntity(
+                        startDayKey = today.minusDays(8).toDayKey(), endDayKey = today.minusDays(7).toDayKey(),
+                        title = "Trip to Varanasi", placeCount = 3, visitCount = 7,
+                        distanceMeters = 36_100.0, isOngoing = false, detectedAt = nowMs
+                    )
+                )
+
+                val workoutCount = seedWorkouts(today)
+                seedRaceSegment(nowMs)
+                seedVehicleAndMileage(driveIds, nowMs)
+                val reviewCount = seedReviewQueue(nowMs, today)
+
+                _state.value = DebugDataState(
+                    isSuccess = true,
+                    message = "Seeded the full showcase dataset — every screen now has data.",
+                    stats = listOf(
+                        "History: $days days",
+                        "Places: ${placeIds.size}  ·  Visits: $visitCount",
+                        "Movement segments: $segmentCount  ·  GPS samples: ${locations.size}",
+                        "Drive distance: ${"%.1f".format(driveMeters / 1000)} km",
+                        "Workouts: $workoutCount  ·  Race segment: 1",
+                        "Classified drives: ${driveIds.size.coerceAtMost(12)}  ·  Review queue: $reviewCount",
+                        "Trips: 1 (Varanasi)  ·  Live visit: El Chico Café",
+                        "If Search looks empty, rebuild the index from Settings ▸ Developer."
+                    )
+                )
+            } catch (e: Exception) {
+                _state.value = DebugDataState(message = "Error: ${e.message}", isSuccess = false)
+            }
+        }
+    }
+
+    /** Seeds a spread of recorded workouts (run/walk/cycle/hike) so Activities, Segments,
+     *  Activity detail (splits + elevation) and Personal Records all have data. */
+    private suspend fun seedWorkouts(today: LocalDate): Int {
+        seedOneWorkout(WorkoutType.RUN, 1, 6, 5.2, 28, hilly = false, today = today)
+        seedOneWorkout(WorkoutType.RUN, 4, 6, 8.3, 46, hilly = false, today = today)
+        seedOneWorkout(WorkoutType.CYCLE, 5, 6, 21.0, 55, hilly = true, today = today)
+        seedOneWorkout(WorkoutType.WALK, 11, 18, 3.0, 33, hilly = false, today = today)
+        seedOneWorkout(WorkoutType.HIKE, 13, 8, 9.4, 160, hilly = true, today = today)
+        seedOneWorkout(WorkoutType.RUN, 18, 6, 5.0, 26, hilly = false, today = today)
+        seedOneWorkout(WorkoutType.CYCLE, 25, 7, 32.0, 82, hilly = true, today = today)
+        seedOneWorkout(WorkoutType.RUN, 31, 6, 10.1, 55, hilly = false, today = today)
+        return 8
+    }
+
+    private suspend fun seedOneWorkout(
+        type: WorkoutType, dayOffset: Int, hour: Int, targetKm: Double, minutes: Int,
+        hilly: Boolean, today: LocalDate
+    ) {
+        val bearing = 40.0 + Math.random() * 90.0
+        val pts = buildOutAndBack(home.lat, home.lng, bearing, targetKm * 1000.0, points = 80)
+        val dist = pathDistanceMeters(pts)
+        val durMs = minutes.toLong() * 60_000L
+        val startLdt = today.minusDays(dayOffset.toLong()).atTime(hour, 0)
+        val startedAt = startLdt.toEpochMs()
+        val times = pts.indices.map { i -> (durMs * i / (pts.size - 1)).toInt() }
+        val base = 58.0
+        val amp = if (hilly) 35.0 else 8.0
+        val altDecimetres = pts.indices.map { i ->
+            val f = i.toDouble() / (pts.size - 1)
+            Math.round((base + amp * Math.sin(f * Math.PI) + (Math.random() - 0.5) * 2.0) * 10).toInt()
+        }
+        var gain = 0.0
+        var loss = 0.0
+        for (i in 1 until altDecimetres.size) {
+            val dm = (altDecimetres[i] - altDecimetres[i - 1]) / 10.0
+            if (dm > 0) gain += dm else loss += -dm
+        }
+        val avg = (dist / (durMs / 1000.0)).toFloat()
+        database.activityDao().insert(
+            ActivityEntity(
+                activityType = type.name,
+                startedAt = startedAt,
+                endedAt = startedAt + durMs,
+                distanceMeters = dist,
+                durationMs = durMs,
+                avgSpeedMps = avg,
+                maxSpeedMps = avg * 1.35f,
+                steps = if (type == WorkoutType.CYCLE) null else (dist / 0.78).toInt(),
+                encodedPolyline = PolylineEncoder.encode(pts),
+                dayKey = startLdt.toLocalDate().toDayKey(),
+                title = "${type.displayName} · ${"%.1f".format(dist / 1000)} km",
+                elevationGainM = gain,
+                elevationLossM = loss,
+                encodedTimes = PolylineEncoder.encodeInts(times),
+                encodedAltitudes = PolylineEncoder.encodeInts(altDecimetres)
+            )
+        )
+    }
+
+    /** A saved "race-yourself" segment near home; efforts are matched on the fly. */
+    private suspend fun seedRaceSegment(nowMs: Long) {
+        val pts = buildOutAndBack(home.lat, home.lng, bearingDeg = 55.0, totalMeters = 1000.0, points = 24)
+        database.workoutSegmentDao().insert(
+            WorkoutSegmentEntity(
+                name = "Riverside 1K",
+                encodedPolyline = PolylineEncoder.encode(pts),
+                distanceMeters = 1000.0,
+                createdAt = nowMs
+            )
+        )
+    }
+
+    /** A default vehicle + a spread of classified business/personal drives, so the
+     *  Mileage log shows deductible totals and the Proof hub has content. */
+    private suspend fun seedVehicleAndMileage(driveIds: List<Long>, nowMs: Long) {
+        database.vehicleDao().insert(
+            VehicleEntity(
+                name = "My Car",
+                fuelType = "PETROL",
+                efficiencyValue = 18.0,
+                efficiencyUnit = "KM_PER_L",
+                tankCapacityL = 42.0,
+                currentFuelPricePerUnit = 105.0,
+                currencyCode = "INR",
+                createdAt = nowMs,
+                isDefault = true
+            )
+        )
+        driveIds.takeLast(12).forEachIndexed { i, segId ->
+            val purpose = if (i % 3 == 2) "PERSONAL" else "BUSINESS"
+            database.mileageClassificationDao().upsert(
+                MileageClassificationEntity(
+                    segmentId = segId,
+                    purpose = purpose,
+                    note = if (purpose == "BUSINESS") "Client site visit" else null,
+                    lastModifiedAt = nowMs
+                )
+            )
+        }
+    }
+
+    /** Low-confidence, uncategorised "Near [area]" places so the review-bell badge and
+     *  Place Review queue have something to confirm. */
+    private suspend fun seedReviewQueue(nowMs: Long, today: LocalDate): Int {
+        val candidates = listOf(
+            Triple(25.4460, 81.8395, 0.42f),
+            Triple(25.4552, 81.8302, 0.36f),
+            Triple(25.4605, 81.8281, 0.30f)
+        )
+        candidates.forEach { (lat, lng, conf) ->
+            val pid = database.placeDao().insert(
+                PlaceEntity(
+                    centroidLat = lat, centroidLng = lng, radiusM = 55f,
+                    geohash = GeohashEncoder.encode(lat, lng),
+                    confidence = conf, lifecycleStatus = "CANDIDATE",
+                    userDisplayName = null, category = "UNKNOWN",
+                    categoryConfidence = 0.15f, createdAt = nowMs, lastVisitedAt = nowMs
+                )
+            )
+            val day = today.minusDays(2)
+            val arrive = day.atTime(16, 0)
+            val depart = day.atTime(16, 40)
+            val dayKey = day.toDayKey()
+            database.visitDao().insert(
+                VisitEntity(
+                    placeId = pid, arrivalAt = arrive.toEpochMs(), departureAt = depart.toEpochMs(),
+                    dwellMs = Duration.between(arrive, depart).toMillis(),
+                    source = "BATCH_DISCOVERY", confidence = conf, dayKey = dayKey,
+                    centroidLat = lat, centroidLng = lng
+                )
+            )
+            database.movementSegmentDao().insert(
+                MovementSegmentEntity(
+                    segmentType = "VISIT", startAt = arrive.toEpochMs(), endAt = depart.toEpochMs(),
+                    distanceM = 0.0, confidence = conf, placeId = pid, dayKey = dayKey
+                )
+            )
+        }
+        return candidates.size
+    }
+
+    /** Builds an out-and-back route of `totalMeters` from a centre along `bearingDeg`. */
+    private fun buildOutAndBack(
+        lat: Double, lng: Double, bearingDeg: Double, totalMeters: Double, points: Int
+    ): List<Pair<Double, Double>> {
+        val onewayM = totalMeters / 2.0
+        val br = Math.toRadians(bearingDeg)
+        val dLatMax = onewayM * Math.cos(br) / 111_320.0
+        val dLngMax = onewayM * Math.sin(br) / (111_320.0 * Math.cos(Math.toRadians(lat)))
+        val half = (points / 2).coerceAtLeast(2)
+        fun point(i: Int): Pair<Double, Double> {
+            val f = i.toDouble() / half
+            val jLat = (Math.random() - 0.5) * 0.00008
+            val jLng = (Math.random() - 0.5) * 0.00008
+            return Pair(lat + dLatMax * f + jLat, lng + dLngMax * f + jLng)
+        }
+        val out = (0..half).map { point(it) }
+        val back = (half - 1 downTo 0).map { point(it) }
+        return out + back
+    }
+
+    private fun pathDistanceMeters(pts: List<Pair<Double, Double>>): Double {
+        var total = 0.0
+        val r = 6_371_000.0
+        for (i in 1 until pts.size) {
+            val (la1, lo1) = pts[i - 1]
+            val (la2, lo2) = pts[i]
+            val dLa = Math.toRadians(la2 - la1)
+            val dLo = Math.toRadians(lo2 - lo1)
+            val a = Math.sin(dLa / 2) * Math.sin(dLa / 2) +
+                Math.cos(Math.toRadians(la1)) * Math.cos(Math.toRadians(la2)) *
+                Math.sin(dLo / 2) * Math.sin(dLo / 2)
+            total += 2 * r * Math.asin(Math.min(1.0, Math.sqrt(a)))
+        }
+        return total
     }
 
     fun insertCurrentLocationData() {

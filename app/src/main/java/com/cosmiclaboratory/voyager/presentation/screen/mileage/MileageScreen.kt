@@ -170,17 +170,19 @@ fun MileageContent(
                                 tint = VoyagerColors.OnSurfaceVariant
                             )
                         }
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = VoyagerColors.Premium.copy(alpha = 0.18f)
-                        ) {
-                            Text(
-                                text = "PRO",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = VoyagerColors.Premium,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
+                        if (!com.cosmiclaboratory.voyager.domain.billing.ProEntitlementManager.FREE_EVERYTHING) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = VoyagerColors.Premium.copy(alpha = 0.18f)
+                            ) {
+                                Text(
+                                    text = "PRO",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = VoyagerColors.Premium,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     }
                 }

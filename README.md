@@ -10,9 +10,10 @@ Track everywhere you go. Own all your data. Understand your life's movement.
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=flat&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-2024.09-4285F4?style=flat&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
-[![Min SDK](https://img.shields.io/badge/Min%20SDK-24%20(Android%207)-brightgreen)](https://developer.android.com/tools/releases/platforms)
+[![Min SDK](https://img.shields.io/badge/Min%20SDK-26%20(Android%208)-brightgreen)](https://developer.android.com/tools/releases/platforms)
 [![Target SDK](https://img.shields.io/badge/Target%20SDK-36%20(Android%2016)-blue)](https://developer.android.com/tools/releases/platforms)
-[![License](https://img.shields.io/badge/License-MIT-orange)](LICENSE)
+[![Price](https://img.shields.io/badge/Price-100%25%20Free-3B82F6)](#)
+[![License](https://img.shields.io/badge/License-All%20rights%20reserved-lightgrey)](LICENSE)
 
 </div>
 
@@ -30,42 +31,33 @@ It runs an **8-stage real-time processing pipeline** entirely on-device: raw GPS
 
 ## Screenshots
 
-> **Note:** Replace placeholders below with actual screenshots. Recommended: 5–6 screenshots in portrait (1080×2340), hosted in `/docs/screenshots/`.
-
 <div align="center">
 
-| Dashboard | Timeline | Map |
+| Today | Timeline | Map |
 |:---------:|:--------:|:---:|
-| <img src="docs/screenshots/dashboard.png" width="200" alt="Dashboard" /> | <img src="docs/screenshots/timeline.png" width="200" alt="Timeline" /> | <img src="docs/screenshots/map.png" width="200" alt="Map" /> |
-| Live tracking stats, streak counter, activity rings | Day-by-day movement with segment cards | Interactive OSM map with route overlays |
+| <img src="docs/screenshots/01-today.png" width="200" alt="Today" /> | <img src="docs/screenshots/02-timeline.png" width="200" alt="Timeline" /> | <img src="docs/screenshots/03-map.png" width="200" alt="Map" /> |
+| Live tracking, top places, daily rings | Honest timeline with real gaps | Your routes on a dark basemap |
 
-| Insights | Settings | Place Detail |
+| Insights | Mileage | Fitness |
 |:--------:|:--------:|:------------:|
-| <img src="docs/screenshots/insights.png" width="200" alt="Insights" /> | <img src="docs/screenshots/settings.png" width="200" alt="Settings" /> | <img src="docs/screenshots/place_detail.png" width="200" alt="Place Detail" /> |
-| Weekly comparison, trends, anomaly detection | 4-tab deep-configuration panel | Visit history, rename, category correction |
+| <img src="docs/screenshots/04-insights-overview.png" width="200" alt="Insights" /> | <img src="docs/screenshots/09-mileage.png" width="200" alt="Mileage" /> | <img src="docs/screenshots/12-activity-detail.png" width="200" alt="Activity detail" /> |
+| Nine explainable insight lenses | GPS-evidence-backed mileage log | Splits, elevation, personal records |
 
 </div>
 
+> Framed marketing versions of every screen live in [`docs/marketing/`](docs/marketing).
+
 ---
 
-## Video Demo
+## Every feature is free
 
-> **Note:** Add a demo GIF or link to a YouTube/Loom recording here.
+Voyager ships with **no paywall** — tracking, timeline, map, all nine Insights lenses, mileage,
+trips, fitness recording, export and evidence are all free.
 
-```
-[Demo video placeholder — record a 30–60 second screen recording showing:
-  1. App opening with animated splash
-  2. Live tracking active on dashboard
-  3. Timeline scrolling through a day's segments
-  4. Tapping a place to see visit history
-  5. Map view with route polylines
-]
-```
-
-<!--
-Once recorded, replace the block above with:
-[![Voyager Demo](docs/screenshots/demo_thumb.png)](https://youtu.be/YOUR_VIDEO_ID)
--->
+📖 **[Complete Feature Guide](docs/FEATURES.md)** ·
+🛠️ **[Development Timeline & Process](docs/DEVELOPMENT_TIMELINE.md)** ·
+🚀 **[Play Store Launch Checklist](docs/PLAY_STORE_LAUNCH_CHECKLIST.md)** ·
+🔒 **[Privacy Policy](docs/privacy-policy.md)**
 
 ---
 
@@ -171,7 +163,7 @@ Voyager uses **Clean Architecture** across 6 layers, with a stream-first process
 
 - Android Studio Hedgehog+ (2023.1.1 or later)
 - JDK 11+
-- Android device / emulator running **Android 7.0+ (API 24)**
+- Android device / emulator running **Android 8.0+ (API 26)**
 
 ### Build
 
@@ -267,7 +259,8 @@ See [`docs/appendices/DESIGN_EVOLUTION.md`](docs/appendices/DESIGN_EVOLUTION.md)
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+**Proprietary — all rights reserved.** See [LICENSE](LICENSE). This source is shared for review only;
+no reuse, copying, or redistribution without written permission.
 
 ---
 
