@@ -5,13 +5,18 @@ import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
 import com.cosmiclaboratory.voyager.domain.model.enums.PlaceLifecycleStatus
 import com.cosmiclaboratory.voyager.domain.model.ids.PlaceId
 import com.cosmiclaboratory.voyager.domain.model.ids.VisitId
+import com.cosmiclaboratory.voyager.domain.repository.GeocodingRepository
 import com.cosmiclaboratory.voyager.domain.repository.PlaceRepository
 import com.cosmiclaboratory.voyager.storage.database.VoyagerDatabase
 import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
 import com.cosmiclaboratory.voyager.storage.database.entity.PlaceEntity
+import com.cosmiclaboratory.voyager.platform.worker.WorkerScheduler
+import android.content.Context
 import androidx.room.withTransaction
+import androidx.work.WorkManager
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -22,7 +27,9 @@ class PlaceRepositoryImpl @Inject constructor(
     private val database: VoyagerDatabase,
     private val placeDao: PlaceDao,
     private val visitDao: VisitDao,
-    private val movementSegmentDao: MovementSegmentDao
+    private val movementSegmentDao: MovementSegmentDao,
+    private val geocodingRepository: GeocodingRepository,
+    @ApplicationContext private val context: Context
 ) : PlaceRepository {
 
     override fun observePlaces(): Flow<List<TimelinePlace>> {
@@ -37,6 +44,8 @@ class PlaceRepositoryImpl @Inject constructor(
 
     override suspend fun renamePlace(placeId: PlaceId, name: String): Result<Unit> = runCatching {
         placeDao.updateDisplayName(placeId.raw, name)
+        // Reflect the new name in search immediately rather than waiting for the 12h periodic job.
+        WorkerScheduler.triggerSearchIndexRebuild(WorkManager.getInstance(context))
     }
 
     override suspend fun mergePlaces(sourceIds: List<PlaceId>, targetId: PlaceId): Result<Unit> = runCatching {
@@ -115,15 +124,13 @@ class PlaceRepositoryImpl @Inject constructor(
         placeDao.updateEmoji(placeId.raw, emoji)
     }
 
-    private fun PlaceEntity.toTimelinePlace(): TimelinePlace {
-        val displayName = userDisplayName
-            ?: bestProviderName
-            ?: "%.4f, %.4f".format(centroidLat, centroidLng)
+    private suspend fun PlaceEntity.toTimelinePlace(): TimelinePlace {
+        val displayName = geocodingRepository.resolveDisplayName(placeId)
 
         val nameSource = when {
             userDisplayName != null -> "Custom name"
             bestProviderName != null -> "via ${bestProviderSource ?: "Provider"}"
-            else -> "Coordinates"
+            else -> "Nearby area"
         }
 
         return TimelinePlace(
@@ -138,7 +145,8 @@ class PlaceRepositoryImpl @Inject constructor(
             confidence = confidence,
             lat = centroidLat,
             lng = centroidLng,
-            emoji = emoji
+            emoji = emoji,
+            isConfirmed = lifecycleStatus == PlaceLifecycleStatus.CONFIRMED.name
         )
     }
 }

@@ -16,6 +16,9 @@ import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import com.cosmiclaboratory.voyager.storage.database.dao.GeocodeCandidateDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.entity.GeocodeCandidateEntity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -154,49 +157,71 @@ class GeocodingRepositoryImpl @Inject constructor(
         val place = placeDao.getById(placeId)
             ?: return "Unknown Place"
 
-        val candidates = getCandidatesForPlace(placeId)
-        val bestProviderName = candidates.firstOrNull()?.displayName
+        // Candidates are only needed for the "Near [area]" fallback — i.e. when there
+        // is no user name and no accuracy-gated provider name. Skip the DAO + JSON
+        // parse in the common (already-named) case. Prefer the stored gated
+        // bestProviderName over any raw candidate: a nearby POI or over-precise
+        // address must never win as the place's own name.
+        val needsNearby = place.userDisplayName.isNullOrBlank() &&
+            (place.userCategory.isNullOrBlank() || place.userCategory == "UNKNOWN") &&
+            place.bestProviderName.isNullOrBlank()
+        val nearbyContext = if (needsNearby) {
+            conflictResolver.nearbyContext(getCandidatesForPlace(placeId))
+        } else null
 
         return conflictResolver.resolveDisplayName(
             userDisplayName = place.userDisplayName,
             userCategory = place.userCategory,
-            bestProviderName = bestProviderName ?: place.bestProviderName,
-            nearbyContext = buildNearbyContext(candidates),
+            bestProviderName = place.bestProviderName,
+            nearbyContext = nearbyContext,
             semanticLabel = null,
             lat = place.centroidLat,
             lng = place.centroidLng
         )
     }
 
-    /**
-     * Build a "nearby" context string from candidates' structured address parts.
-     * Picks the most specific contextual info: neighborhood > street > city.
-     * Returns null if no useful context found.
-     */
-    private fun buildNearbyContext(candidates: List<GeocodeCandidate>): String? {
-        for (candidate in candidates) {
-            val parts = candidate.structuredParts ?: continue
-            // Prefer neighborhood (most specific landmark-like context)
-            if (!parts.neighborhood.isNullOrBlank()) return parts.neighborhood
+    /** One resolved coordinate → name, plus whether it's a real name (vs a raw-coord
+     *  fallback) and when it was attempted, so unresolved buckets are retried but not
+     *  hammered on every live re-emission. */
+    private data class CoordName(val name: String, val resolved: Boolean, val attemptedAt: Long)
+    private val coordNameCache = ConcurrentHashMap<String, CoordName>()
+
+    override suspend fun resolveDisplayNameForCoordinates(lat: Double, lng: Double): String {
+        // No fix → nothing honest to say.
+        if (lat == 0.0 && lng == 0.0) return "Location unavailable"
+
+        // ~11 m bucket: the live centroid jitters within a dwell; one geocode covers it.
+        val key = "%.4f,%.4f".format(lat, lng)
+        val now = System.currentTimeMillis()
+        coordNameCache[key]?.let { cached ->
+            if (cached.resolved || now - cached.attemptedAt < COORD_RETRY_MS) return cached.name
         }
-        // Fallback: street name from any candidate
-        for (candidate in candidates) {
-            val parts = candidate.structuredParts ?: continue
-            if (!parts.street.isNullOrBlank()) {
-                // If street + city available, compose "Street, City"
-                return if (!parts.city.isNullOrBlank()) {
-                    "${parts.street}, ${parts.city}"
-                } else {
-                    parts.street
-                }
+
+        val coordFallback = conflictResolver.coordinatePlaceholder(lat, lng)
+        // Network geocode off the read thread; providers try Android Geocoder first.
+        val resolved = withContext(Dispatchers.IO) {
+            val result = try {
+                reverseGeocode(lat, lng)
+            } catch (e: Exception) {
+                Log.w(TAG, "resolveDisplayNameForCoordinates reverseGeocode failed: ${e.message}")
+                return@withContext null
             }
+            // Accuracy-gated provider name (never an over-precise/wrong address)…
+            val gated = result.bestCandidate
+                ?.let { conflictResolver.safeDisplayName(it, result.candidates, lat, lng) }
+                ?.takeIf { it != coordFallback }
+            // …else the honest coarse "Near [area]" locator.
+            gated ?: conflictResolver.nearbyContext(result.candidates)?.let { "Near $it" }
         }
-        // Last resort: city only
-        for (candidate in candidates) {
-            val parts = candidate.structuredParts ?: continue
-            if (!parts.city.isNullOrBlank()) return parts.city
+
+        return if (resolved != null) {
+            coordNameCache[key] = CoordName(resolved, resolved = true, attemptedAt = now)
+            resolved
+        } else {
+            // Unresolved (offline / no data): show coordinates for now, retry later.
+            coordNameCache[key] = CoordName(coordFallback, resolved = false, attemptedAt = now)
+            coordFallback
         }
-        return null
     }
 
     override suspend fun refreshGeocodeForPlace(placeId: Long): Result<Unit> {
@@ -227,6 +252,17 @@ class GeocodingRepositoryImpl @Inject constructor(
             }
 
             geocodingResult.bestCandidate?.let { best ->
+                // Accuracy-gated name — never an over-precise/wrong address.
+                val safe = best.safeDisplayName ?: best.displayName
+                // Only persist a *real* provider name. A weak result yields only the
+                // coordinate placeholder; storing that as bestProviderName would show
+                // coordinates as if they were a name AND permanently exclude the place
+                // from GeocodeBackfillWorker's `bestProviderName == null` retry. Leave
+                // it null so the display layer shows "Near [area]" and backfill keeps
+                // trying until a trustworthy name resolves.
+                val realName = safe.takeIf {
+                    it != conflictResolver.coordinatePlaceholder(place.centroidLat, place.centroidLng)
+                }
                 // POI tag → category, but only when the place is still UNKNOWN and
                 // the user hasn't set their own category. Preserves user choice
                 // and avoids overwriting a previously-inferred good category.
@@ -235,9 +271,8 @@ class GeocodingRepositoryImpl @Inject constructor(
                     place.userCategory == null
                 placeDao.update(
                     place.copy(
-                        // Accuracy-gated name — never an over-precise/wrong address.
-                        bestProviderName = best.safeDisplayName ?: best.displayName,
-                        bestProviderSource = best.provider.name,
+                        bestProviderName = realName ?: place.bestProviderName,
+                        bestProviderSource = if (realName != null) best.provider.name else place.bestProviderSource,
                         category = if (shouldInferCategory) best.inferredCategory!!.name else place.category,
                         categoryConfidence = if (shouldInferCategory) best.confidence else place.categoryConfidence
                     )
@@ -331,5 +366,7 @@ class GeocodingRepositoryImpl @Inject constructor(
     companion object {
         private const val TAG = "GeocodingRepository"
         private const val CANDIDATE_TTL_MS = 30L * 24 * 60 * 60 * 1000 // 30 days
+        // Don't re-attempt a coordinate that failed to resolve more than once a minute.
+        private const val COORD_RETRY_MS = 60_000L
     }
 }

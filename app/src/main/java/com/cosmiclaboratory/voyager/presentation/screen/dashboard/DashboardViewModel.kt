@@ -23,6 +23,8 @@ data class DashboardUiState(
     val stepChart: List<HourlySteps> = emptyList(),
     val totalStepsToday: Int = 0,
     val isTracking: Boolean = false,
+    /** Session open but manually paused (capture stopped, resumable). */
+    val isPaused: Boolean = false,
     val lastSampleAt: Long? = null,
     val sessionStartedAt: Long? = null,
     val activeVisit: ActiveVisitInfo? = null,
@@ -107,6 +109,7 @@ class DashboardViewModel @Inject constructor(
             stepChart = hourly,
             totalStepsToday = steps.totalSteps,
             isTracking = trackingState.isTracking,
+            isPaused = trackingState.isPaused,
             lastSampleAt = inner.health.lastSampleAt,
             sessionStartedAt = inner.sessionStart,
             activeVisit = inner.liveTimeline.activeVisit,

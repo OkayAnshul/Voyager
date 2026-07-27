@@ -18,6 +18,9 @@ data class MileageEntry(
 ) {
     val distanceMiles: Double get() = distanceMeters / METERS_PER_MILE
     val distanceKm: Double get() = distanceMeters / 1000.0
+
+    /** Distance in the caller's chosen [unit] — the unit-agnostic accessor the UI/exports use. */
+    fun distanceIn(unit: DistanceUnit): Double = distanceMeters / unit.meters
 }
 
 /**
@@ -45,4 +48,14 @@ data class MileageLog(
 
     fun milesFor(purpose: MileagePurpose): Double =
         (metersByPurpose[purpose] ?: 0.0) / METERS_PER_MILE
+
+    /** Distance driven for [purpose] in [unit] — unit-agnostic sibling of [milesFor]. */
+    fun distanceFor(purpose: MileagePurpose, unit: DistanceUnit): Double =
+        (metersByPurpose[purpose] ?: 0.0) / unit.meters
+
+    /** Total distance driven across all purposes in [unit]. */
+    fun totalDistance(unit: DistanceUnit): Double = totalMeters / unit.meters
+
+    /** Total tax-deductible distance (business/medical/charitable) in [unit]. */
+    fun deductibleDistance(unit: DistanceUnit): Double = deductibleMeters / unit.meters
 }

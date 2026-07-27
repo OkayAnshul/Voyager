@@ -62,7 +62,13 @@ class AnomalyAlertWorker @AssistedInject constructor(
             } else {
                 "${significant.size} unusual patterns this week"
             }
-            notificationManager.showInsight(title, significant.first().humanExplanation)
+            notificationManager.showInsight(
+                title = title,
+                body = significant.first().humanExplanation,
+                channelId = VoyagerNotificationManager.CHANNEL_INSIGHTS_WEEKLY,
+                notificationId = VoyagerNotificationManager.NOTIFICATION_ID_INSIGHT_ANOMALY,
+                destination = VoyagerNotificationManager.DEST_INSIGHTS,
+            )
             Result.success()
         } catch (e: Exception) {
             Result.retry()

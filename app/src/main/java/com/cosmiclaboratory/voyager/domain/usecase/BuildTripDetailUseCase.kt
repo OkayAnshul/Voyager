@@ -4,13 +4,13 @@ import com.cosmiclaboratory.voyager.domain.model.Trip
 import com.cosmiclaboratory.voyager.domain.model.TripDay
 import com.cosmiclaboratory.voyager.domain.model.TripDetail
 import com.cosmiclaboratory.voyager.domain.model.TripPlaceVisit
+import com.cosmiclaboratory.voyager.domain.repository.GeocodingRepository
 import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.TripDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
 import com.cosmiclaboratory.voyager.storage.database.entity.PlaceEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.TripEntity
-import com.cosmiclaboratory.voyager.storage.database.entity.displayName
 import java.time.LocalDate
 import javax.inject.Inject
 
@@ -22,7 +22,8 @@ class BuildTripDetailUseCase @Inject constructor(
     private val tripDao: TripDao,
     private val visitDao: VisitDao,
     private val placeDao: PlaceDao,
-    private val movementSegmentDao: MovementSegmentDao
+    private val movementSegmentDao: MovementSegmentDao,
+    private val geocodingRepository: GeocodingRepository
 ) {
 
     suspend fun build(tripId: Long): TripDetail? {
@@ -45,7 +46,8 @@ class BuildTripDetailUseCase @Inject constructor(
                     val p = place(visit.placeId)
                     TripPlaceVisit(
                         placeId = visit.placeId,
-                        displayName = p?.displayName() ?: "Unknown place",
+                        displayName = p?.let { geocodingRepository.resolveDisplayName(it.placeId) }
+                            ?: geocodingRepository.resolveDisplayNameForCoordinates(visit.centroidLat ?: 0.0, visit.centroidLng ?: 0.0),
                         emoji = p?.emoji,
                         arrivalAt = visit.arrivalAt,
                         departureAt = visit.departureAt,

@@ -1,9 +1,14 @@
 package com.cosmiclaboratory.voyager.presentation.screen.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -26,6 +31,7 @@ import com.cosmiclaboratory.voyager.ui.theme.MonoTimestamp
 import com.cosmiclaboratory.voyager.utils.DeveloperModeManager
 import com.cosmiclaboratory.voyager.presentation.model.PermissionStatus
 import com.cosmiclaboratory.voyager.presentation.screen.settings.components.GeocodingProvidersSection
+import com.cosmiclaboratory.voyager.presentation.screen.settings.components.MileageRatesSection
 import com.cosmiclaboratory.voyager.presentation.screen.settings.components.SleepScheduleSection
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.EntryPoint
@@ -51,11 +57,32 @@ interface ProEntitlementManagerEntryPoint {
     fun proEntitlementManager(): com.cosmiclaboratory.voyager.domain.billing.ProEntitlementManager
 }
 
-enum class SettingsTab(val title: String) {
-    GENERAL("General"),
-    DETECTION("Detection"),
-    PRIVACY_DATA("Privacy & Data"),
-    ADVANCED("Advanced")
+enum class SettingsTab(
+    val title: String,
+    val icon: ImageVector,
+    val summary: String,
+    val keywords: String
+) {
+    GENERAL(
+        "General", Icons.Default.Tune,
+        "Profile presets, tracking & about",
+        "profile preset tracking pro about feedback mileage reliability sampling battery"
+    ),
+    DETECTION(
+        "Detection", Icons.Default.Sensors,
+        "Places, activity & geocoding",
+        "place detection dwell activity recognition geocoding provider cluster speed sleep"
+    ),
+    PRIVACY_DATA(
+        "Privacy & Data", Icons.Default.Shield,
+        "Privacy, retention & export",
+        "privacy data retention export import secure exclusion delete clear analytics"
+    ),
+    ADVANCED(
+        "Advanced", Icons.Default.Build,
+        "Diagnostics & developer tools",
+        "advanced developer debug diagnostics calibration kalman version pipeline"
+    )
 }
 
 /**
@@ -96,28 +123,35 @@ fun SettingsScreen(
     val isDeveloperMode by developerModeManager.isDeveloperModeEnabled.collectAsState()
     val proOverrideEnabled by proEntitlementManager.debugProOverride.collectAsState()
 
-    var selectedTab by remember { mutableStateOf(SettingsTab.GENERAL) }
+    // Progressive disclosure: null = searchable category landing; otherwise drilled into one category.
+    var selectedCategory by remember { mutableStateOf<SettingsTab?>(null) }
+    var settingsQuery by remember { mutableStateOf("") }
     var showClearDataDialog by remember { mutableStateOf(false) }
     var versionTapMessage by remember { mutableStateOf<String?>(null) }
+
+    // System back returns to the category landing before leaving Settings.
+    BackHandler(enabled = selectedCategory != null) { selectedCategory = null }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(VoyagerColors.Background)
+            .drawBehind { drawRect(brush = VoyagerGradients.screenBackground(size.width, size.height)) }
     ) {
         TopAppBar(
             title = {
                 Text(
-                    text = "Settings",
+                    text = selectedCategory?.title ?: "Settings",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
             },
             navigationIcon = {
-                IconButton(onClick = onNavigateBack) {
+                IconButton(onClick = {
+                    if (selectedCategory != null) selectedCategory = null else onNavigateBack()
+                }) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back"
+                        contentDescription = if (selectedCategory != null) "Back to settings" else "Back"
                     )
                 }
             },
@@ -127,64 +161,106 @@ fun SettingsScreen(
             ),
             windowInsets = WindowInsets(0)
         )
-        ScrollableTabRow(
-            selectedTabIndex = selectedTab.ordinal,
-            edgePadding = 16.dp,
-            containerColor = VoyagerColors.Background,
-            contentColor = VoyagerColors.Primary,
-            divider = {}
-        ) {
-            SettingsTab.entries.forEach { tab ->
-                Tab(
-                    selected = selectedTab == tab,
-                    onClick = { selectedTab = tab },
-                    text = {
+
+        val category = selectedCategory
+        if (category == null) {
+            // ── Searchable category landing (progressive disclosure) ──────
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(vertical = 16.dp)
+            ) {
+                item {
+                    OutlinedTextField(
+                        value = settingsQuery,
+                        onValueChange = { settingsQuery = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Search settings", color = VoyagerColors.OnSurfaceVariant) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = VoyagerColors.Primary) },
+                        trailingIcon = {
+                            if (settingsQuery.isNotBlank()) {
+                                IconButton(onClick = { settingsQuery = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = VoyagerColors.OnSurfaceVariant)
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        shape = VoyagerShapes.button,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = VoyagerColors.Primary,
+                            unfocusedBorderColor = VoyagerColors.SurfaceVariant,
+                            cursorColor = VoyagerColors.Primary,
+                            focusedTextColor = VoyagerColors.OnSurface,
+                            unfocusedTextColor = VoyagerColors.OnSurface
+                        )
+                    )
+                }
+
+                val matches = SettingsTab.entries.filter { tab ->
+                    settingsQuery.isBlank() ||
+                        tab.title.contains(settingsQuery, ignoreCase = true) ||
+                        tab.summary.contains(settingsQuery, ignoreCase = true) ||
+                        tab.keywords.contains(settingsQuery, ignoreCase = true)
+                }
+
+                if (matches.isEmpty()) {
+                    item {
                         Text(
-                            tab.title,
-                            fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Medium,
-                            color = if (selectedTab == tab) VoyagerColors.Primary
-                            else VoyagerColors.OnSurfaceVariant
+                            text = "No settings match \"$settingsQuery\"",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = VoyagerColors.OnSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 24.dp)
                         )
                     }
+                } else {
+                    itemsIndexed(matches, key = { _, tab -> tab.name }) { index, tab ->
+                        SettingsCategoryCard(category = tab, index = index) {
+                            selectedCategory = tab
+                            settingsQuery = ""
+                        }
+                    }
+                }
+            }
+        } else {
+            // ── Drilled into one category ─────────────────────────────────
+            when (category) {
+                SettingsTab.GENERAL -> GeneralTabContent(
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    onNavigateToCategories = onNavigateToCategories,
+                    onNavigateToFeedback = onNavigateToFeedback,
+                    onNavigateToDeveloperProfile = onNavigateToDeveloperProfile,
+                    onNavigateToOpenSourceLicenses = onNavigateToOpenSourceLicenses,
+                    onNavigateToReliability = onNavigateToReliability,
+                    onNavigateToMileage = onNavigateToMileage,
+                    onNavigateToPaywall = onNavigateToPaywall
+                )
+                SettingsTab.DETECTION -> DetectionTabContent(
+                    uiState = uiState,
+                    viewModel = viewModel
+                )
+                SettingsTab.PRIVACY_DATA -> PrivacyDataTabContent(
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    onShowClearDataDialog = { showClearDataDialog = true },
+                    onShowExportDialog = onNavigateToExport
+                )
+                SettingsTab.ADVANCED -> AdvancedTabContent(
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    isDeveloperMode = isDeveloperMode,
+                    developerModeManager = developerModeManager,
+                    versionTapMessage = versionTapMessage,
+                    onVersionTapMessage = { versionTapMessage = it },
+                    onNavigateToDebugDataInsertion = onNavigateToDebugDataInsertion,
+                    onNavigateToDeveloperProfile = onNavigateToDeveloperProfile,
+                    onNavigateToPipelineDebug = onNavigateToPipelineDebug,
+                    proOverrideEnabled = proOverrideEnabled,
+                    onProOverrideChange = proEntitlementManager::setDebugProOverride
                 )
             }
-        }
-
-        when (selectedTab) {
-            SettingsTab.GENERAL -> GeneralTabContent(
-                uiState = uiState,
-                viewModel = viewModel,
-                onNavigateToCategories = onNavigateToCategories,
-                onNavigateToFeedback = onNavigateToFeedback,
-                onNavigateToDeveloperProfile = onNavigateToDeveloperProfile,
-                onNavigateToOpenSourceLicenses = onNavigateToOpenSourceLicenses,
-                onNavigateToReliability = onNavigateToReliability,
-                onNavigateToMileage = onNavigateToMileage,
-                onNavigateToPaywall = onNavigateToPaywall
-            )
-            SettingsTab.DETECTION -> DetectionTabContent(
-                uiState = uiState,
-                viewModel = viewModel
-            )
-            SettingsTab.PRIVACY_DATA -> PrivacyDataTabContent(
-                uiState = uiState,
-                viewModel = viewModel,
-                onShowClearDataDialog = { showClearDataDialog = true },
-                onShowExportDialog = onNavigateToExport
-            )
-            SettingsTab.ADVANCED -> AdvancedTabContent(
-                uiState = uiState,
-                viewModel = viewModel,
-                isDeveloperMode = isDeveloperMode,
-                developerModeManager = developerModeManager,
-                versionTapMessage = versionTapMessage,
-                onVersionTapMessage = { versionTapMessage = it },
-                onNavigateToDebugDataInsertion = onNavigateToDebugDataInsertion,
-                onNavigateToDeveloperProfile = onNavigateToDeveloperProfile,
-                onNavigateToPipelineDebug = onNavigateToPipelineDebug,
-                proOverrideEnabled = proOverrideEnabled,
-                onProOverrideChange = proEntitlementManager::setDebugProOverride
-            )
         }
     }
 
@@ -232,6 +308,55 @@ fun SettingsScreen(
 
 }
 
+/** A tappable category card on the Settings landing — glass surface, staggered in. */
+@Composable
+private fun SettingsCategoryCard(
+    category: SettingsTab,
+    index: Int,
+    onClick: () -> Unit
+) {
+    VoyagerCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .staggeredEntrance(index),
+        variant = CardVariant.GLASS,
+        onClick = onClick
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(VoyagerShapes.pill)
+                    .background(VoyagerColors.Primary.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(category.icon, contentDescription = null, tint = VoyagerColors.Primary, modifier = Modifier.size(22.dp))
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = category.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = VoyagerColors.OnSurface
+                )
+                Text(
+                    text = category.summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VoyagerColors.OnSurfaceVariant
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = VoyagerColors.OnSurfaceVariant
+            )
+        }
+    }
+}
+
 // ============================================================================
 // GENERAL TAB
 // ============================================================================
@@ -256,7 +381,8 @@ private fun GeneralTabContent(
         contentPadding = PaddingValues(vertical = 16.dp)
     ) {
         // ── Voyager Pro ────────────────────────────────────────────────
-        item {
+        // Hidden while every feature is free (ProEntitlementManager.FREE_EVERYTHING).
+        if (!com.cosmiclaboratory.voyager.domain.billing.ProEntitlementManager.FREE_EVERYTHING) item {
             VoyagerCard(
                 modifier = Modifier.fillMaxWidth(),
                 padding = 0.dp,
@@ -496,6 +622,15 @@ private fun GeneralTabContent(
                     )
                 }
             }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        // ── Mileage rates & units ──────────────────────────────────────
+        item {
+            MileageRatesSection(
+                settings = uiState.settings,
+                onUpdate = viewModel::updateSetting
+            )
             Spacer(modifier = Modifier.height(16.dp))
         }
 
@@ -1084,18 +1219,6 @@ private fun AdvancedTabContent(
                     subtitle = "Number visit markers chronologically",
                     checked = uiState.settings.visitMarkerNumbering,
                     onCheckedChange = { viewModel.updateSetting("visitMarkerNumbering", it) }
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                SettingsSliderRow(
-                    title = "Cluster Markers at Zoom",
-                    subtitle = "Cluster nearby markers below this zoom level",
-                    value = uiState.settings.clusterMarkersAtZoom.toFloat(),
-                    valueLabel = "Zoom ${uiState.settings.clusterMarkersAtZoom}",
-                    range = 8f..18f,
-                    steps = 9,
-                    onValueChange = { viewModel.updateSetting("clusterMarkersAtZoom", it.toInt()) }
                 )
             }
         }

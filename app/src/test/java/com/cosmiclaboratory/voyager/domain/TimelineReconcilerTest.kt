@@ -23,11 +23,48 @@ class TimelineReconcilerTest {
         durationMs: Long,
         distanceM: Double = 0.0,
         place: TimelinePlace? = null,
+        gapReason: String? = null,
     ) = TimelineSegment(
         segmentId = startAt, type = type, startAt = startAt, endAt = startAt + durationMs,
         durationMs = durationMs, distanceM = distanceM, confidence = 0.7f,
-        evidence = null, place = place, route = null, gapReason = null, isUserCorrected = false
+        evidence = null, place = place, route = null, gapReason = gapReason, isUserCorrected = false
     )
+
+    @Test
+    fun `collapseGaps coalesces consecutive gaps into one quiet span`() {
+        val out = reconciler.collapseGaps(
+            listOf(
+                seg(SegmentType.GAP, 0, 600_000, gapReason = "DOZE"),
+                seg(SegmentType.GAP, 600_000, 600_000, gapReason = "GPS_LOSS"),
+            )
+        )
+        assertEquals(1, out.size)
+        assertEquals(1_200_000, out.first().durationMs)
+    }
+
+    @Test
+    fun `collapseGaps favours the actionable permission reason`() {
+        val out = reconciler.collapseGaps(
+            listOf(
+                seg(SegmentType.GAP, 0, 600_000, gapReason = "DOZE"),
+                seg(SegmentType.GAP, 600_000, 60_000, gapReason = "PERMISSION"),
+            )
+        )
+        assertEquals(1, out.size)
+        assertEquals("PERMISSION", out.first().gapReason)
+    }
+
+    @Test
+    fun `collapseGaps leaves a gap between movement untouched`() {
+        val out = reconciler.collapseGaps(
+            listOf(
+                seg(SegmentType.WALK, 0, 60_000, distanceM = 100.0),
+                seg(SegmentType.GAP, 60_000, 600_000, gapReason = "DOZE"),
+                seg(SegmentType.WALK, 660_000, 60_000, distanceM = 100.0),
+            )
+        )
+        assertEquals(3, out.size)
+    }
 
     @Test
     fun `filterNoise drops transient noise but keeps gaps and real segments`() {

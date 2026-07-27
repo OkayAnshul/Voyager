@@ -3,17 +3,24 @@ package com.cosmiclaboratory.voyager.presentation.screen.map
 import android.annotation.SuppressLint
 import android.view.View
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -28,6 +35,7 @@ import com.cosmiclaboratory.voyager.presentation.di.MapEngineEntryPoint
 import com.cosmiclaboratory.voyager.presentation.state.DayNavigationStateHolder
 import com.cosmiclaboratory.voyager.presentation.components.*
 import com.cosmiclaboratory.voyager.presentation.theme.*
+import com.cosmiclaboratory.voyager.ui.theme.MonoData
 import com.google.android.gms.location.LocationServices
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.tasks.await
@@ -41,7 +49,8 @@ import kotlinx.coroutines.tasks.await
 @Composable
 fun MapScreen(
     viewModel: MapViewModel = hiltViewModel(),
-    onNavigateToVisit: (Long) -> Unit = {}
+    onNavigateToVisit: (Long) -> Unit = {},
+    onRecord: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val mapEngine = remember {
@@ -51,6 +60,8 @@ fun MapScreen(
     }
 
     val uiState by viewModel.uiState.collectAsState()
+    var showLegend by remember { mutableStateOf(false) }
+    var showList by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -95,6 +106,22 @@ fun MapScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             FloatingActionButton(
+                onClick = { showList = true },
+                containerColor = VoyagerColors.Surface,
+                contentColor = VoyagerColors.Primary,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.FormatListBulleted, contentDescription = "List places", modifier = Modifier.size(20.dp))
+            }
+            FloatingActionButton(
+                onClick = { showLegend = !showLegend },
+                containerColor = if (showLegend) VoyagerColors.PrimaryContainer else VoyagerColors.Surface,
+                contentColor = VoyagerColors.Primary,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(Icons.Default.Palette, contentDescription = "Map legend", modifier = Modifier.size(20.dp))
+            }
+            FloatingActionButton(
                 onClick = { viewModel.onIntent(MapIntent.CenterOnUser) },
                 containerColor = VoyagerColors.Surface,
                 contentColor = VoyagerColors.Primary,
@@ -110,6 +137,41 @@ fun MapScreen(
             ) {
                 Icon(Icons.Default.ZoomOutMap, contentDescription = "Fit bounds", modifier = Modifier.size(20.dp))
             }
+        }
+
+        // Prominent Record entry — one tap into the Strava-style workout recorder,
+        // without adding a sixth bottom-nav tab.
+        ExtendedFloatingActionButton(
+            onClick = onRecord,
+            containerColor = VoyagerColors.Primary,
+            contentColor = VoyagerColors.OnPrimary,
+            icon = { Icon(Icons.Default.FiberManualRecord, contentDescription = null, modifier = Modifier.size(20.dp)) },
+            text = { Text("Record") },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 24.dp)
+        )
+
+        // Transport-mode legend (toggleable) — fixes color-only meaning.
+        if (showLegend) {
+            MapLegendCard(
+                onClose = { showLegend = false },
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(16.dp)
+            )
+        }
+
+        // Accessibility / quick-jump list fallback for the canvas-only map.
+        if (showList) {
+            MapPlacesListSheet(
+                markers = uiState.visitMarkers,
+                onPlace = { visitId ->
+                    viewModel.onIntent(MapIntent.TapMarker(visitId))
+                    showList = false
+                },
+                onDismiss = { showList = false }
+            )
         }
 
         // Center on user's actual current location when requested
@@ -136,6 +198,16 @@ fun MapScreen(
                 }
                 viewModel.consumeFitBounds()
             }
+        }
+
+        // Loading overlay — dim + shimmer over the basemap while the day loads.
+        if (uiState.isLoading) {
+            MapLoadingOverlay()
+        }
+
+        // Empty overlay — honest "No Movement" when the day has no data.
+        if (!uiState.isLoading && uiState.routes.isEmpty() && uiState.visitMarkers.isEmpty()) {
+            MapEmptyOverlay(modifier = Modifier.align(Alignment.Center))
         }
     }
 }
@@ -270,20 +342,32 @@ private fun MapContent(
             }
         }
 
-        // --- Marker count badge (top-right) ---
+        // --- Day summary chip (top-right) — places visited today ---
         if (uiState.visitMarkers.isNotEmpty()) {
             VoyagerCard(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(16.dp),
+                variant = CardVariant.GLASS,
                 padding = 8.dp
             ) {
-                Text(
-                    text = "${uiState.visitMarkers.size} visits",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = VoyagerColors.Primary
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Place,
+                        contentDescription = null,
+                        tint = VoyagerColors.Primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "${uiState.visitMarkers.size} places",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = VoyagerColors.Primary
+                    )
+                }
             }
         }
     }
@@ -543,56 +627,67 @@ private fun formatMapDwellDuration(ms: Long): String {
 // Loading / Empty states
 // ---------------------------------------------------------------------------
 
+/** Dimmed scrim + shimmer skeletons (top day-nav + bottom sheet) over the basemap. */
 @Composable
-private fun LoadingState() {
+private fun MapLoadingOverlay(modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+        modifier = modifier
+            .fillMaxSize()
+            .background(VoyagerColors.Background.copy(alpha = 0.55f))
     ) {
+        ShimmerCard(
+            height = 40.dp,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 16.dp)
+                .width(180.dp)
+        )
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            ShimmerCard(height = 200.dp)
-            Text(
-                text = "Loading map data...",
-                style = MaterialTheme.typography.bodyMedium,
-                color = VoyagerColors.OnSurfaceVariant
-            )
+            ShimmerCard(height = 120.dp)
         }
     }
 }
 
+/** Honest empty state — "No Movement" with a location-off glyph and mono caption. */
 @Composable
-private fun EmptyState(dayKey: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
+private fun MapEmptyOverlay(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(VoyagerSpacing.md)
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .background(VoyagerColors.Surface.copy(alpha = 0.7f), VoyagerShapes.pill),
+            contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Default.Map,
+                imageVector = Icons.Default.LocationOff,
                 contentDescription = null,
-                tint = VoyagerColors.Primary,
-                modifier = Modifier.size(64.dp)
-            )
-            Text(
-                text = "No Data for This Day",
-                style = MaterialTheme.typography.titleMedium,
-                color = VoyagerColors.Primary
-            )
-            Text(
-                text = "No visits or routes recorded",
-                style = MaterialTheme.typography.bodyMedium,
-                color = VoyagerColors.OnSurfaceVariant
+                tint = VoyagerColors.OnSurfaceVariant,
+                modifier = Modifier.size(32.dp)
             )
         }
+        Text(
+            text = "No Movement",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = VoyagerColors.OnSurface
+        )
+        Text(
+            text = "NO TELEMETRY RECORDED FOR THIS DAY",
+            style = MonoData,
+            color = VoyagerColors.OnSurfaceVariant,
+            textAlign = TextAlign.Center,
+            letterSpacing = 1.5.sp
+        )
     }
 }
 
@@ -614,5 +709,136 @@ private fun formatMapDayKey(dayKey: String): String {
         }
     } catch (_: Exception) {
         dayKey
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Legend + accessibility list fallback
+// ---------------------------------------------------------------------------
+
+private val LEGEND_MODES = listOf(
+    "Walk / Run" to VoyagerColors.TransportWalk,
+    "Drive" to VoyagerColors.TransportDrive,
+    "Cycle" to VoyagerColors.TransportCycle,
+    "Transit" to VoyagerColors.TransportTransit,
+    "Gap" to VoyagerColors.TransportGap
+)
+
+/** Frosted legend mapping route color → transport mode (never rely on colour alone). */
+@Composable
+private fun MapLegendCard(onClose: () -> Unit, modifier: Modifier = Modifier) {
+    VoyagerCard(modifier = modifier, variant = CardVariant.GLASS, padding = 12.dp) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Mode Colors", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = VoyagerColors.Primary)
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "Close legend",
+                tint = VoyagerColors.OnSurfaceVariant,
+                modifier = Modifier.size(16.dp).clickable(onClick = onClose)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        LEGEND_MODES.forEach { (label, color) ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(vertical = 2.dp)
+            ) {
+                if (label == "Gap") {
+                    // Dashed indicator — a gap is missing data, never a solid leg.
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier.width(12.dp)
+                    ) {
+                        repeat(3) {
+                            Box(modifier = Modifier.size(width = 3.dp, height = 3.dp).background(color))
+                        }
+                    }
+                } else {
+                    Box(modifier = Modifier.size(12.dp).clip(VoyagerShapes.pill).background(color))
+                }
+                Text(label, style = MaterialTheme.typography.labelSmall, color = VoyagerColors.OnSurface)
+            }
+        }
+    }
+}
+
+/** Text enumeration of the day's places — accessibility + quick-jump for the map. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MapPlacesListSheet(
+    markers: List<VisitMarker>,
+    onPlace: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = VoyagerColors.SurfaceOverlay,
+        shape = VoyagerShapes.sheet
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 480.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text("Today's places", style = MaterialTheme.typography.headlineSmall, color = VoyagerColors.OnSurface)
+            Spacer(Modifier.height(4.dp))
+            if (markers.isEmpty()) {
+                Text(
+                    "No visits recorded for this day.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = VoyagerColors.OnSurfaceVariant
+                )
+            } else {
+                markers.sortedBy { it.arrivalAt }.forEach { m ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(VoyagerShapes.card)
+                            .clickable { onPlace(m.visitId) }
+                            .padding(vertical = 8.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(VoyagerShapes.pill)
+                                .background(VoyagerColors.Primary.copy(alpha = 0.14f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "${m.sequenceNumber}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = VoyagerColors.Primary
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                m.displayName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = VoyagerColors.OnSurface,
+                                maxLines = 1
+                            )
+                            Text(
+                                formatTime(m.arrivalAt) + (m.departureAt?.let { " – ${formatTime(it)}" } ?: " – now"),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = VoyagerColors.OnSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

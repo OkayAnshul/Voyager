@@ -39,11 +39,13 @@ class OverrideSegmentTypeUseCaseTest {
         coEvery { segmentDao.getById(1) } returns segment("WALK")
         coEvery { routeDao.getById(10) } returns route("WALK")
         val overrideAt = slot<Long?>()
-        coEvery { segmentDao.setUserOverride(1, "DRIVE", captureNullable(overrideAt)) } returns Unit
+        coEvery { segmentDao.setUserOverride(1, "DRIVE", captureNullable(overrideAt), true) } returns Unit
 
         useCase.setOverride(1, SegmentType.DRIVE)
 
         assertEquals("override timestamp is set", true, overrideAt.captured != null)
+        // corrected = true is asserted by the coEvery matcher above (only matches when true).
+        coVerify { segmentDao.setUserOverride(1, "DRIVE", any(), true) }
         coVerify { routeDao.update(match { it.transportMode == "DRIVE" }) }
         coVerify { healthLogDao.insert(match { it.eventType == "USER_OVERRIDE_SEGMENT_TYPE" }) }
     }
@@ -53,11 +55,12 @@ class OverrideSegmentTypeUseCaseTest {
         coEvery { segmentDao.getById(1) } returns segment("WALK")     // classifier said WALK
         coEvery { routeDao.getById(10) } returns route("DRIVE")        // route was overridden to DRIVE
         val overrideAt = slot<Long?>()
-        coEvery { segmentDao.setUserOverride(1, null, captureNullable(overrideAt)) } returns Unit
+        coEvery { segmentDao.setUserOverride(1, null, captureNullable(overrideAt), false) } returns Unit
 
         useCase.setOverride(1, null)
 
         assertNull("clearing nulls the override timestamp", overrideAt.captured)
+        coVerify { segmentDao.setUserOverride(1, null, any(), false) } // clears the corrected flag
         coVerify { routeDao.update(match { it.transportMode == "WALK" }) } // reverts to classifier
         coVerify { healthLogDao.insert(match { it.eventType == "USER_CLEARED_SEGMENT_OVERRIDE" }) }
     }
@@ -66,7 +69,7 @@ class OverrideSegmentTypeUseCaseTest {
     fun `an unknown segment is a no-op`() = runTest {
         coEvery { segmentDao.getById(99) } returns null
         useCase.setOverride(99, SegmentType.DRIVE)
-        coVerify(exactly = 0) { segmentDao.setUserOverride(any(), any(), any()) }
+        coVerify(exactly = 0) { segmentDao.setUserOverride(any(), any(), any(), any()) }
         coVerify(exactly = 0) { routeDao.update(any()) }
         coVerify(exactly = 0) { healthLogDao.insert(any<HealthLogEntity>()) }
     }

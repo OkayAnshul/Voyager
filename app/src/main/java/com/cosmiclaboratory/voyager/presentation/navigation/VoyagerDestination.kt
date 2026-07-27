@@ -1,6 +1,7 @@
 package com.cosmiclaboratory.voyager.presentation.navigation
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -11,11 +12,12 @@ sealed class VoyagerDestination(
     val title: String,
     val icon: ImageVector
 ) {
-    // Bottom Navigation
-    object Home : VoyagerDestination("home", "Home", Icons.Filled.Home)
-    object Map : VoyagerDestination("map", "Map", Icons.Filled.Place)
+    // Bottom Navigation (6 tabs — Memory: Today+Timeline · Spatial: Map · Habits: Insights · Proof · Athlete: Activities)
+    object Home : VoyagerDestination("home", "Today", Icons.Filled.Today)
     object Timeline : VoyagerDestination("timeline", "Timeline", Icons.AutoMirrored.Filled.List)
+    object Map : VoyagerDestination("map", "Map", Icons.Filled.Map)
     object Insights : VoyagerDestination("insights", "Insights", Icons.Filled.Insights)
+    object Proof : VoyagerDestination("proof", "Proof", Icons.Filled.Verified)
 
     // Top-level
     object Settings : VoyagerDestination("settings", "Settings", Icons.Filled.Settings)
@@ -31,20 +33,19 @@ sealed class VoyagerDestination(
         fun createRoute(segmentId: Long) = "segment_detail/$segmentId"
     }
 
-    object VisitDetail : VoyagerDestination("visit_detail/{visitId}", "Visit", Icons.Filled.Place) {
-        fun createRoute(visitId: Long) = "visit_detail/$visitId"
-    }
-
     // Debug
     object DebugDataInsertion : VoyagerDestination("debug_data_insertion", "Debug", Icons.Filled.Build)
     object PipelineDebug : VoyagerDestination("pipeline_debug", "Pipeline Debug", Icons.Filled.BugReport)
 
     // Push navigation screens
     object PlaceReview : VoyagerDestination("place_review", "Review", Icons.Filled.RateReview)
-    object Categories : VoyagerDestination("categories", "Categories", Icons.Filled.Category)
     object DeveloperProfile : VoyagerDestination("developer_profile", "About Developer", Icons.Filled.Person)
     object OpenSourceLicenses : VoyagerDestination("open_source_licenses", "Open-source licenses", Icons.Filled.Code)
-    object Feedback : VoyagerDestination("feedback", "Send feedback", Icons.Filled.Send)
+    /** Send feedback — optional `category` arg (BUG/FEATURE/GENERAL) preselects the composer tab. */
+    object Feedback : VoyagerDestination("feedback?category={category}", "Send feedback", Icons.Filled.Send) {
+        fun createRoute(category: String? = null): String =
+            if (category.isNullOrBlank()) "feedback" else "feedback?category=$category"
+    }
     object Reliability : VoyagerDestination("reliability", "Reliability", Icons.Filled.HealthAndSafety)
     object Mileage : VoyagerDestination("mileage", "Mileage log", Icons.Filled.DirectionsCar)
     object Paywall : VoyagerDestination("paywall", "Voyager Pro", Icons.Filled.WorkspacePremium)
@@ -63,9 +64,19 @@ sealed class VoyagerDestination(
             if (dayKey.isNullOrBlank()) "day_story" else "day_story?dayKey=$dayKey"
     }
 
+    // Athlete persona — workout recording (Record launched from the Activities tab / Map)
+    object Record : VoyagerDestination("workout_record", "Record", Icons.Filled.FiberManualRecord)
+    object Activities : VoyagerDestination("activities", "Activities", Icons.AutoMirrored.Filled.DirectionsRun)
+
+    object ActivityDetail : VoyagerDestination("activity_detail/{activityId}", "Activity", Icons.Filled.FitnessCenter) {
+        fun createRoute(activityId: Long) = "activity_detail/$activityId"
+    }
+
+    object Segments : VoyagerDestination("workout_segments", "Segments", Icons.Filled.Route)
+
     companion object {
-        /** Bottom nav: 4 tabs only. Settings is push-nav from top bar gear. */
-        val bottomNavItems get() = listOf(Home, Map, Timeline, Insights)
+        /** Bottom nav: 6 tabs. Settings is push-nav from top bar gear. */
+        val bottomNavItems get() = listOf(Home, Timeline, Map, Insights, Proof, Activities)
 
         fun NavController.navigateToTab(route: String) {
             navigate(route) {

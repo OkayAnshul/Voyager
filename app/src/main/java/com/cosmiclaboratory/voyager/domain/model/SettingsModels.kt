@@ -59,8 +59,6 @@ data class UserSettings(
     val routeColorByTransportMode: Boolean = true,
     val showVisitMarkers: Boolean = true,
     val visitMarkerNumbering: Boolean = true,
-    val offlineMapsEnabled: Boolean = false,
-    val clusterMarkersAtZoom: Int = 12,
 
     // Geocoding
     val providerOrder: List<GeocodingProviderId> = listOf(
@@ -109,5 +107,16 @@ data class UserSettings(
     val activePreset: String = "DAILY_COMMUTER",
     val customBasePreset: String? = null,
     /** The user's chosen job (Job.id) — blank until the onboarding persona pick. */
-    val activeJob: String = ""
+    val activeJob: String = "",
+
+    // Mileage (tax deduction / reimbursement) — drives the money math on the Mileage log.
+    // Static defaults here match IRS/USD/miles; SettingsRepositoryImpl substitutes a
+    // locale-aware default ([MileageRateConfig.defaultForLocale]) when nothing is persisted yet.
+    val mileageDistanceUnit: DistanceUnit = DistanceUnit.MILE,
+    val mileageCurrencyCode: String = "USD",
+    val mileageRatePreset: MileageRatePreset = MileageRatePreset.IRS_2025,
+    /** Custom per-[mileageDistanceUnit] rates, used only when [mileageRatePreset] is CUSTOM. */
+    val mileageCustomRateBusiness: Double = 0.0,
+    val mileageCustomRateMedical: Double = 0.0,
+    val mileageCustomRateCharitable: Double = 0.0
 )

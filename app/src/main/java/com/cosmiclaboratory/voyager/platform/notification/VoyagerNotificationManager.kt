@@ -32,13 +32,33 @@ class VoyagerNotificationManager @Inject constructor(
         const val CHANNEL_USER_ACTIONS = "user_actions"
         const val CHANNEL_SYSTEM_HEALTH = "system_health"
         const val CHANNEL_EMERGENCY_ALERTS = "emergency_alerts"
+        const val CHANNEL_NUDGES = "nudges"
 
         // Notification IDs
         const val NOTIFICATION_ID_TRACKING = 1001
         const val NOTIFICATION_ID_VISIT_CONFIRMATION = 2000 // offset by visitId
         const val NOTIFICATION_ID_INSIGHT = 3001
+        const val NOTIFICATION_ID_INSIGHT_WEEKLY = 3002
+        const val NOTIFICATION_ID_INSIGHT_ANOMALY = 3003
+        const val NOTIFICATION_ID_NUDGE_NEW_PLACE = 3100
+        const val NOTIFICATION_ID_NUDGE_ROUTINE = 3101
         const val NOTIFICATION_ID_HEALTH = 4001
         const val NOTIFICATION_ID_TRACKING_ALERT = 4002
+
+        // Deep-link routing — an EXTRA_DEST on the tap intent opens a specific screen.
+        const val EXTRA_DEST = "voyager.extra.DEST"
+        const val DEST_PROOF = "proof"
+        const val DEST_INSIGHTS = "insights"
+        const val DEST_ACTIVITIES = "activities"
+        /** Place detail: EXTRA_DEST = "place:{placeId}". */
+        fun destPlace(placeId: Long) = "place:$placeId"
+
+        // Throttle keys for the once-a-day nudges.
+        private const val THROTTLE_NEW_PLACE = "nudge_new_place"
+        private const val THROTTLE_ROUTINE = "nudge_routine"
+        // Nudges only fire inside this daytime window (never nag at night).
+        private const val QUIET_HOUR_START = 8   // inclusive
+        private const val QUIET_HOUR_END = 21     // exclusive
     }
 
     private val notificationManager: NotificationManager
@@ -95,6 +115,13 @@ class VoyagerNotificationManager @Inject constructor(
             ).apply {
                 description = "Worker failures, data integrity issues, and diagnostics"
                 setShowBadge(false)
+            },
+            NotificationChannel(
+                CHANNEL_NUDGES,
+                "Discoveries & Routine",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Rare, high-signal nudges — a new place you visited, or a routine you missed"
             },
             NotificationChannel(
                 CHANNEL_EMERGENCY_ALERTS,
@@ -230,26 +257,102 @@ class VoyagerNotificationManager @Inject constructor(
     }
 
     /**
-     * Shows a daily or weekly insight notification.
+     * Shows an insight notification. Each caller passes its own [channelId] + [notificationId] so
+     * the daily / weekly / anomaly insights land on the right channel and never overwrite one
+     * another (they used to share the daily channel + id 3001). [destination] optionally deep-links
+     * the tap to a specific screen — see [EXTRA_DEST].
      */
-    fun showInsight(title: String, body: String) {
-        // Tapping the recap opens the app.
-        val launchIntent = Intent(context, com.cosmiclaboratory.voyager.MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        val contentPending = PendingIntent.getActivity(
-            context, 2, launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = NotificationCompat.Builder(context, CHANNEL_INSIGHTS_DAILY)
+    fun showInsight(
+        title: String,
+        body: String,
+        channelId: String = CHANNEL_INSIGHTS_DAILY,
+        notificationId: Int = NOTIFICATION_ID_INSIGHT,
+        destination: String? = null,
+    ) {
+        val notification = NotificationCompat.Builder(context, channelId)
             .setContentTitle(title)
             .setContentText(body)
             .setSmallIcon(R.drawable.ic_notification_location)
             .setAutoCancel(true)
-            .setContentIntent(contentPending)
+            .setContentIntent(contentPendingIntent(notificationId, destination))
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .build()
 
-        notificationManager.notify(NOTIFICATION_ID_INSIGHT, notification)
+        notificationManager.notify(notificationId, notification)
+    }
+
+    /**
+     * Posts a rare, high-signal nudge on the [CHANNEL_NUDGES] channel — a new place discovered or a
+     * routine missed. Deliberately restrained: suppressed outside daytime hours and capped to once
+     * per day per [throttleKey], so it informs without nagging. Returns true if it actually fired.
+     */
+    fun showNudge(
+        title: String,
+        body: String,
+        notificationId: Int,
+        throttleKey: String,
+        destination: String? = null,
+    ): Boolean {
+        if (isQuietHours() || alreadySentToday(throttleKey)) return false
+        val notification = NotificationCompat.Builder(context, CHANNEL_NUDGES)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setSmallIcon(R.drawable.ic_notification_location)
+            .setAutoCancel(true)
+            .setContentIntent(contentPendingIntent(notificationId, destination))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .build()
+        notificationManager.notify(notificationId, notification)
+        markSentToday(throttleKey)
+        return true
+    }
+
+    /** Convenience wrappers so callers don't juggle ids/throttle keys. */
+    fun showNewPlaceNudge(placeName: String, placeId: Long): Boolean = showNudge(
+        title = "First time here",
+        body = "Looks like your first visit to $placeName. It's on your map now.",
+        notificationId = NOTIFICATION_ID_NUDGE_NEW_PLACE,
+        throttleKey = THROTTLE_NEW_PLACE,
+        destination = destPlace(placeId),
+    )
+
+    fun showRoutineNudge(title: String, body: String): Boolean = showNudge(
+        title = title,
+        body = body,
+        notificationId = NOTIFICATION_ID_NUDGE_ROUTINE,
+        throttleKey = THROTTLE_ROUTINE,
+        destination = DEST_INSIGHTS,
+    )
+
+    /**
+     * Builds the tap PendingIntent for a content notification, carrying an optional [destination]
+     * so [com.cosmiclaboratory.voyager.MainActivity] can route to the right screen. The request
+     * code is the notification id so distinct notifications keep distinct extras.
+     */
+    private fun contentPendingIntent(requestCode: Int, destination: String?): PendingIntent {
+        val launchIntent = Intent(context, com.cosmiclaboratory.voyager.MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        if (destination != null) launchIntent.putExtra(EXTRA_DEST, destination)
+        return PendingIntent.getActivity(
+            context, requestCode, launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private val nudgePrefs by lazy {
+        context.getSharedPreferences("voyager_nudges", Context.MODE_PRIVATE)
+    }
+
+    private fun isQuietHours(): Boolean {
+        val hour = java.time.LocalTime.now().hour
+        return hour < QUIET_HOUR_START || hour >= QUIET_HOUR_END
+    }
+
+    private fun alreadySentToday(key: String): Boolean =
+        nudgePrefs.getLong(key, -1L) == java.time.LocalDate.now().toEpochDay()
+
+    private fun markSentToday(key: String) {
+        nudgePrefs.edit().putLong(key, java.time.LocalDate.now().toEpochDay()).apply()
     }
 
     /**

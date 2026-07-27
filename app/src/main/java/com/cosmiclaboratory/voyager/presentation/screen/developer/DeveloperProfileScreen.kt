@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.drawBehind
 import com.cosmiclaboratory.voyager.presentation.theme.*
 
 /**
@@ -32,7 +33,9 @@ import com.cosmiclaboratory.voyager.presentation.theme.*
 @Composable
 fun DeveloperProfileScreen(
     onNavigateBack: () -> Unit = {},
-    onNavigateToLicenses: () -> Unit = {}
+    onNavigateToLicenses: () -> Unit = {},
+    onSendFeedback: () -> Unit = {},
+    onReportIssue: () -> Unit = {}
 ) {
     val uriHandler = LocalUriHandler.current
     var voyagerTapCount by remember { mutableStateOf(0) }
@@ -57,8 +60,8 @@ fun DeveloperProfileScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                    containerColor = VoyagerColors.Background,
+                    titleContentColor = VoyagerColors.OnSurface
                 )
             )
         }
@@ -67,7 +70,7 @@ fun DeveloperProfileScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(MaterialTheme.colorScheme.background),
+                .drawBehind { drawRect(brush = VoyagerGradients.screenBackground(size.width, size.height)) },
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -113,7 +116,7 @@ fun DeveloperProfileScreen(
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Text(
-                        text = "Code Enthusiast | Tech Tinkerer | Passionate Builder",
+                        text = "Android developer · builder of small, honest tools",
                         style = MaterialTheme.typography.bodyLarge,
                         color = VoyagerColors.Primary,
                         textAlign = TextAlign.Center,
@@ -123,7 +126,7 @@ fun DeveloperProfileScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "\"Turning coffee into code, bugs into features, and ideas into reality.\"",
+                        text = "I build software I'd want to use myself — private, careful, and made to last.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -134,7 +137,7 @@ fun DeveloperProfileScreen(
 
             // About Section
             item {
-                VoyagerCard(modifier = Modifier.fillMaxWidth()) {
+                VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -162,7 +165,7 @@ fun DeveloperProfileScreen(
                         }
 
                         Text(
-                            text = "Hey there! 👋 You found the secret 'About Developer' section. Welcome to my little corner of the app!",
+                            text = "Voyager is a private, on-device timeline of where your days actually go — your movements, places, and trips, recorded and analysed entirely on your phone.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -170,28 +173,9 @@ fun DeveloperProfileScreen(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Text(
-                            text = "Voyager started as a fun side project and evolved into... well, a slightly bigger fun side project. Built with:",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Text(
-                            text = "• Way too much coffee ☕ (seriously, I should buy stocks)\n• Late-night coding marathons 🌙\n• A genuine love for clean code\n• The hope that good UX makes life easier\n• Teal accents because they look awesome 💚",
+                            text = "It began as a way to answer a simple question — where does my time go? — without handing that answer to anyone else. No account, no cloud, no analytics. Just a careful tool that stays on your side.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = "\"If it works, ship it. If it breaks, fix it. If it's ugly, refactor it. Repeat.\"",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = VoyagerColors.Primary.copy(alpha = 0.9f),
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                         )
                     }
                 }
@@ -199,7 +183,7 @@ fun DeveloperProfileScreen(
 
             // A Note from Anshul
             item {
-                VoyagerCard(modifier = Modifier.fillMaxWidth()) {
+                VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -251,7 +235,7 @@ fun DeveloperProfileScreen(
 
             // Developer Philosophy Section
             item {
-                VoyagerCard(modifier = Modifier.fillMaxWidth()) {
+                VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -264,7 +248,7 @@ fun DeveloperProfileScreen(
                                 modifier = Modifier.size(24.dp)
                             )
                             Text(
-                                text = "Developer Manifesto",
+                                text = "How I build",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = VoyagerColors.Primary
@@ -272,27 +256,17 @@ fun DeveloperProfileScreen(
                         }
 
                         Text(
-                            text = "\"Code is like humor. When you have to explain it, it's probably bad.\"",
+                            text = "A few things I hold to when building Voyager:",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                            color = MaterialTheme.colorScheme.onSurface
                         )
 
                         Spacer(modifier = Modifier.height(4.dp))
 
                         Text(
-                            text = "What I enjoy:\n\n→ Making things that actually work\n→ UI that doesn't make users cry\n→ Performance that feels snappy\n→ Learning new tech (even if I break things)\n→ Experimenting with ideas\n→ Shipping things and iterating\n→ Coffee. Lots of coffee.",
+                            text = "→ Your data stays on your device — always\n→ Honest UI: no dark patterns, no nagging\n→ Fast and light on battery\n→ Clear over clever\n→ Ship, listen, and keep improving",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = "\"My code works... I have no idea why. My code doesn't work... I have no idea why. Developer life in a nutshell.\" 😅",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                         )
                     }
                 }
@@ -300,7 +274,7 @@ fun DeveloperProfileScreen(
 
             // Tech Stack Section
             item {
-                VoyagerCard(modifier = Modifier.fillMaxWidth()) {
+                VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -321,7 +295,7 @@ fun DeveloperProfileScreen(
                         }
 
                         Text(
-                            text = "⚡ Kotlin – Modern, concise, fun to write\n🎨 Jetpack Compose – UI that makes sense\n🗺️ Location APIs – Because maps are cool\n📊 Room Database – SQLite but friendlier\n⚙️ Hilt/Dagger – DI made manageable\n🔄 Coroutines & Flow – Async without tears\n🎯 Material 3 – Design that scales\n💚 Custom theming – Personal touch",
+                            text = "⚡ Kotlin\n🎨 Jetpack Compose\n🗺️ MapLibre + OpenStreetMap\n📊 Room + SQLCipher (encrypted storage)\n⚙️ Hilt for dependency injection\n🔄 Coroutines & Flow\n🎯 Material 3",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -331,7 +305,7 @@ fun DeveloperProfileScreen(
 
             // Connect With Me Section
             item {
-                VoyagerCard(modifier = Modifier.fillMaxWidth()) {
+                VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -400,7 +374,7 @@ fun DeveloperProfileScreen(
 
             // Get In Touch Section
             item {
-                VoyagerCard(modifier = Modifier.fillMaxWidth()) {
+                VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -420,11 +394,9 @@ fun DeveloperProfileScreen(
                             )
                         }
 
-                        // Send Feedback Button
+                        // Send Feedback Button — opens the in-app feedback composer.
                         VoyagerButton(
-                            onClick = {
-                                uriHandler.openUri("mailto:anshulisokay@gmail.com?subject=Voyager%20Feedback")
-                            },
+                            onClick = onSendFeedback,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(
@@ -433,14 +405,12 @@ fun DeveloperProfileScreen(
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Send Feedback", fontWeight = FontWeight.Medium)
+                            Text("Send feedback", fontWeight = FontWeight.Medium)
                         }
 
-                        // Report an Issue Button
+                        // Report an Issue Button — in-app composer, bug category preselected.
                         VoyagerButton(
-                            onClick = {
-                                uriHandler.openUri("https://github.com/OkayAnshul")
-                            },
+                            onClick = onReportIssue,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(
@@ -449,7 +419,7 @@ fun DeveloperProfileScreen(
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Report an Issue", fontWeight = FontWeight.Medium)
+                            Text("Report an issue", fontWeight = FontWeight.Medium)
                         }
                     }
                 }

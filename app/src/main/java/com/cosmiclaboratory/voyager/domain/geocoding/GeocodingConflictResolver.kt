@@ -14,7 +14,7 @@ import javax.inject.Singleton
  *   score = priority * 0.4 + confidence * 0.3 + specificity * 0.2 + recency * 0.1
  *
  * Display name resolution chain:
- *   userDisplayName > userCategory > bestProviderName > semantic > coordinates
+ *   userDisplayName > userCategory > bestProviderName > "Near [nearbyContext]" > semantic > coordinates
  */
 @Singleton
 class GeocodingConflictResolver @Inject constructor() {
@@ -70,14 +70,38 @@ class GeocodingConflictResolver @Inject constructor() {
             return userCategory.lowercase().replaceFirstChar { it.uppercase() }
         }
 
-        // 3. Best provider name (exact address from winning provider)
+        // 3. Best provider name (accuracy-gated address/POI from winning provider)
         if (!bestProviderName.isNullOrBlank()) return bestProviderName
 
-        // 4. Semantic label from visit pattern inference
+        // 4. "Near [neighborhood/street/city]" — an honest, coarse locator when no
+        //    trustworthy provider name exists, so the user never sees raw coordinates.
+        if (!nearbyContext.isNullOrBlank()) return "Near $nearbyContext"
+
+        // 5. Semantic label from visit pattern inference
         if (!semanticLabel.isNullOrBlank()) return semanticLabel
 
-        // 5. Coordinate fallback
+        // 6. Coordinate fallback (only when we truly know nothing about the area)
         return formatCoordinates(lat, lng)
+    }
+
+    /**
+     * Bare "nearby area" locator from candidates' structured parts, most specific
+     * first: neighborhood > "street, city" > city. Returns null when no part is known.
+     * Callers prefix "Near " for display (see [resolveDisplayName]). Never uses a POI
+     * name here — a nearby POI must never masquerade as the place's own name.
+     */
+    fun nearbyContext(candidates: List<GeocodeCandidate>): String? {
+        // Prefer neighborhood (most specific landmark-like context).
+        candidates.firstNotNullOfOrNull { it.structuredParts?.neighborhood?.takeIf { n -> n.isNotBlank() } }
+            ?.let { return it }
+        // Then street (+ city when available).
+        for (candidate in candidates) {
+            val parts = candidate.structuredParts ?: continue
+            val street = parts.street?.takeIf { it.isNotBlank() } ?: continue
+            return if (!parts.city.isNullOrBlank()) "$street, ${parts.city}" else street
+        }
+        // Last resort: city only.
+        return candidates.firstNotNullOfOrNull { it.structuredParts?.city?.takeIf { c -> c.isNotBlank() } }
     }
 
     // ---- Accuracy gate ----
@@ -236,6 +260,13 @@ class GeocodingConflictResolver @Inject constructor() {
         if (newest == oldest) return 1f
         return ((fetchedAt - oldest).toFloat() / (newest - oldest).toFloat()).coerceIn(0f, 1f)
     }
+
+    /**
+     * The coordinate string used as the last-resort display placeholder. Exposed so
+     * callers (e.g. the geocode backfill path) can detect "this resolved to bare
+     * coordinates, not a real name" without duplicating the format.
+     */
+    fun coordinatePlaceholder(lat: Double, lng: Double): String = formatCoordinates(lat, lng)
 
     private fun formatCoordinates(lat: Double, lng: Double): String {
         return "%.4f, %.4f".format(lat, lng)

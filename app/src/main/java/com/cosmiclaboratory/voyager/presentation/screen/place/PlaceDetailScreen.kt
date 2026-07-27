@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cosmiclaboratory.voyager.domain.model.*
@@ -23,6 +24,7 @@ import com.cosmiclaboratory.voyager.domain.model.enums.GeocodingProviderId
 import com.cosmiclaboratory.voyager.presentation.components.*
 import com.cosmiclaboratory.voyager.presentation.screen.review.PlaceEditDialog
 import com.cosmiclaboratory.voyager.presentation.theme.*
+import com.cosmiclaboratory.voyager.ui.theme.MonoStatLarge
 import com.cosmiclaboratory.voyager.ui.theme.MonoStatSmall
 import com.cosmiclaboratory.voyager.ui.theme.MonoTimestamp
 
@@ -171,6 +173,10 @@ private fun PlaceDetailContent(
         )
     }
 
+    val confidence = evidence?.overall ?: place.confidence
+    val needsIdentify = confidence < 0.5f ||
+        place.nameSource.contains("Coordinate", ignoreCase = true)
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -178,21 +184,7 @@ private fun PlaceDetailContent(
     ) {
         item { PlaceInfoHeader(place, evidence) }
 
-        if (analytics != null) {
-            item { AnalyticsSection(analytics) }
-        }
-
-        if (evidence != null) {
-            item { EvidenceSection(evidence) }
-        }
-
-        if (geocodeCandidates.isNotEmpty()) {
-            item { SectionHeader(title = "Geocode Candidates") }
-            items(geocodeCandidates) { candidate ->
-                GeocodeCandidateCard(candidate)
-            }
-        }
-
+        // Rename / Change Category sit directly under the identity header.
         item {
             ActionButtons(
                 currentEmoji = place.emoji,
@@ -204,6 +196,29 @@ private fun PlaceDetailContent(
                 onRefreshGeocode = { onIntent(PlaceDetailIntent.RefreshGeocode) },
                 onPickEmoji = { showEmojiPicker = true }
             )
+        }
+
+        // Low-confidence / unnamed → invite the user to name it.
+        if (needsIdentify) {
+            item { IdentifyLocationCard(onIdentify = { showRenameDialog = true }) }
+        }
+
+        if (analytics != null) {
+            item { AnalyticsSection(analytics) }
+        }
+
+        if (evidence != null) {
+            item { EvidenceSection(evidence) }
+        }
+
+        if (geocodeCandidates.isNotEmpty()) {
+            item { SectionHeader(title = "Ranked Candidates") }
+            items(geocodeCandidates) { candidate ->
+                RankedCandidateCard(
+                    candidate = candidate,
+                    onAdopt = { onIntent(PlaceDetailIntent.Rename(candidate.displayName)) }
+                )
+            }
         }
 
         if (showEmojiPicker) {
@@ -225,124 +240,157 @@ private fun PlaceDetailContent(
 
 @Composable
 private fun PlaceInfoHeader(place: TimelinePlace, evidence: ConfidenceBlock?) {
-    VoyagerCard(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = place.displayName,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = VoyagerColors.Primary
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
+    VoyagerCard(
+        modifier = Modifier.fillMaxWidth(),
+        variant = CardVariant.GLASS,
+        tint = VoyagerSurfaces.auroraSoft
+    ) {
+        // Category eyebrow + Home/Work semantic badge
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            CategoryChip(categoryName = place.category.displayName)
-            NameSourceIndicator(nameSource = place.nameSource)
+            VoyagerEyebrow(text = place.category.displayName)
+            if (place.category == PlaceCategory.HOME || place.category == PlaceCategory.WORK) {
+                VoyagerBadge(
+                    text = place.category.displayName,
+                    color = VoyagerColors.AccentAmber,
+                    contentColor = VoyagerColors.AccentAmber,
+                    style = BadgeStyle.OUTLINE,
+                    icon = if (place.category == PlaceCategory.HOME) Icons.Default.Home else Icons.Default.Work
+                )
+            }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-        HorizontalDivider(color = VoyagerColors.SurfaceVariant)
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.LocationOn,
-                contentDescription = null,
-                tint = VoyagerColors.OnSurfaceVariant,
-                modifier = Modifier.size(18.dp)
-            )
+            place.emoji?.let { Text(text = it, style = MaterialTheme.typography.headlineSmall) }
             Text(
-                text = "%.6f, %.6f".format(place.lat, place.lng),
-                style = MonoTimestamp,
-                color = VoyagerColors.OnSurfaceVariant
+                text = place.displayName,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = VoyagerColors.OnSurface
             )
         }
+        NameSourceIndicator(nameSource = place.nameSource)
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         val confidence = evidence?.overall ?: place.confidence
         ConfidenceBar(
             confidence = confidence,
             source = place.nameSource
         )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.LocationOn,
+                contentDescription = null,
+                tint = VoyagerColors.OnSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = "%.5f, %.5f".format(place.lat, place.lng),
+                style = MonoTimestamp,
+                color = VoyagerColors.OnSurfaceVariant
+            )
+        }
     }
 }
 
 @Composable
 private fun AnalyticsSection(analytics: PlaceAnalytics) {
-    VoyagerCard(modifier = Modifier.fillMaxWidth()) {
-        SectionHeader(title = "Visit Analytics")
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            StatItem(
-                value = analytics.totalVisitCount.toString(),
-                label = "Total Visits"
-            )
-            StatItem(
-                value = formatDurationMs(analytics.avgDwellMs),
-                label = "Avg Dwell"
-            )
-            StatItem(
-                value = formatDurationMs(analytics.totalDwellMs),
-                label = "Total Time"
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        analytics.dominantDayOfWeek?.let { dow ->
-            val dayName = java.time.DayOfWeek.of(dow).name
-                .lowercase().replaceFirstChar { it.uppercase() }
-            Text(
-                text = "Most visited on: $dayName",
-                style = MaterialTheme.typography.bodySmall,
-                color = VoyagerColors.OnSurfaceVariant
-            )
-        }
-
-        analytics.dominantTimeOfDay?.let { tod ->
-            Text(
-                text = "Typical time: $tod",
-                style = MaterialTheme.typography.bodySmall,
-                color = VoyagerColors.OnSurfaceVariant
-            )
-        }
-
-        analytics.visitTrend?.let { trend ->
-            Spacer(modifier = Modifier.height(4.dp))
-            val (icon, color) = when (trend) {
-                Trend.UP -> Icons.Default.TrendingUp to VoyagerColors.AccentGreen
-                Trend.DOWN -> Icons.Default.TrendingDown to VoyagerColors.AccentRed
-                Trend.STABLE -> Icons.Default.TrendingFlat to VoyagerColors.OnSurfaceVariant
-            }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // ── Visit history + temporal pattern ──
+        VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = color,
-                    modifier = Modifier.size(16.dp)
+                Text(
+                    text = "Visit History",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = VoyagerColors.OnSurface
                 )
                 Text(
-                    text = "Visit trend: ${trend.name.lowercase()}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = color
+                    text = "${analytics.totalVisitCount} visits · avg ${formatDurationMs(analytics.avgDwellMs)}",
+                    style = MonoStatSmall,
+                    color = VoyagerColors.OnSurfaceVariant
                 )
             }
+
+            buildTemporalPattern(analytics)?.let { pattern ->
+                Spacer(modifier = Modifier.height(12.dp))
+                VoyagerEyebrow(text = "Temporal Pattern")
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = pattern,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = VoyagerColors.OnSurface
+                )
+            }
+
+            analytics.visitTrend?.let { trend ->
+                Spacer(modifier = Modifier.height(8.dp))
+                val (icon, color) = when (trend) {
+                    Trend.UP -> Icons.Default.TrendingUp to VoyagerColors.AccentGreen
+                    Trend.DOWN -> Icons.Default.TrendingDown to VoyagerColors.AccentRed
+                    Trend.STABLE -> Icons.Default.TrendingFlat to VoyagerColors.OnSurfaceVariant
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
+                    Text(
+                        text = "Visit trend: ${trend.name.lowercase()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = color
+                    )
+                }
+            }
+        }
+
+        // ── Total duration ──
+        VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS) {
+            VoyagerEyebrow(text = "Total Duration", color = VoyagerColors.OnSurfaceVariant)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = formatTotalDuration(analytics.totalDwellMs),
+                style = MonoStatLarge,
+                color = VoyagerColors.Primary
+            )
         }
     }
+}
+
+private fun buildTemporalPattern(a: PlaceAnalytics): String? {
+    val day = a.dominantDayOfWeek?.let {
+        java.time.DayOfWeek.of(it).name.lowercase().replaceFirstChar { c -> c.uppercase() }
+    }
+    val tod = a.dominantTimeOfDay
+    return when {
+        day != null && tod != null -> "Usually $day, $tod"
+        day != null -> "Usually on $day"
+        tod != null -> "Usually in the $tod"
+        else -> null
+    }
+}
+
+private fun formatTotalDuration(ms: Long): String {
+    val hours = ms / 3_600_000.0
+    return if (hours >= 1.0) "%.1f hrs".format(hours) else "${ms / 60_000} min"
 }
 
 @Composable
@@ -402,66 +450,77 @@ private fun ConfidenceRow(label: String, value: Float) {
     }
 }
 
+/** Invites naming a low-confidence / unnamed place — taps straight into rename. */
 @Composable
-private fun GeocodeCandidateCard(candidate: GeocodeCandidate) {
-    VoyagerCard(modifier = Modifier.fillMaxWidth(), padding = 12.dp) {
+private fun IdentifyLocationCard(onIdentify: () -> Unit) {
+    VoyagerCard(
+        modifier = Modifier.fillMaxWidth(),
+        variant = CardVariant.HIGHLIGHTED,
+        onClick = onIdentify
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.EditLocationAlt,
+                contentDescription = null,
+                tint = VoyagerColors.Primary,
+                modifier = Modifier.size(26.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Identify this location",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = VoyagerColors.OnSurface
+                )
+                Text(
+                    text = "Add a name to improve accuracy and personal tracking.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VoyagerColors.OnSurfaceVariant
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = VoyagerColors.OnSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun RankedCandidateCard(candidate: GeocodeCandidate, onAdopt: () -> Unit) {
+    VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS, padding = 12.dp) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = candidate.displayName,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = VoyagerColors.OnSurface
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    VoyagerBadge(
-                        text = candidate.provider.name,
-                        color = VoyagerColors.PrimaryContainer,
-                        contentColor = VoyagerColors.Primary
-                    )
-                    Text(
-                        text = "Rank #${candidate.rank}",
-                        style = MonoTimestamp,
-                        color = VoyagerColors.OnSurfaceVariant
-                    )
-                }
-                candidate.structuredParts?.let { parts ->
-                    val addressParts = listOfNotNull(
-                        parts.street, parts.city, parts.state, parts.country
-                    )
-                    if (addressParts.isNotEmpty()) {
-                        Text(
-                            text = addressParts.joinToString(", "),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = VoyagerColors.OnSurfaceVariant
-                        )
-                    }
-                }
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "${(candidate.confidence * 100).toInt()}%",
-                    style = MonoStatSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = VoyagerColors.Primary
+                    color = VoyagerColors.OnSurface,
+                    maxLines = 1
                 )
                 Text(
-                    text = candidate.licenseClass.name.lowercase()
-                        .replaceFirstChar { it.uppercase() },
-                    style = MaterialTheme.typography.labelSmall,
+                    text = "Source: ${providerLabel(candidate.provider)} · ${(candidate.confidence * 100).toInt()}% match",
+                    style = MaterialTheme.typography.bodySmall,
                     color = VoyagerColors.OnSurfaceVariant
                 )
+            }
+            VoyagerOutlinedButton(onClick = onAdopt) {
+                Text("Adopt", style = MaterialTheme.typography.labelLarge)
             }
         }
     }
 }
+
+private fun providerLabel(provider: GeocodingProviderId): String =
+    provider.name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
 
 @Composable
 private fun ActionButtons(

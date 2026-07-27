@@ -16,12 +16,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.cosmiclaboratory.voyager.BuildConfig
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerColors
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerGradients
 
 private enum class FeedbackCategory(
     val label: String,
@@ -38,14 +40,19 @@ private const val FEEDBACK_EMAIL = "anshulisokay@gmail.com"
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedbackScreen(
-    onNavigateBack: () -> Unit = {}
+    onNavigateBack: () -> Unit = {},
+    initialCategory: String? = null
 ) {
     val context = LocalContext.current
-    var category by remember { mutableStateOf(FeedbackCategory.BUG) }
+    val startCategory = remember(initialCategory) {
+        FeedbackCategory.entries.firstOrNull { it.name == initialCategory } ?: FeedbackCategory.BUG
+    }
+    var category by remember { mutableStateOf(startCategory) }
     var description by remember { mutableStateOf("") }
     var includeDeviceInfo by remember { mutableStateOf(true) }
 
     Scaffold(
+        containerColor = VoyagerColors.Background,
         topBar = {
             TopAppBar(
                 title = { Text("Send feedback", fontWeight = FontWeight.Bold) },
@@ -53,13 +60,19 @@ fun FeedbackScreen(
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = VoyagerColors.Background,
+                    titleContentColor = VoyagerColors.OnSurface
+                ),
+                windowInsets = WindowInsets(0)
             )
         }
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .drawBehind { drawRect(brush = VoyagerGradients.screenBackground(size.width, size.height)) }
                 .padding(padding)
                 .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState()),

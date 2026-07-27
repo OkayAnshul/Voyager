@@ -21,13 +21,12 @@ data class RestoreUiState(
 )
 
 /**
- * Drives the first-launch [RestoreScreen]. Restores a `.voyager` backup
- * (a Voyager JSON export) into the fresh database.
+ * Powers the "Restore a backup" action on the intro screen's import card. Restores
+ * a `.voyager` backup (a Voyager JSON export) into the fresh database.
  */
 @HiltViewModel
 class RestoreViewModel @Inject constructor(
-    private val exportRepository: ExportRepository,
-    private val restorePreferences: RestorePreferences
+    private val exportRepository: ExportRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RestoreUiState())
@@ -49,10 +48,5 @@ class RestoreViewModel @Inject constructor(
 
     fun dismissError() {
         _uiState.update { it.copy(error = null) }
-    }
-
-    /** Marks the one-time prompt as seen — called whichever path the user takes. */
-    fun markPromptSeen() {
-        viewModelScope.launch { restorePreferences.markSeen() }
     }
 }

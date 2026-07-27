@@ -72,7 +72,8 @@ interface MovementSegmentDao {
     @Delete
     suspend fun delete(segment: MovementSegmentEntity)
 
-    /** Set or clear a user override for a single segment. */
-    @Query("UPDATE movement_segments SET userOverrideType = :overrideType, userOverrideAt = :overrideAt WHERE segmentId = :segmentId")
-    suspend fun setUserOverride(segmentId: Long, overrideType: String?, overrideAt: Long?)
+    /** Set or clear a user override for a single segment. Also flips [MovementSegmentEntity.isUserCorrected]
+     *  so the timeline's "corrected" cue and calibration queries reflect the user's touch. */
+    @Query("UPDATE movement_segments SET userOverrideType = :overrideType, userOverrideAt = :overrideAt, isUserCorrected = :corrected WHERE segmentId = :segmentId")
+    suspend fun setUserOverride(segmentId: Long, overrideType: String?, overrideAt: Long?, corrected: Boolean)
 }

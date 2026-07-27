@@ -32,4 +32,18 @@ class PlaceReviewViewModelTest {
         )
         assertEquals(listOf(2L, 3L, 1L), out.map { it.placeId }) // 0.2 < 0.5 < 0.65
     }
+
+    @Test
+    fun `a confirmed place leaves the queue even when still uncategorised`() {
+        // Regression: confirming raises confidence but can't set a category, so an
+        // uncategorised place used to stay queued forever — the Confirm button looked broken.
+        val out = PlaceReviewViewModel.pendingReviewPlaces(
+            listOf(
+                place(1, 0.5f),                                                    // low conf, unconfirmed → queue
+                place(2, 0.8f, category = PlaceCategory.UNKNOWN).copy(isConfirmed = true), // confirmed → skip
+                place(3, 0.2f, category = PlaceCategory.UNKNOWN)                    // unconfirmed → queue
+            )
+        )
+        assertEquals(listOf(3L, 1L), out.map { it.placeId })
+    }
 }

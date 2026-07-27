@@ -9,10 +9,13 @@ _Reads with: `docs/research/competitor-analysis.md`, `core-hardening-audit.md`, 
 ## 1. Verdict
 
 Voyager **out-competes the timeline / proof / mileage field today** and is a credible
-**Polarsteps and Arc alternative on Android**. It is **not** a Life360 or Strava
-competitor — and was never built to be. Three features (family handshake, duress
-mode, OSM contribution loop) plus a visual-polish pass and live billing are all
-that stand between the app and "complete" against its own stated vision.
+**Polarsteps and Arc alternative on Android**. It is not a Life360 competitor. As of the
+2026-07 D1 build it **now offers Strava-parity workout recording** (live route map, auto-pause,
+splits, elevation, GPX in/out, personal records, private race-yourself segments, auto-suggest from
+passive tracking) — done **privately/on-device**, deliberately *without* public social/leaderboards
+(the one part that contradicts the moat). Family handshake, duress mode, and the OSM contribution
+loop plus a visual-polish pass and live billing are all that stand between the app and "complete"
+against its own stated vision.
 
 **One-line summary:** the engine and feature breadth are there; what's left is
 *polish, monetization plumbing, and three differentiator features* — not core work.
@@ -27,7 +30,7 @@ that stand between the app and "complete" against its own stated vision.
 | **Arc (iOS)** | Best-in-class timeline UX | Feature parity (timeline, modes, places) | **Competes as the Android answer** — Arc still wins on pure visual polish |
 | **Polarsteps** | Trip stories, printed travel books, social feed | Trip detection + **TripBook PDF** (printable journal) | **Competes on storytelling**; Polarsteps wins on the physical print product + social |
 | **Life360** | Family location sharing, safety brand | **Nothing** — family handshake not built | **Cannot compete** in family-safety yet |
-| **Strava** | Routes, segments, leaderboards, heatmap, social, fitness | Movement segments, modes, distance, carbon — **no social, no leaderboards, no heatmap** | **Different job — doesn't and shouldn't compete** as a fitness app |
+| **Strava** | Routes, segments, leaderboards, heatmap, social, fitness | **Full workout recording (D1, 2026-07):** live route map, auto-pause, splits, elevation, GPX in/out, personal records + **private race-yourself segments**, auto-suggest from passive tracking, heatmap/Year-in-Review (A6). No **public** social/leaderboards (contradicts the on-device moat). | **At recording parity, more accurate (Kalman + baro + accuracy-gating); competes privately, not socially** |
 | **MileIQ** | Auto mileage + IRS PDF | Mileage log + IRS/HMRC PDF **+ GPS evidence per row** | **Voyager beats it** — and bundles it as 1 of 10 features |
 | **OwnTracks** | Geek-perfect on-device privacy | Same privacy, real UX | **Voyager wins** |
 | **Daylio / Day One** | Mood/journal with location pins | Auto **Day Story** (photos↔visits) | Partial overlap; different intent |

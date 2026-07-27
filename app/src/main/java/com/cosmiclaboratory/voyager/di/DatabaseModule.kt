@@ -39,6 +39,7 @@ object DatabaseModule {
     @Provides fun provideMovementSegmentDao(db: VoyagerDatabase) = db.movementSegmentDao()
     @Provides fun provideSegmentEvidenceDao(db: VoyagerDatabase) = db.segmentEvidenceDao()
     @Provides fun provideRouteDao(db: VoyagerDatabase) = db.routeDao()
+    @Provides fun provideWorkoutSegmentDao(db: VoyagerDatabase) = db.workoutSegmentDao()
 
     // Semantic tables
     @Provides fun providePlaceDao(db: VoyagerDatabase) = db.placeDao()

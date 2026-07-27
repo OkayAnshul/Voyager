@@ -3,9 +3,9 @@ package com.cosmiclaboratory.voyager.data.repository
 import com.cosmiclaboratory.voyager.domain.model.LatLngBounds
 import com.cosmiclaboratory.voyager.domain.model.MapRoute
 import com.cosmiclaboratory.voyager.domain.model.VisitMarker
+import com.cosmiclaboratory.voyager.domain.repository.GeocodingRepository
 import com.cosmiclaboratory.voyager.domain.repository.MapRepository
 import com.cosmiclaboratory.voyager.domain.util.PolylineEncoder
-import com.cosmiclaboratory.voyager.storage.database.entity.displayName
 import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.RouteDao
@@ -18,7 +18,8 @@ class MapRepositoryImpl @Inject constructor(
     private val routeDao: RouteDao,
     private val movementSegmentDao: MovementSegmentDao,
     private val visitDao: VisitDao,
-    private val placeDao: PlaceDao
+    private val placeDao: PlaceDao,
+    private val geocodingRepository: GeocodingRepository
 ) : MapRepository {
 
     override suspend fun getRouteForSegment(segmentId: Long): MapRoute? {
@@ -45,7 +46,8 @@ class MapRepositoryImpl @Inject constructor(
                 placeId = visit.placeId,
                 lat = lat,
                 lng = lng,
-                displayName = place?.displayName() ?: "%.4f, %.4f".format(lat, lng),
+                displayName = place?.let { geocodingRepository.resolveDisplayName(it.placeId) }
+                    ?: "%.4f, %.4f".format(lat, lng),
                 arrivalAt = visit.arrivalAt,
                 departureAt = visit.departureAt,
                 sequenceNumber = index + 1
@@ -64,7 +66,7 @@ class MapRepositoryImpl @Inject constructor(
             placeId = placeId,
             lat = place.centroidLat,
             lng = place.centroidLng,
-            displayName = place.displayName(),
+            displayName = geocodingRepository.resolveDisplayName(place.placeId),
             arrivalAt = visit?.arrivalAt ?: segment.startAt,
             departureAt = visit?.departureAt ?: segment.endAt,
             sequenceNumber = 0

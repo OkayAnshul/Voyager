@@ -41,17 +41,6 @@ val JetBrainsMonoFontFamily = try {
     FontFamily.Monospace
 }
 
-/**
- * Great Vibes — elegant signature-style cursive font for branding.
- */
-val GreatVibesFontFamily = try {
-    FontFamily(
-        Font(R.font.greatvibes_regular, FontWeight.Normal)
-    )
-} catch (e: Exception) {
-    FontFamily.Cursive
-}
-
 // ============================================================================
 // VOYAGER TYPOGRAPHY — Dual-Font Strategy
 // ============================================================================

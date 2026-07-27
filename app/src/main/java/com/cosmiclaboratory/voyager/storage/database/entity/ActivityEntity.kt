@@ -31,9 +31,19 @@ data class ActivityEntity(
     val dayKey: String, // YYYY-MM-DD
     val title: String? = null,
     val notes: String? = null,
+    // Elevation (v11). Smoothed cumulative ascent/descent over the route.
+    val elevationGainM: Double = 0.0,
+    val elevationLossM: Double = 0.0,
+    // Per-point streams (v11), delta-encoded parallel to encodedPolyline so the route keeps its
+    // time + altitude (for splits / elevation profile / GPX <time>,<ele>) without a child table.
+    val encodedTimes: String = "",       // ms offsets from startedAt
+    val encodedAltitudes: String = "",   // decimetres; "" when no elevation was captured
+    // Provenance (v12): the passive movement segment this activity was materialised from, when it
+    // came from an auto-suggestion; null for a manually-recorded workout.
+    val sourceSegmentId: Long? = null,
     // Multi-user scoping (v8) — inert until sync/multi-user ships; default = install id.
     val userId: String = "",
-    // Cloud-ready audit columns (v3). Inert until sync ships — see MIGRATION_2_3.
+    // Cloud-ready audit columns. Inert until sync ships.
     val lastModifiedAt: Long = 0L,
     val revision: Long = 1L,
     val deletedAt: Long? = null

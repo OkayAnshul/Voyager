@@ -1,5 +1,6 @@
 package com.cosmiclaboratory.voyager.domain
 
+import com.cosmiclaboratory.voyager.domain.repository.GeocodingRepository
 import com.cosmiclaboratory.voyager.domain.usecase.BuildTripDetailUseCase
 import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
@@ -13,6 +14,7 @@ import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import org.junit.Before
 import org.junit.Test
 
 /**
@@ -26,7 +28,17 @@ class BuildTripDetailUseCaseTest {
     private val visitDao = mockk<VisitDao>()
     private val placeDao = mockk<PlaceDao>()
     private val segmentDao = mockk<MovementSegmentDao>(relaxed = true)
-    private val useCase = BuildTripDetailUseCase(tripDao, visitDao, placeDao, segmentDao)
+    private val geocodingRepository = mockk<GeocodingRepository>()
+    private val useCase = BuildTripDetailUseCase(tripDao, visitDao, placeDao, segmentDao, geocodingRepository)
+
+    @Before
+    fun stubNameResolver() {
+        // Name resolution is covered by its own tests; reflect the place's stored name.
+        coEvery { geocodingRepository.resolveDisplayName(any()) } coAnswers {
+            placeDao.getById(firstArg())?.userDisplayName ?: "Unknown Place"
+        }
+        coEvery { geocodingRepository.resolveDisplayNameForCoordinates(any(), any()) } returns "Near test area"
+    }
 
     private fun trip(id: Long, start: String, end: String) = TripEntity(
         tripId = id, startDayKey = start, endDayKey = end, title = "Trip",
@@ -86,14 +98,14 @@ class BuildTripDetailUseCaseTest {
     }
 
     @Test
-    fun `an unresolved place renders as Unknown place`() = runTest {
+    fun `an unresolved place falls back to a coarse area label, never Unknown place`() = runTest {
         coEvery { tripDao.getById(1L) } returns trip(1L, "2026-03-01", "2026-03-01")
         coEvery { placeDao.getById(99L) } returns null
         coEvery { visitDao.getByDayKey("2026-03-01") } returns listOf(visit(99L, "2026-03-01", arrival = 1))
 
         val detail = useCase.build(1L)!!
 
-        assertThat(detail.days.single().places.single().displayName).isEqualTo("Unknown place")
+        assertThat(detail.days.single().places.single().displayName).isEqualTo("Near test area")
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.cosmiclaboratory.voyager.domain
 
 import com.cosmiclaboratory.voyager.domain.model.DevicePhoto
 import com.cosmiclaboratory.voyager.domain.photo.PhotoLibrary
+import com.cosmiclaboratory.voyager.domain.repository.GeocodingRepository
 import com.cosmiclaboratory.voyager.domain.usecase.BuildDayStoryUseCase
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
@@ -11,6 +12,7 @@ import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import org.junit.Before
 import org.junit.Test
 
 /**
@@ -21,9 +23,20 @@ class BuildDayStoryUseCaseTest {
 
     private val visitDao = mockk<VisitDao>()
     private val placeDao = mockk<PlaceDao>()
+    private val geocodingRepository = mockk<GeocodingRepository>()
 
     private companion object {
         const val DAY = "2026-05-10"
+    }
+
+    @Before
+    fun stubNameResolver() {
+        // The name resolver is exercised in its own tests; here it simply reflects the
+        // place's stored name so these correlation tests stay focused.
+        coEvery { geocodingRepository.resolveDisplayName(any()) } coAnswers {
+            placeDao.getById(firstArg())?.userDisplayName ?: "Unknown Place"
+        }
+        coEvery { geocodingRepository.resolveDisplayNameForCoordinates(any(), any()) } returns "Near test area"
     }
 
     /** Fake that ignores the day window — tests drive correlation purely via timestamps. */
@@ -36,7 +49,8 @@ class BuildDayStoryUseCaseTest {
         override fun hasPermission(): Boolean = permitted
     }
 
-    private fun useCase(library: PhotoLibrary) = BuildDayStoryUseCase(visitDao, placeDao, library)
+    private fun useCase(library: PhotoLibrary) =
+        BuildDayStoryUseCase(visitDao, placeDao, library, geocodingRepository)
 
     private fun visit(
         id: Long,
@@ -192,7 +206,7 @@ class BuildDayStoryUseCaseTest {
     }
 
     @Test
-    fun `a visit whose place can't be resolved shows as Unknown place`() = runTest {
+    fun `a visit whose place can't be resolved falls back to a coarse area label`() = runTest {
         coEvery { visitDao.getByDayKey(DAY) } returns listOf(visit(1, 99, 1_000, 5_000))
         coEvery { placeDao.getById(99) } returns null
         val uc = useCase(FakePhotoLibrary(listOf(photo(3_000))))
@@ -200,7 +214,7 @@ class BuildDayStoryUseCaseTest {
         val story = uc.build(DAY)
 
         assertThat(story.places).hasSize(1)
-        assertThat(story.places[0].displayName).isEqualTo("Unknown place")
+        assertThat(story.places[0].displayName).isEqualTo("Near test area")
         assertThat(story.places[0].photos).hasSize(1)
     }
 }

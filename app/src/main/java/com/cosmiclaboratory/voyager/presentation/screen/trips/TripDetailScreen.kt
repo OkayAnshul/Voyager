@@ -36,6 +36,7 @@ import com.cosmiclaboratory.voyager.presentation.theme.CardVariant
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerButton
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerCard
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerColors
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerEyebrow
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerGradients
 import java.time.Instant
 import java.time.LocalDate
@@ -110,6 +111,8 @@ private fun TripDetailContent(
     ) {
         item {
             VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.HIGHLIGHTED) {
+                VoyagerEyebrow("Trip")
+                Spacer(Modifier.height(6.dp))
                 Text(
                     text = trip.title,
                     style = MaterialTheme.typography.headlineSmall,
@@ -162,7 +165,7 @@ private fun TripDetailContent(
 
 @Composable
 private fun TripDayCard(day: TripDay) {
-    VoyagerCard(modifier = Modifier.fillMaxWidth()) {
+    VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS) {
         Text(
             text = formatDay(day.dayKey),
             style = MaterialTheme.typography.titleSmall,

@@ -22,6 +22,15 @@ interface GeocodingRepository {
     /** Resolve the display name for a place using the conflict resolver chain. */
     suspend fun resolveDisplayName(placeId: Long): String
 
+    /**
+     * Resolve an honest, coarse display name for a bare coordinate that has no place
+     * row yet — e.g. the live current-location visit, or an unlinked historical visit.
+     * Returns an accuracy-gated provider name, else "Near [neighborhood/street/city]",
+     * falling back to raw coordinates only when nothing is known. Reverse-geocodes at
+     * most once per ~11 m coordinate bucket (cached), so it is safe on the read path.
+     */
+    suspend fun resolveDisplayNameForCoordinates(lat: Double, lng: Double): String
+
     /** Re-fetch geocoding from all providers for an existing place. */
     suspend fun refreshGeocodeForPlace(placeId: Long): Result<Unit>
 

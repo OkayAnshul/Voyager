@@ -78,6 +78,14 @@ class BuildMileageLogUseCase @Inject constructor(
         )
     }
 
+    /**
+     * Classifies many drives at once (the batch-classify action). Reuses [classify] per id so the
+     * sparse-table semantics (UNCLASSIFIED ⇒ delete) stay identical to single classification.
+     */
+    suspend fun classifyAll(segmentIds: List<Long>, purpose: MileagePurpose, note: String? = null) {
+        segmentIds.forEach { classify(it, purpose, note) }
+    }
+
     suspend fun clearClassification(segmentId: Long) {
         mileageClassificationDao.deleteBySegmentId(segmentId)
     }

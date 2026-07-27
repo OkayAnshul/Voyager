@@ -85,15 +85,18 @@ fun ReliabilityScreen(
                 )
             }
             Spacer(Modifier.height(4.dp))
+            // Hoist into a local so the null-check smart-casts across the branches
+            // (a property access can't smart-cast, which is why this used to need `!!`).
+            val hoursSinceLastSample = state.hoursSinceLastSample
             Text(
                 text = when {
-                    state.hoursSinceLastSample == null ->
+                    hoursSinceLastSample == null ->
                         "No location samples yet — start tracking to begin your timeline."
                     state.hasRecentGap ->
-                        "Last location was ${agoLabel(state.hoursSinceLastSample!!)} ago. The app was " +
+                        "Last location was ${agoLabel(hoursSinceLastSample)} ago. The app was " +
                             "likely stopped by the system. Re-enabling autostart (below) usually fixes this."
                     else ->
-                        "Last location was ${agoLabel(state.hoursSinceLastSample!!)} ago — within normal range."
+                        "Last location was ${agoLabel(hoursSinceLastSample)} ago — within normal range."
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = VoyagerColors.OnSurfaceVariant

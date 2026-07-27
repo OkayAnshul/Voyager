@@ -16,10 +16,53 @@ class TimelineReconciler @Inject constructor() {
         segments: List<TimelineSegment>,
         unifyTravel: Boolean = false
     ): List<TimelineSegment> {
-        val base = mergeConsecutiveMovement(
-            mergeConsecutiveVisits(absorbOrphanedDwells(filterNoise(segments)))
+        val base = collapseGaps(
+            mergeConsecutiveMovement(
+                mergeConsecutiveVisits(absorbOrphanedDwells(filterNoise(segments)))
+            )
         )
         return if (unifyTravel) unifyTravelSegments(base) else base
+    }
+
+    /**
+     * Coalesce consecutive GAP segments into a single "quiet" span so the timeline
+     * shows one calm row ("Quiet · 3h 12m") instead of a stack of dashed cards.
+     * The kept reason favours the actionable PERMISSION case, otherwise the reason
+     * of the longest leg (the dominant cause of the silence).
+     */
+    fun collapseGaps(segments: List<TimelineSegment>): List<TimelineSegment> {
+        if (segments.size <= 1) return segments
+        val result = mutableListOf<TimelineSegment>()
+        var i = 0
+        while (i < segments.size) {
+            val current = segments[i]
+            if (current.type != SegmentType.GAP) {
+                result.add(current)
+                i++
+                continue
+            }
+            val legs = mutableListOf(current)
+            var j = i + 1
+            while (j < segments.size && segments[j].type == SegmentType.GAP) {
+                legs.add(segments[j])
+                j++
+            }
+            if (legs.size == 1) {
+                result.add(current)
+            } else {
+                val keptReason = legs.firstOrNull { it.gapReason?.uppercase() == "PERMISSION" }?.gapReason
+                    ?: legs.maxByOrNull { it.durationMs }?.gapReason
+                result.add(
+                    current.copy(
+                        endAt = legs.last().endAt,
+                        durationMs = legs.last().endAt - current.startAt,
+                        gapReason = keptReason
+                    )
+                )
+            }
+            i = j
+        }
+        return result
     }
 
     /**

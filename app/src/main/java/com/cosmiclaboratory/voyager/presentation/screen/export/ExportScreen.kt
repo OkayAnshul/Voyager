@@ -16,10 +16,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.cosmiclaboratory.voyager.domain.model.enums.ExportFormat
+import com.cosmiclaboratory.voyager.presentation.theme.CardVariant
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerCard
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerColors
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerGradients
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -66,6 +71,7 @@ fun ExportScreen(
     }
 
     Scaffold(
+        containerColor = VoyagerColors.Background,
         topBar = {
             TopAppBar(
                 title = { Text("Export & Import") },
@@ -73,13 +79,19 @@ fun ExportScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = VoyagerColors.Background,
+                    titleContentColor = VoyagerColors.OnSurface
+                ),
+                windowInsets = WindowInsets(0)
             )
         }
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .drawBehind { drawRect(brush = VoyagerGradients.screenBackground(size.width, size.height)) }
                 .padding(padding)
                 .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState()),
@@ -96,14 +108,13 @@ fun ExportScreen(
             )
 
             // Date-range picker
-            OutlinedCard(
+            VoyagerCard(
                 modifier = Modifier.fillMaxWidth(),
+                variant = CardVariant.GLASS,
                 onClick = { showDatePicker = true }
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Icons.Default.CalendarToday, contentDescription = null)
@@ -212,7 +223,7 @@ fun ExportScreen(
             }
 
             state.importSummary?.let { summary ->
-                Card(modifier = Modifier.fillMaxWidth()) {
+                VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS, padding = 0.dp) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Import complete", style = MaterialTheme.typography.titleSmall)
                         Spacer(Modifier.height(4.dp))

@@ -5,6 +5,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.cosmiclaboratory.voyager.platform.notification.VoyagerNotificationManager
+import com.cosmiclaboratory.voyager.storage.database.dao.ActivityDao
 import com.cosmiclaboratory.voyager.storage.database.dao.DailyRollupDao
 import com.cosmiclaboratory.voyager.storage.database.dao.HealthLogDao
 import com.cosmiclaboratory.voyager.storage.database.dao.WeeklyRollupDao
@@ -28,6 +29,7 @@ class WeeklyRollupWorker @AssistedInject constructor(
     private val healthLogDao: HealthLogDao,
     private val notificationManager: VoyagerNotificationManager,
     private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository,
+    private val activityDao: ActivityDao,
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -82,7 +84,10 @@ class WeeklyRollupWorker @AssistedInject constructor(
 
             weeklyRollupDao.upsert(rollup)
 
-            sendWeeklySummaryNotification(rollup)
+            // Activities recorded during the week — the Athlete-persona tie-in for the digest.
+            val activityCount = activityDao.getAll().count { it.dayKey in startDay..endDay }
+
+            sendWeeklySummaryNotification(rollup, activityCount)
             logCompletion(weekKey, daysFound = activeDayCount)
             Result.success()
         } catch (e: Exception) {
@@ -120,17 +125,27 @@ class WeeklyRollupWorker @AssistedInject constructor(
         )
     }
 
-    private fun sendWeeklySummaryNotification(rollup: WeeklyRollupEntity) {
+    private fun sendWeeklySummaryNotification(rollup: WeeklyRollupEntity, activityCount: Int) {
         // Respect the weekly-insights notification toggle.
         if (!settingsRepository.observeSettings().value.weeklyInsightsEnabled) return
         if (rollup.activeDayCount == 0) return
         val km = rollup.totalDistanceM / 1000.0
+        // A proof-style recap of the week the user would never open the app to see. Posts on the
+        // dedicated weekly channel + id so it no longer collides with the daily/anomaly insights,
+        // and taps through to the Proof hub.
         val body = buildString {
             append("${rollup.activeDayCount} day${if (rollup.activeDayCount != 1) "s" else ""} active")
             if (km >= 0.1) append(" · %.1f km".format(km))
             if (rollup.totalSteps > 0) append(" · ${rollup.totalSteps} steps")
+            if (activityCount > 0) append(" · $activityCount activit${if (activityCount != 1) "ies" else "y"}")
         }
-        notificationManager.showInsight("Your week in review", body)
+        notificationManager.showInsight(
+            title = "Your week in review",
+            body = body,
+            channelId = VoyagerNotificationManager.CHANNEL_INSIGHTS_WEEKLY,
+            notificationId = VoyagerNotificationManager.NOTIFICATION_ID_INSIGHT_WEEKLY,
+            destination = VoyagerNotificationManager.DEST_PROOF,
+        )
     }
 
     private suspend fun logCompletion(weekKey: String, daysFound: Int) {

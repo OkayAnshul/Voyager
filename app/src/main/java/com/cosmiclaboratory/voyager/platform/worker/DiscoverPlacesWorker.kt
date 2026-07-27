@@ -38,6 +38,7 @@ class DiscoverPlacesWorker @AssistedInject constructor(
     private val enrichPlaceUseCase: com.cosmiclaboratory.voyager.domain.usecase.EnrichPlaceWithDetailsUseCase,
     private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository,
     private val permissionMonitor: com.cosmiclaboratory.voyager.platform.coordinator.PermissionMonitor,
+    private val notificationManager: com.cosmiclaboratory.voyager.platform.notification.VoyagerNotificationManager,
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -109,6 +110,9 @@ class DiscoverPlacesWorker @AssistedInject constructor(
 
             val clusters = densityCluster(unassignedVisits)
             var placesCreated = 0
+            // The last newly-created place that already has a name — used for the "first time
+            // here" nudge (unnamed places are skipped; we never nudge about an unknown spot).
+            var newlyNamedPlace: Pair<Long, String>? = null
 
             for (cluster in clusters) {
                 val centroidLat = cluster.map { it.lat }.average()
@@ -172,11 +176,23 @@ class DiscoverPlacesWorker @AssistedInject constructor(
                         assignVisitToPlace(point.visitId, placeId)
                     }
                     placesCreated++
+                    if (displayName != null) newlyNamedPlace = placeId to displayName
                 }
             }
 
             val modeNote = if (roughMode) " (rough/city-level mode)" else ""
             logCompletion("Clustered ${unassignedVisits.size} visits, created $placesCreated new places$modeNote")
+            // Make newly-discovered places searchable now, not on the next 12h periodic rebuild.
+            if (placesCreated > 0) {
+                WorkerScheduler.triggerSearchIndexRebuild(androidx.work.WorkManager.getInstance(applicationContext))
+            }
+            // Quietly celebrate a genuinely new, named place (throttled + quiet-hours-aware inside
+            // the manager). Gated on the discovery/routine-alerts setting.
+            newlyNamedPlace?.let { (placeId, name) ->
+                if (settings.placeConfirmationPromptsEnabled) {
+                    notificationManager.showNewPlaceNudge(name, placeId)
+                }
+            }
             Result.success()
         } catch (e: Exception) {
             logFailure(e)

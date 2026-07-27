@@ -43,7 +43,7 @@ class SearchViewModel @Inject constructor(
         Pair(query, filters)
     }.debounce(300)
         .flatMapLatest { (query, filters) ->
-            if (query.length < 2) {
+            if (query.length < 2 && filters.isEmpty()) {
                 flowOf(SearchUiState(query = query, filters = filters))
             } else {
                 searchRepository.search(query, filters).map { results ->

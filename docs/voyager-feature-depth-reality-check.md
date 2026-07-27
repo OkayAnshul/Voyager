@@ -164,19 +164,23 @@ resurfacing yet. **Fix (partial).**
 **Competitor:** Strava — a Record button, live pace/distance/elevation/laps, a
 shareable activity, segments/leaderboards, GPX.
 
-**Voyager (code):** **absent.** There is no workout-recording mode, no live
-activity screen, no Activity entity, no GPX-per-activity. Voyager records
-movement *passively* into the timeline; it cannot record an intentional workout.
+**Voyager (code): BUILT (2026-07, D1 Phases 0–5) — this section's "absent" verdict is
+superseded.** There is now a full Workout subsystem: `WorkoutRecorder` (fed Kalman-smoothed,
+spoof-checked fixes) on a dedicated `TrackingTier.WORKOUT`, an `ActivityEntity` (with elevation +
+per-point time/altitude streams), a `WorkoutRecordScreen` with a **live route map, auto-pause and
+moving-time pace**, an Activities feed, a full **activity-detail screen** (map + per-km splits +
+elevation profile), **GPX import + export with `<ele>`/`<time>`**, on-device **personal records /
+best-efforts** and **private "race-yourself" segments**, and **auto-suggestion** of a workout from
+passively-tracked run/ride/walk segments.
 
-**Verdict:** Logic ✗ · Data ✗ · Parameters ✗ · UI ✗ · Depth ✗ — **a full gap.**
-This is the single biggest missing capability and the reason the Athlete persona
-cannot be served today. **Fix (full):** a new Workout subsystem — a foreground
-high-accuracy tracking tier, an `Activity` entity, a Record screen + Activities
-list, live stat computation, GPX export. The engine, Kalman filter and GPS
-capture already exist to build on; this is a surface + a new tier, not a new
-engine. Voyager will not match Strava's social/segments — and shouldn't try —
-but workout *recording* parity is achievable and is the price of entry for the
-Athlete persona.
+**Original verdict (now historical):** Logic ✗ · Data ✗ · Parameters ✗ · UI ✗ · Depth ✗ — was a
+full gap; the reason the Athlete persona couldn't be served. **Delivered as designed:** a
+foreground high-accuracy tier, an `Activity` entity, Record + Activities screens, live stats, GPX —
+built on the existing engine/Kalman/GPS capture. As planned, Voyager does **not** chase Strava's
+public/social leaderboards; instead the leaderboard is reframed **privately** (personal records +
+race-yourself segments), which fits the on-device moat. The accuracy wedge (Kalman + glitch
+rejection + barometric elevation + accuracy-gated distance + auto-pause) is the "more accurate than
+phone-Strava" story.
 
 ### 9. Maps & route rendering — vs Google Maps / Mapbox
 

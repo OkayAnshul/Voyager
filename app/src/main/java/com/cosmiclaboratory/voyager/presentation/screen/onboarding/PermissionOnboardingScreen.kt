@@ -17,9 +17,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.cosmiclaboratory.voyager.presentation.theme.GlassCard
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerColors
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerGradients
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerPrimaryButton
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerSurfaces
 
 /**
  * Permission onboarding shown on first launch.
@@ -75,6 +80,7 @@ fun PermissionOnboardingScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(VoyagerColors.Background)
+            .drawBehind { drawRect(VoyagerGradients.screenBackground(size.width, size.height)) }
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -83,12 +89,12 @@ fun PermissionOnboardingScreen(
             verticalArrangement = Arrangement.spacedBy(24.dp),
             modifier = Modifier.widthIn(max = 400.dp)
         ) {
-            // Icon
+            // Icon — aurora glow
             Box(
                 modifier = Modifier
                     .size(80.dp)
                     .clip(CircleShape)
-                    .background(VoyagerColors.PrimaryContainer),
+                    .background(VoyagerSurfaces.auroraSoft),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -99,9 +105,9 @@ fun PermissionOnboardingScreen(
                 )
             }
 
-            // Title
+            // Title — value-first
             Text(
-                text = if (step == 0) "Voyager needs permissions" else "Background location",
+                text = if (step == 0) "Your journeys, captured privately" else "Keep capturing in the background",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = VoyagerColors.OnSurface,
@@ -111,9 +117,9 @@ fun PermissionOnboardingScreen(
             // Description
             Text(
                 text = if (step == 0)
-                    "To track your journeys, Voyager needs access to your location, activity recognition, and notifications."
+                    "Voyager remembers where you've been so you can revisit it, prove it, and see your patterns — all on your device. To do that, it needs a few permissions."
                 else
-                    "For continuous tracking when the app is in the background, Voyager needs \"Allow all the time\" location access.",
+                    "One more step. Tap \"Allow Background Location\" below, then choose \"Allow all the time\" on the screen that opens. This is what lets Voyager keep recording your route while the screen is off — without it, your timeline will have gaps. Your location never leaves this phone.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = VoyagerColors.OnSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -121,21 +127,35 @@ fun PermissionOnboardingScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Permission items list
+            // Permission items list — honest "why we ask" rationale
             if (step == 0) {
-                PermissionItem(Icons.Default.MyLocation, "Location", "Track where you go")
-                PermissionItem(Icons.Default.DirectionsWalk, "Activity Recognition", "Detect walk, drive, cycle")
+                PermissionItem(Icons.Default.MyLocation, "Location", "So your timeline knows where you've been")
+                PermissionItem(Icons.Default.DirectionsWalk, "Activity Recognition", "To tell walking from driving — computed on-device")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    PermissionItem(Icons.Default.Notifications, "Notifications", "Tracking status updates")
+                    PermissionItem(Icons.Default.Notifications, "Notifications", "A quiet status while tracking runs")
                 }
             } else {
-                PermissionItem(Icons.Default.LocationOn, "Background Location", "Track even when app is closed")
+                PermissionItem(Icons.Default.LocationOn, "Background Location", "Capture your route even when the screen's off")
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // Privacy reassurance — the moat, stated plainly
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(Icons.Default.Lock, contentDescription = null, tint = VoyagerColors.AccentGreen, modifier = Modifier.size(14.dp))
+                Text(
+                    text = "No account, no cloud. Everything stays on your device.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = VoyagerColors.AccentGreen,
+                    textAlign = TextAlign.Center
+                )
+            }
 
-            // Grant button
-            Button(
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Grant button — aurora CTA
+            VoyagerPrimaryButton(
                 onClick = {
                     if (step == 0) {
                         foregroundLauncher.launch(foregroundPermissions.toTypedArray())
@@ -149,12 +169,7 @@ fun PermissionOnboardingScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = VoyagerColors.Primary,
-                    contentColor = VoyagerColors.OnPrimary
-                )
+                    .height(52.dp)
             ) {
                 Text(
                     text = if (step == 0) "Grant Permissions" else "Allow Background Location",
@@ -163,15 +178,10 @@ fun PermissionOnboardingScreen(
                 )
             }
 
-            // Skip button (for step 2 only — foreground is enough to function)
-            if (step == 1) {
-                TextButton(onClick = onComplete) {
-                    Text(
-                        text = "Skip for now",
-                        color = VoyagerColors.OnSurfaceVariant
-                    )
-                }
-            }
+            // No skip on the background step — "Allow all the time" is essential for the
+            // timeline to be accurate, so the only forward action is to grant it. (The OS
+            // dialog result proceeds either way; we can't force a grant, but we don't offer
+            // an easy opt-out that quietly breaks capture.)
 
             // Step indicator
             Row(
@@ -201,32 +211,30 @@ private fun PermissionItem(
     title: String,
     description: String
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(VoyagerColors.Surface, RoundedCornerShape(8.dp))
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = VoyagerColors.Primary,
-            modifier = Modifier.size(24.dp)
-        )
-        Column {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = VoyagerColors.OnSurface
+    GlassCard(modifier = Modifier.fillMaxWidth(), padding = 12.dp) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = VoyagerColors.Primary,
+                modifier = Modifier.size(24.dp)
             )
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = VoyagerColors.OnSurfaceVariant
-            )
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = VoyagerColors.OnSurface
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VoyagerColors.OnSurfaceVariant
+                )
+            }
         }
     }
 }

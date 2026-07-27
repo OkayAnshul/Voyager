@@ -20,13 +20,12 @@ data class GoogleTimelineImportUiState(
 )
 
 /**
- * Drives the first-launch [GoogleTimelineImportScreen] — the migration wedge for
- * users leaving Google Maps Timeline. Wraps [GoogleTimelineImporter].
+ * Powers the "Bring your history" import card on the intro screen — the migration
+ * wedge for users leaving Google Maps Timeline. Wraps [GoogleTimelineImporter].
  */
 @HiltViewModel
 class GoogleTimelineImportViewModel @Inject constructor(
-    private val googleTimelineImporter: GoogleTimelineImporter,
-    private val preferences: GoogleTimelineImportPreferences
+    private val googleTimelineImporter: GoogleTimelineImporter
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GoogleTimelineImportUiState())
@@ -44,10 +43,5 @@ class GoogleTimelineImportViewModel @Inject constructor(
                 )
             }
         }
-    }
-
-    /** Marks the one-time prompt as seen — called whichever path the user takes. */
-    fun markPromptSeen() {
-        viewModelScope.launch { preferences.markSeen() }
     }
 }

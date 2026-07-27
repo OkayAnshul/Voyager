@@ -4,9 +4,13 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.cosmiclaboratory.voyager.domain.model.DateRange
+import com.cosmiclaboratory.voyager.domain.model.LiveTimelineState
+import com.cosmiclaboratory.voyager.domain.model.TimelineDay
+import com.cosmiclaboratory.voyager.domain.model.TimelineSegment
 import com.cosmiclaboratory.voyager.domain.model.UserSettings
 import com.cosmiclaboratory.voyager.domain.model.enums.ExportFormat
 import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
+import com.cosmiclaboratory.voyager.domain.repository.TimelineRepository
 import com.cosmiclaboratory.voyager.storage.database.VoyagerDatabase
 import com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.PlaceEntity
@@ -14,8 +18,10 @@ import com.cosmiclaboratory.voyager.storage.database.entity.RawLocationSampleEnt
 import com.cosmiclaboratory.voyager.storage.database.entity.TrackingSessionEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -52,6 +58,18 @@ class ExportRepositoryRoundTripTest {
         override suspend fun importSettings(json: String) = Result.success(Unit)
     }
 
+    /** Only GPX/GeoJSON export touches the timeline; this VoyagerJSON round-trip never does. */
+    private class FakeTimeline : TimelineRepository {
+        override fun observeDay(dayKey: String): Flow<TimelineDay> =
+            flowOf(TimelineDay(dayKey, emptyList(), 0.0, 0, null, null))
+        override fun observeRange(startDay: String, endDay: String): Flow<List<TimelineDay>> = flowOf(emptyList())
+        override suspend fun rebuildDay(dayKey: String): Result<Unit> = Result.success(Unit)
+        override suspend fun getSegmentDetails(segmentId: Long): TimelineSegment? = null
+        override fun observeLiveTimeline(): StateFlow<LiveTimelineState> =
+            MutableStateFlow(LiveTimelineState(null, null, false))
+        override fun observeDayKeys(): Flow<List<String>> = flowOf(emptyList())
+    }
+
     private fun newDb(): VoyagerDatabase =
         Room.inMemoryDatabaseBuilder(context, VoyagerDatabase::class.java)
             .allowMainThreadQueries()
@@ -66,7 +84,15 @@ class ExportRepositoryRoundTripTest {
         placeDao = db.placeDao(),
         rawLocationSampleDao = db.rawLocationSampleDao(),
         trackingSessionDao = db.trackingSessionDao(),
-        settingsRepository = FakeSettings(UserSettings(exportIncludeRawSamples = true))
+        settingsRepository = FakeSettings(UserSettings(exportIncludeRawSamples = true)),
+        geocodingRepository = com.cosmiclaboratory.voyager.data.repository.GeocodingRepositoryImpl(
+            providers = emptyList(),
+            geocodeCandidateDao = db.geocodeCandidateDao(),
+            placeDao = db.placeDao(),
+            conflictResolver = com.cosmiclaboratory.voyager.domain.geocoding.GeocodingConflictResolver(),
+            settingsRepository = FakeSettings(UserSettings())
+        ),
+        timelineRepository = FakeTimeline()
     )
 
     private fun epochMs(date: LocalDate, hour: Int): Long =

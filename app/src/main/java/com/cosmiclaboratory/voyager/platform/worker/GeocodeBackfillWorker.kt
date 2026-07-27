@@ -63,6 +63,11 @@ class GeocodeBackfillWorker @AssistedInject constructor(
 
             logCompletion(geocodedCount = geocodedCount, failedCount = failedCount)
 
+            // Newly-resolved place names should be searchable immediately.
+            if (geocodedCount > 0) {
+                WorkerScheduler.triggerSearchIndexRebuild(androidx.work.WorkManager.getInstance(applicationContext))
+            }
+
             // If all failed, signal retry for transient issues
             if (geocodedCount == 0 && failedCount > 0) {
                 Result.retry()

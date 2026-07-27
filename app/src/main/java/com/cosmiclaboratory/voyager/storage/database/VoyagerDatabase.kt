@@ -48,6 +48,8 @@ import net.sqlcipher.database.SupportFactory
         TripEntity::class,
         // Activities (recorded workouts)
         ActivityEntity::class,
+        // Race-yourself segments
+        WorkoutSegmentEntity::class,
         // Mileage subsystem (Wave 10)
         VehicleEntity::class,
         FuelPriceHistoryEntity::class,
@@ -55,22 +57,29 @@ import net.sqlcipher.database.SupportFactory
         MileageSummaryEntity::class,
         VehicleServiceLogEntity::class
     ],
-    version = 10,
+    version = 1,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
 /**
  * Voyager's encrypted local database.
  *
- * Migration policy: every schema change MUST ship with a [androidx.room.migration.Migration]
- * object covering the bump. Destructive migration is deliberately NOT enabled — a missing
- * migration will throw [IllegalStateException] at open time so the gap is caught in
- * development, never on a user's device. User data is sacred; we lose nothing silently.
+ * This is the **version 1** baseline — the schema shipped with the first public release.
+ * (Pre-release development iterated through a throwaway migration chain that was collapsed
+ * into this single v1 schema before launch; there are no production databases to migrate
+ * from, so that history was dropped.)
+ *
+ * Migration policy from here on: every schema change MUST bump [version] and ship a
+ * [androidx.room.migration.Migration] object covering the bump. Destructive migration is
+ * deliberately NOT enabled for upgrades — a missing migration throws at open time so the
+ * gap is caught in development, never on a user's device. User data is sacred; we lose
+ * nothing silently. (A downgrade — only possible when moving from a pre-release dev build
+ * back to v1 — falls back to a destructive recreate, since no such user data exists.)
  *
  * If you bump [version], you must also:
- *   1. Add a `Migration(N, N+1)` to [MIGRATIONS].
+ *   1. Add a `Migration(N, N+1)` and register it via `.addMigrations(...)` in [buildDatabase].
  *   2. Add a Room migration test exercising the new migration with realistic data.
- *   3. Update the exported schema under `app/schemas/`.
+ *   3. Commit the new exported schema under `app/schemas/`.
  */
 abstract class VoyagerDatabase : RoomDatabase() {
 
@@ -116,6 +125,7 @@ abstract class VoyagerDatabase : RoomDatabase() {
 
     // Activity (workout) DAOs
     abstract fun activityDao(): ActivityDao
+    abstract fun workoutSegmentDao(): WorkoutSegmentDao
 
     // Mileage DAOs (Wave 10)
     abstract fun vehicleDao(): VehicleDao
@@ -127,362 +137,6 @@ abstract class VoyagerDatabase : RoomDatabase() {
     companion object {
         private const val DATABASE_NAME = "voyager_database"
 
-        /**
-         * All schema migrations, in order. Append a new entry every time [version] is bumped.
-         * Never use destructive migration — see the class KDoc.
-         */
-        private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE places ADD COLUMN emoji TEXT")
-            }
-        }
-
-        /**
-         * v2 → v3: cloud-ready audit columns + unique visit index.
-         *
-         * Adds `lastModifiedAt`, `revision`, `deletedAt` to the 7 syncable tables. These
-         * columns are inert today — no read query filters on them and no sync engine
-         * exists yet. They are added now, while the schema is small, so that adding cloud
-         * sync later is an additive plugin rather than a destructive migration.
-         *
-         * Also upgrades the (placeId, arrivalAt) visit index to UNIQUE as a belt-and-braces
-         * guard behind the VisitWriteGuard mutex (H4). Any pre-existing exact-duplicate
-         * visits are collapsed first so the unique index can be built.
-         */
-        private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                val syncableTables = listOf(
-                    "places", "visits", "movement_segments", "routes",
-                    "geocode_candidates", "correction_feedback", "place_evidence"
-                )
-                for (table in syncableTables) {
-                    db.execSQL("ALTER TABLE $table ADD COLUMN lastModifiedAt INTEGER NOT NULL DEFAULT 0")
-                    db.execSQL("ALTER TABLE $table ADD COLUMN revision INTEGER NOT NULL DEFAULT 1")
-                    db.execSQL("ALTER TABLE $table ADD COLUMN deletedAt INTEGER")
-                }
-
-                // Collapse exact-duplicate visits (same placeId + arrivalAt), keeping the
-                // lowest visitId, so the UNIQUE index below can be created.
-                db.execSQL(
-                    """
-                    DELETE FROM visits WHERE visitId NOT IN (
-                        SELECT MIN(visitId) FROM visits GROUP BY placeId, arrivalAt
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL("DROP INDEX IF EXISTS index_visits_placeId_arrivalAt")
-                db.execSQL("CREATE UNIQUE INDEX index_visits_placeId_arrivalAt ON visits (placeId, arrivalAt)")
-            }
-        }
-
-        /**
-         * v3 → v4: mileage log + tax PDF (Pro).
-         *
-         * Adds `mileage_classifications` — a sparse, user-authored table tagging drive
-         * segments with a tax purpose (business/personal/medical/charitable). Kept
-         * separate from `movement_segments` so the hot derived-pipeline table is not
-         * bloated by an optional Pro feature. The row is keyed 1:1 to its segment and
-         * CASCADE-deletes with it. Audit columns mirror the v3 syncable tables.
-         *
-         * Purely additive — no existing table or data is touched.
-         */
-        private val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `mileage_classifications` (
-                        `segmentId` INTEGER NOT NULL,
-                        `purpose` TEXT NOT NULL,
-                        `note` TEXT,
-                        `lastModifiedAt` INTEGER NOT NULL DEFAULT 0,
-                        `revision` INTEGER NOT NULL DEFAULT 1,
-                        `deletedAt` INTEGER,
-                        PRIMARY KEY(`segmentId`),
-                        FOREIGN KEY(`segmentId`) REFERENCES `movement_segments`(`segmentId`)
-                            ON UPDATE NO ACTION ON DELETE CASCADE
-                    )
-                    """.trimIndent()
-                )
-            }
-        }
-
-        /**
-         * v4 → v5: trip detection (Pro).
-         *
-         * Adds `trips` — denormalized summaries of detected multi-day trips away from
-         * home. The table is pure derived data: `DetectTripsUseCase` rebuilds it
-         * wholesale from visits, so it starts empty and is repopulated by the first
-         * `TripDetectionWorker` run. Purely additive — no existing table is touched.
-         */
-        private val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `trips` (
-                        `tripId` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                        `startDayKey` TEXT NOT NULL,
-                        `endDayKey` TEXT NOT NULL,
-                        `title` TEXT NOT NULL,
-                        `placeCount` INTEGER NOT NULL,
-                        `visitCount` INTEGER NOT NULL,
-                        `distanceMeters` REAL NOT NULL,
-                        `isOngoing` INTEGER NOT NULL,
-                        `detectedAt` INTEGER NOT NULL,
-                        `lastModifiedAt` INTEGER NOT NULL DEFAULT 0,
-                        `revision` INTEGER NOT NULL DEFAULT 1,
-                        `deletedAt` INTEGER
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_trips_startDayKey` " +
-                        "ON `trips` (`startDayKey`)"
-                )
-            }
-        }
-
-        /**
-         * v5 → v6: user-authored trip fields.
-         *
-         * Adds `userTitle`, `notes`, `coverPhotoUri`, `dayCaptionsJson` to `trips`
-         * so a user can name and annotate a detected trip. All nullable — purely
-         * additive. `TripDao.replaceAll` preserves these across detection rebuilds.
-         */
-        private val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `trips` ADD COLUMN `userTitle` TEXT")
-                db.execSQL("ALTER TABLE `trips` ADD COLUMN `notes` TEXT")
-                db.execSQL("ALTER TABLE `trips` ADD COLUMN `coverPhotoUri` TEXT")
-                db.execSQL("ALTER TABLE `trips` ADD COLUMN `dayCaptionsJson` TEXT")
-            }
-        }
-
-        /**
-         * v6 → v7: recorded workouts (Athlete persona, Pro).
-         *
-         * Adds `activities` — user-initiated workout recordings (run/ride/walk) with
-         * a precomputed summary and an encoded-polyline route. Separate from
-         * `movement_segments` (passive detection). Purely additive — no existing
-         * table is touched.
-         */
-        private val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `activities` (
-                        `activityId` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                        `activityType` TEXT NOT NULL,
-                        `startedAt` INTEGER NOT NULL,
-                        `endedAt` INTEGER NOT NULL,
-                        `distanceMeters` REAL NOT NULL,
-                        `durationMs` INTEGER NOT NULL,
-                        `avgSpeedMps` REAL NOT NULL,
-                        `maxSpeedMps` REAL NOT NULL,
-                        `steps` INTEGER,
-                        `encodedPolyline` TEXT NOT NULL,
-                        `dayKey` TEXT NOT NULL,
-                        `title` TEXT,
-                        `notes` TEXT,
-                        `lastModifiedAt` INTEGER NOT NULL DEFAULT 0,
-                        `revision` INTEGER NOT NULL DEFAULT 1,
-                        `deletedAt` INTEGER
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_activities_dayKey` ON `activities` (`dayKey`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_activities_startedAt` ON `activities` (`startedAt`)")
-            }
-        }
-
-        /**
-         * v7 → v8: multi-user scoping column.
-         *
-         * Adds `userId` to every syncable table — the last piece of the cloud-ready
-         * contract (audit §A2). Inert today (default ''), exactly like the v3 audit
-         * columns: no read query filters on it and there is no multi-user/sync engine
-         * yet. Frozen now so multi-tenant / family / sync is an additive change later.
-         * Purely additive — no existing data is touched.
-         */
-        private val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                val syncableTables = listOf(
-                    "places", "visits", "movement_segments", "routes",
-                    "geocode_candidates", "correction_feedback", "place_evidence",
-                    "trips", "activities"
-                )
-                for (table in syncableTables) {
-                    db.execSQL("ALTER TABLE `$table` ADD COLUMN `userId` TEXT NOT NULL DEFAULT ''")
-                }
-            }
-        }
-
-        /**
-         * v8 → v9: mileage subsystem (Wave 10).
-         *
-         * Adds five purely-additive tables that drive the mileage / fuel-cost / CO2
-         * pipeline:
-         *   - `vehicles` — user-registered vehicles with fuel type + efficiency + price
-         *   - `fuel_price_history` — time-versioned prices for retroactive accuracy
-         *   - `trip_vehicle_assignments` — segmentId → vehicleId + tax classification
-         *   - `mileage_summary` — pre-aggregated rollups per (vehicle, period)
-         *   - `vehicle_service_log` — user-authored maintenance entries
-         *
-         * No existing table is touched. All audit columns mirror the v3 syncable
-         * tables (lastModifiedAt / revision / deletedAt / userId).
-         */
-        private val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `vehicles` (
-                        `vehicleId` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                        `name` TEXT NOT NULL,
-                        `fuelType` TEXT NOT NULL,
-                        `efficiencyValue` REAL NOT NULL,
-                        `efficiencyUnit` TEXT NOT NULL,
-                        `tankCapacityL` REAL,
-                        `currentFuelPricePerUnit` REAL NOT NULL,
-                        `currencyCode` TEXT NOT NULL,
-                        `createdAt` INTEGER NOT NULL,
-                        `isDefault` INTEGER NOT NULL DEFAULT 0,
-                        `color` TEXT,
-                        `lastModifiedAt` INTEGER NOT NULL DEFAULT 0,
-                        `revision` INTEGER NOT NULL DEFAULT 1,
-                        `deletedAt` INTEGER,
-                        `userId` TEXT NOT NULL DEFAULT ''
-                    )
-                    """.trimIndent()
-                )
-
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `fuel_price_history` (
-                        `priceId` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                        `vehicleId` INTEGER NOT NULL,
-                        `pricePerUnit` REAL NOT NULL,
-                        `currencyCode` TEXT NOT NULL,
-                        `effectiveFrom` INTEGER NOT NULL,
-                        `source` TEXT NOT NULL DEFAULT 'MANUAL',
-                        `lastModifiedAt` INTEGER NOT NULL DEFAULT 0,
-                        `revision` INTEGER NOT NULL DEFAULT 1,
-                        `deletedAt` INTEGER,
-                        `userId` TEXT NOT NULL DEFAULT '',
-                        FOREIGN KEY(`vehicleId`) REFERENCES `vehicles`(`vehicleId`)
-                            ON UPDATE NO ACTION ON DELETE CASCADE
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_fuel_price_history_vehicleId_effectiveFrom` " +
-                        "ON `fuel_price_history` (`vehicleId`, `effectiveFrom`)"
-                )
-
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `trip_vehicle_assignments` (
-                        `segmentId` INTEGER NOT NULL PRIMARY KEY,
-                        `vehicleId` INTEGER NOT NULL,
-                        `isBusiness` INTEGER NOT NULL DEFAULT 0,
-                        `businessPurpose` TEXT,
-                        `manuallyAssigned` INTEGER NOT NULL DEFAULT 0,
-                        `assignedAt` INTEGER NOT NULL,
-                        `lastModifiedAt` INTEGER NOT NULL DEFAULT 0,
-                        `revision` INTEGER NOT NULL DEFAULT 1,
-                        `deletedAt` INTEGER,
-                        `userId` TEXT NOT NULL DEFAULT '',
-                        FOREIGN KEY(`segmentId`) REFERENCES `movement_segments`(`segmentId`)
-                            ON UPDATE NO ACTION ON DELETE CASCADE,
-                        FOREIGN KEY(`vehicleId`) REFERENCES `vehicles`(`vehicleId`)
-                            ON UPDATE NO ACTION ON DELETE CASCADE
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_trip_vehicle_assignments_vehicleId` " +
-                        "ON `trip_vehicle_assignments` (`vehicleId`)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_trip_vehicle_assignments_assignedAt` " +
-                        "ON `trip_vehicle_assignments` (`assignedAt`)"
-                )
-
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `mileage_summary` (
-                        `summaryId` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                        `vehicleId` INTEGER NOT NULL,
-                        `period` TEXT NOT NULL,
-                        `periodKey` TEXT NOT NULL,
-                        `totalDistanceKm` REAL NOT NULL,
-                        `totalFuelL` REAL NOT NULL,
-                        `totalCostMinor` INTEGER NOT NULL,
-                        `currencyCode` TEXT NOT NULL,
-                        `totalCo2Kg` REAL NOT NULL,
-                        `tripCount` INTEGER NOT NULL,
-                        `businessDistanceKm` REAL NOT NULL DEFAULT 0,
-                        `personalDistanceKm` REAL NOT NULL DEFAULT 0,
-                        `computedAt` INTEGER NOT NULL
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_mileage_summary_vehicleId_period_periodKey` " +
-                        "ON `mileage_summary` (`vehicleId`, `period`, `periodKey`)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_mileage_summary_period_periodKey` " +
-                        "ON `mileage_summary` (`period`, `periodKey`)"
-                )
-
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `vehicle_service_log` (
-                        `serviceId` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                        `vehicleId` INTEGER NOT NULL,
-                        `serviceAt` INTEGER NOT NULL,
-                        `odometerKm` REAL,
-                        `serviceType` TEXT NOT NULL,
-                        `costMinor` INTEGER,
-                        `currencyCode` TEXT,
-                        `notes` TEXT,
-                        `lastModifiedAt` INTEGER NOT NULL DEFAULT 0,
-                        `revision` INTEGER NOT NULL DEFAULT 1,
-                        `deletedAt` INTEGER,
-                        `userId` TEXT NOT NULL DEFAULT '',
-                        FOREIGN KEY(`vehicleId`) REFERENCES `vehicles`(`vehicleId`)
-                            ON UPDATE NO ACTION ON DELETE CASCADE
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_vehicle_service_log_vehicleId_serviceAt` " +
-                        "ON `vehicle_service_log` (`vehicleId`, `serviceAt`)"
-                )
-            }
-        }
-
-        /**
-         * v9 → v10: per-segment user override of the classified movement type (W6 T16).
-         *
-         * Adds `userOverrideType` (nullable TEXT) and `userOverrideAt` (nullable INTEGER)
-         * to `movement_segments`. The classifier never writes these — only an explicit
-         * user action does. Display and aggregate queries should COALESCE the override
-         * with `segmentType`. Purely additive — no existing data is touched.
-         */
-        private val MIGRATION_9_10 = object : androidx.room.migration.Migration(9, 10) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `movement_segments` ADD COLUMN `userOverrideType` TEXT")
-                db.execSQL("ALTER TABLE `movement_segments` ADD COLUMN `userOverrideAt` INTEGER")
-            }
-        }
-
-        /** Exposed for migration tests. Production code uses it only via [buildDatabase]. */
-        internal val MIGRATIONS: Array<androidx.room.migration.Migration> =
-            arrayOf(
-                MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
-                MIGRATION_9_10
-            )
 
         /**
          * Sets WAL journal mode and runs an integrity check on every open.
@@ -543,7 +197,10 @@ abstract class VoyagerDatabase : RoomDatabase() {
             }
 
             return builder
-                .addMigrations(*MIGRATIONS)
+                // No upgrade migrations yet — v1 is the baseline. A downgrade (only a
+                // pre-release dev build stepping back to v1) recreates the DB rather than
+                // crashing; there is no production data at a higher version to preserve.
+                .fallbackToDestructiveMigrationOnDowngrade()
                 .addCallback(openCallback)
                 .build()
         }

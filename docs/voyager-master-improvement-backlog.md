@@ -106,10 +106,14 @@ billing code, paywall); export date-range + raw-sample import.
 
 ### D. New features
 
-- **D1 — Fitness / workout recording** — feature · full · XL · high. New
-  `Activity` entity + migration, foreground Workout tracking tier, Record +
-  Activities screens, live stats, GPX-per-activity. Unblocks the Athlete persona.
-  _Doc 2 #8._ new subsystem on `LocationCapture`/`LocationKalmanFilter`.
+- **D1 — Fitness / workout recording** — feature · full · XL · high · ✅ **BUILT 2026-07
+  (Phases 0–5).** Delivered: `Activity` entity + migrations (DB v10→v13), foreground WORKOUT
+  tier, Record + Activities + **ActivityDetail** + **Segments** screens, live route map,
+  auto-pause + moving-time, per-km splits, **barometric elevation** + profile, GPX **import +
+  export** (`<ele>`/`<time>`), on-device **personal records / best-efforts**, private
+  **race-yourself segments**, and **auto-suggest** a workout from passive run/ride/walk segments.
+  Public social/leaderboards deliberately excluded (contradicts the on-device moat). Unblocks the
+  Athlete persona. _Doc 2 #8._ built on `LocationCapture`/`LocationKalmanFilter`.
 - **D2 — Family one-bit handshake** — feature · full · XL · high `[blocked: needs
   security design review]`. Encrypted "I'm safe" bit, no live stream; unlocks the
   Guardian persona / Life360 segment. _readiness P2; competitor-analysis §2.5._

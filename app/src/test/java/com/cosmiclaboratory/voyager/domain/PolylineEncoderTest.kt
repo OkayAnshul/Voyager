@@ -80,4 +80,17 @@ class PolylineEncoderTest {
         assertEquals("", PolylineEncoder.mergePolylines(emptyList()))
         assertEquals("", PolylineEncoder.mergePolylines(listOf("", "")))
     }
+
+    @Test
+    fun `an integer series round-trips through the delta codec`() {
+        // Time offsets (monotonic) and altitude decimetres (rise + fall, incl. negatives).
+        val values = listOf(0, 1000, 2000, 3050, 3050, 2900, 120_000, -450)
+        assertEquals(values, PolylineEncoder.decodeInts(PolylineEncoder.encodeInts(values)))
+    }
+
+    @Test
+    fun `an empty integer series encodes to empty and back`() {
+        assertEquals("", PolylineEncoder.encodeInts(emptyList()))
+        assertTrue(PolylineEncoder.decodeInts("").isEmpty())
+    }
 }

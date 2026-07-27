@@ -83,12 +83,6 @@ fun SegmentDetailSheet(
                         onUnlock = onNavigateToPaywall,
                         onChangeType = { newType ->
                             viewModel.onIntent(SegmentDetailIntent.ChangeType(newType))
-                        },
-                        onSplit = { timestampMs ->
-                            viewModel.onIntent(SegmentDetailIntent.SplitAt(timestampMs))
-                        },
-                        onMerge = { nextId ->
-                            viewModel.onIntent(SegmentDetailIntent.MergeWithNext(nextId))
                         }
                     )
                 }
@@ -104,9 +98,7 @@ private fun SegmentDetailContent(
     explanation: InferenceExplanation?,
     isPro: Boolean,
     onUnlock: () -> Unit,
-    onChangeType: (String) -> Unit,
-    onSplit: (Long) -> Unit,
-    onMerge: (Long) -> Unit
+    onChangeType: (String) -> Unit
 ) {
     var showTypeMenu by remember { mutableStateOf(false) }
 
@@ -154,9 +146,7 @@ private fun SegmentDetailContent(
                 segment = segment,
                 showTypeMenu = showTypeMenu,
                 onShowTypeMenu = { showTypeMenu = it },
-                onChangeType = onChangeType,
-                onSplit = onSplit,
-                onMerge = onMerge
+                onChangeType = onChangeType
             )
         }
     }
@@ -493,9 +483,7 @@ private fun ActionButtonsSection(
     segment: TimelineSegment,
     showTypeMenu: Boolean,
     onShowTypeMenu: (Boolean) -> Unit,
-    onChangeType: (String) -> Unit,
-    onSplit: (Long) -> Unit,
-    onMerge: (Long) -> Unit
+    onChangeType: (String) -> Unit
 ) {
     VoyagerCard(modifier = Modifier.fillMaxWidth()) {
         SectionHeader(title = "Actions")
@@ -524,7 +512,9 @@ private fun ActionButtonsSection(
                     expanded = showTypeMenu,
                     onDismissRequest = { onShowTypeMenu(false) }
                 ) {
-                    SegmentType.entries.forEach { type ->
+                    // Movement types the user can reclassify a segment to. VISIT/DWELL/GAP
+                    // are classifier-internal states, not user reclassification targets.
+                    reclassifiableTypes.forEach { type ->
                         DropdownMenuItem(
                             text = { Text(type.name.replace('_', ' ')) },
                             onClick = {
@@ -536,47 +526,14 @@ private fun ActionButtonsSection(
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            // Split
-            VoyagerOutlinedButton(
-                onClick = {
-                    // Split at midpoint
-                    val midpoint = segment.startAt + (segment.durationMs / 2)
-                    onSplit(midpoint)
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.ContentCut,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Split")
-            }
-
-            // Merge
-            VoyagerOutlinedButton(
-                onClick = { onMerge(segment.segmentId + 1) },
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.MergeType,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Merge")
-            }
-        }
     }
 }
+
+/** Transport modes offered in the "Change Type" menu (excludes internal VISIT/DWELL/GAP/UNKNOWN). */
+private val reclassifiableTypes = listOf(
+    SegmentType.WALK, SegmentType.RUN, SegmentType.CYCLE,
+    SegmentType.DRIVE, SegmentType.TRANSIT, SegmentType.FLIGHT
+)
 
 // -- Utility functions --
 

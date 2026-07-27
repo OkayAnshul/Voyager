@@ -66,6 +66,12 @@ class TrackingRuntimeCoordinator @Inject constructor(
             return Result.failure(IllegalStateException("Session already active"))
         }
 
+        // Fail fast if we can't actually run the foreground service, so isTracking never
+        // flips on with no capture behind it (the service start would otherwise silently no-op).
+        if (!permissionMonitor.hasLocationPermission()) {
+            return Result.failure(SecurityException("Location permission required to start tracking"))
+        }
+
         val now = System.currentTimeMillis()
         val session = TrackingSessionEntity(
             startedAt = now,
@@ -74,6 +80,7 @@ class TrackingRuntimeCoordinator @Inject constructor(
         )
         val sessionId = trackingSessionDao.insert(session)
         stateStore.setActiveSession(sessionId)
+        stateStore.setPaused(false)
         // Seed lastAcceptedAt so the gap watchdog doesn't fire before the first sample arrives
         stateStore.update { it.copy(lastAcceptedAt = now) }
 
@@ -114,6 +121,7 @@ class TrackingRuntimeCoordinator @Inject constructor(
         pipelineConsumer.resetSessionState()
 
         stateStore.setActiveSession(null)
+        stateStore.setPaused(false)
         stateStore.setCurrentSegment(null)
         stateStore.setPendingVisitCandidate(null)
         stateStore.setLastConfirmedVisitId(null)
@@ -134,6 +142,9 @@ class TrackingRuntimeCoordinator @Inject constructor(
         val dayKey = currentDayKey()
         segmenter.closeCurrentSegment(dayKey)
 
+        // Mark paused so the UI reflects the real (torn-down) capture state; the session
+        // stays open so resume() can restart capture without ending the day's session.
+        stateStore.setPaused(true)
         logHealth("MANUAL_PAUSE", "Paused: ${reason.name}")
         stopForegroundService()
         return Result.success(Unit)
@@ -145,6 +156,7 @@ class TrackingRuntimeCoordinator @Inject constructor(
             return Result.success(Unit) // Nothing to resume — idempotent
         }
 
+        stateStore.setPaused(false)
         logHealth("RESUME", "Resumed: ${reason.name}")
         startForegroundService()
         return Result.success(Unit)

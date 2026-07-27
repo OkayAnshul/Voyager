@@ -4,10 +4,10 @@ import com.cosmiclaboratory.voyager.domain.model.*
 import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
 import com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
 import com.cosmiclaboratory.voyager.domain.repository.TimelineRepository
+import com.cosmiclaboratory.voyager.domain.usecase.RecurrenceLabeler
 import com.cosmiclaboratory.voyager.domain.usecase.TimelineReconciler
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
 import com.cosmiclaboratory.voyager.storage.database.dao.*
-import com.cosmiclaboratory.voyager.storage.database.entity.displayName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,12 +24,15 @@ class TimelineRepositoryImpl @Inject constructor(
     private val routeDao: RouteDao,
     private val visitDao: VisitDao,
     private val placeDao: PlaceDao,
+    private val placeEvidenceDao: PlaceEvidenceDao,
     private val geocodeCandidateDao: GeocodeCandidateDao,
     private val stateStore: TimelineStateStore,
     private val rawStepSampleDao: com.cosmiclaboratory.voyager.storage.database.dao.RawStepSampleDao,
     private val reconciler: TimelineReconciler,
     private val settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository,
-    private val overpassApiService: com.cosmiclaboratory.voyager.data.api.OverpassApiService
+    private val overpassApiService: com.cosmiclaboratory.voyager.data.api.OverpassApiService,
+    private val geocodingRepository: com.cosmiclaboratory.voyager.domain.repository.GeocodingRepository,
+    private val dayBoundaryResolver: com.cosmiclaboratory.voyager.domain.util.DayBoundaryResolver
 ) : TimelineRepository {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -85,10 +88,17 @@ class TimelineRepositoryImpl @Inject constructor(
     }
 
     private fun dayBoundsMs(dayKey: String): Pair<Long, Long> {
-        val date = java.time.LocalDate.parse(dayKey)
-        val zone = java.time.ZoneId.systemDefault()
-        val startMs = date.atStartOfDay(zone).toInstant().toEpochMilli()
-        val endMs = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        // Use the same home timezone the pipeline uses to assign a segment's dayKey
+        // (DayBoundaryResolver in PipelineConsumer), so the step-sum window lines up
+        // with the day's segments instead of drifting by the device offset while
+        // traveling across timezones.
+        val tz = try {
+            settingsRepository.observeSettings().value.homeTimeZone
+        } catch (_: Exception) {
+            java.time.ZoneId.systemDefault().id
+        }
+        val startMs = dayBoundaryResolver.getDayStartEpochMs(dayKey, tz)
+        val endMs = dayBoundaryResolver.getDayEndEpochMs(dayKey, tz)
         return startMs to endMs
     }
 
@@ -97,11 +107,22 @@ class TimelineRepositoryImpl @Inject constructor(
         return combine(
             movementSegmentDao.observeByDayKey(dayKey),
             rawStepSampleDao.observeSumStepsByTimeRange(dayStartMs, dayEndMs),
-            settingsRepository.observeSettings()
+            // Only rebuild the day when a setting the timeline actually depends on changes —
+            // not on every unrelated toggle (battery/CPU on the primary read path).
+            settingsRepository.observeSettings().distinctUntilChangedBy {
+                listOf(
+                    it.unifyTravelSegments, it.showGapSegments,
+                    it.minSegmentDurationMs, it.showLowConfidenceSegments
+                )
+            }
         ) { segments, stepSum, settings ->
             val daySteps = stepSum ?: 0
             val timelineSegments = segments.map { segment ->
-                val rawSegmentType = try { SegmentType.valueOf(segment.segmentType) } catch (_: Exception) { SegmentType.UNKNOWN_MOTION }
+                // COALESCE the user's override with the classifier output — the user tap is
+                // authoritative (see OverrideSegmentTypeUseCase). Never show the raw label
+                // once the user has corrected it.
+                val effectiveType = segment.userOverrideType ?: segment.segmentType
+                val rawSegmentType = try { SegmentType.valueOf(effectiveType) } catch (_: Exception) { SegmentType.UNKNOWN_MOTION }
                 // Map DWELL (Segmenter's stationary type) to VISIT for display
                 val segmentType = if (rawSegmentType == SegmentType.DWELL) SegmentType.VISIT else rawSegmentType
                 // For VISIT/DWELL segments, fall back to the visits table for place info
@@ -120,8 +141,8 @@ class TimelineRepositoryImpl @Inject constructor(
                             if (lat != 0.0 || lng != 0.0) {
                                 TimelinePlace(
                                     placeId = 0,
-                                    displayName = "%.4f, %.4f".format(lat, lng),
-                                    nameSource = "Coordinates",
+                                    displayName = geocodingRepository.resolveDisplayNameForCoordinates(lat, lng),
+                                    nameSource = "Approximate area",
                                     category = PlaceCategory.UNKNOWN,
                                     confidence = 0f,
                                     lat = lat,
@@ -158,15 +179,21 @@ class TimelineRepositoryImpl @Inject constructor(
                         )
                     },
                     place = place?.let { p ->
-                        val displayName = p.displayName()
+                        // Single source of truth for the name: userDisplayName >
+                        // userCategory > gated bestProviderName > "Near [area]" >
+                        // coordinates. Never lets a nearby POI win as the primary name.
+                        val displayName = geocodingRepository.resolveDisplayName(p.placeId)
                         val visitCount = visitDao.countByPlaceId(p.placeId)
+                        // Recurrence evidence (C1) — surfaces "part of your routine" hints.
+                        val placeEvidence = placeEvidenceDao.getByPlaceId(p.placeId)
                         TimelinePlace(
                             placeId = p.placeId,
                             displayName = displayName,
                             nameSource = when {
-                                p.userDisplayName != null -> "Custom name"
-                                p.bestProviderName != null -> "via ${p.bestProviderSource ?: "provider"}"
-                                else -> "Coordinates"
+                                !p.userDisplayName.isNullOrBlank() -> "Custom name"
+                                !p.userCategory.isNullOrBlank() && p.userCategory != "UNKNOWN" -> "Your label"
+                                !p.bestProviderName.isNullOrBlank() -> "via ${p.bestProviderSource ?: "provider"}"
+                                else -> "Nearby area"
                             },
                             category = try { PlaceCategory.valueOf(p.category) } catch (_: Exception) { PlaceCategory.UNKNOWN },
                             confidence = p.confidence,
@@ -174,7 +201,16 @@ class TimelineRepositoryImpl @Inject constructor(
                             lng = p.centroidLng,
                             geocodeHints = buildGeocodeHints(p.placeId, displayName, p.centroidLat, p.centroidLng),
                             emoji = p.emoji,
-                            visitCount = visitCount
+                            visitCount = visitCount,
+                            repeatabilityScore = placeEvidence?.repeatabilityScore,
+                            typicalDwellMs = placeEvidence?.avgDwellMs,
+                            recurrenceLabel = placeEvidence?.let { ev ->
+                                RecurrenceLabeler.label(
+                                    repeatabilityScore = ev.repeatabilityScore,
+                                    visitCountLast7d = ev.visitCountLast7d,
+                                    visitCountLast30d = ev.visitCountLast30d
+                                )
+                            }
                         )
                     } ?: syntheticPlace,
                     route = route?.let { r ->
@@ -248,7 +284,9 @@ class TimelineRepositoryImpl @Inject constructor(
 
         val evidence = segmentEvidenceDao.getBySegmentId(segmentId)
 
-        val rawType = try { SegmentType.valueOf(segment.segmentType) } catch (_: Exception) { SegmentType.UNKNOWN_MOTION }
+        // COALESCE the user override with the classifier output (see OverrideSegmentTypeUseCase).
+        val effectiveType = segment.userOverrideType ?: segment.segmentType
+        val rawType = try { SegmentType.valueOf(effectiveType) } catch (_: Exception) { SegmentType.UNKNOWN_MOTION }
         val displayType = if (rawType == SegmentType.DWELL) SegmentType.VISIT else rawType
 
         // Synthetic place for unlinked visits
@@ -260,8 +298,8 @@ class TimelineRepositoryImpl @Inject constructor(
                     if (lat != 0.0 || lng != 0.0) {
                         TimelinePlace(
                             placeId = 0,
-                            displayName = "%.4f, %.4f".format(lat, lng),
-                            nameSource = "Coordinates",
+                            displayName = geocodingRepository.resolveDisplayNameForCoordinates(lat, lng),
+                            nameSource = "Approximate area",
                             category = PlaceCategory.UNKNOWN,
                             confidence = 0f,
                             lat = lat,
@@ -296,14 +334,15 @@ class TimelineRepositoryImpl @Inject constructor(
                 )
             },
             place = place?.let { p ->
-                val displayName = p.displayName()
+                val displayName = geocodingRepository.resolveDisplayName(p.placeId)
                 TimelinePlace(
                     placeId = p.placeId,
                     displayName = displayName,
                     nameSource = when {
-                        p.userDisplayName != null -> "Custom name"
-                        p.bestProviderName != null -> "via ${p.bestProviderSource ?: "provider"}"
-                        else -> "Coordinates"
+                        !p.userDisplayName.isNullOrBlank() -> "Custom name"
+                        !p.userCategory.isNullOrBlank() && p.userCategory != "UNKNOWN" -> "Your label"
+                        !p.bestProviderName.isNullOrBlank() -> "via ${p.bestProviderSource ?: "provider"}"
+                        else -> "Nearby area"
                     },
                     category = try { PlaceCategory.valueOf(p.category) } catch (_: Exception) { PlaceCategory.UNKNOWN },
                     confidence = p.confidence,
@@ -374,8 +413,11 @@ class TimelineRepositoryImpl @Inject constructor(
                     }
                     ActiveVisitInfo(
                         visitId = entity.visitId,
-                        placeName = place?.displayName()
-                            ?: "%.4f, %.4f".format(entity.centroidLat ?: 0.0, entity.centroidLng ?: 0.0),
+                        placeName = place?.let { geocodingRepository.resolveDisplayName(it.placeId) }
+                            ?: geocodingRepository.resolveDisplayNameForCoordinates(
+                                entity.centroidLat ?: 0.0,
+                                entity.centroidLng ?: 0.0
+                            ),
                         category = try { PlaceCategory.valueOf(place?.category ?: "UNKNOWN") }
                             catch (_: Exception) { PlaceCategory.UNKNOWN },
                         arrivalAt = entity.arrivalAt,
@@ -393,7 +435,10 @@ class TimelineRepositoryImpl @Inject constructor(
             }
         }.stateIn(
             classScope,
-            SharingStarted.Eagerly,
+            // WhileSubscribed, not Eagerly: the heavy per-segment mapping + live queries
+            // for "today" must not churn continuously when no screen is observing. The
+            // 5s grace keeps it warm across config changes / quick screen hops.
+            SharingStarted.WhileSubscribed(5_000),
             LiveTimelineState(null, null, false)
         )
     }

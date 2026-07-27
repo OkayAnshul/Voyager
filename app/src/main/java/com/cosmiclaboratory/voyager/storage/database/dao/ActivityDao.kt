@@ -24,6 +24,10 @@ interface ActivityDao {
     @Query("SELECT * FROM activities WHERE dayKey = :dayKey AND deletedAt IS NULL ORDER BY startedAt ASC")
     suspend fun getByDayKey(dayKey: String): List<ActivityEntity>
 
+    /** Passive segment ids already materialised into an activity — excluded from re-suggestion. */
+    @Query("SELECT sourceSegmentId FROM activities WHERE sourceSegmentId IS NOT NULL AND deletedAt IS NULL")
+    suspend fun getConvertedSegmentIds(): List<Long>
+
     /** User-authored fields for a recorded activity (the rest is computed). */
     @Query("UPDATE activities SET title = :title, notes = :notes, lastModifiedAt = :modifiedAt WHERE activityId = :id")
     suspend fun updateUserFields(id: Long, title: String?, notes: String?, modifiedAt: Long)

@@ -44,7 +44,9 @@ class ProEntitlementManager @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private val _isPro = MutableStateFlow(false)
+    // Seed from FREE_EVERYTHING so the very first frame is already unlocked (no flash
+    // of locked cards while DataStore is read).
+    private val _isPro = MutableStateFlow(FREE_EVERYTHING)
 
     /** Whether the user currently has Pro. Seeded from the offline cache, kept live by the channel. */
     val isPro: StateFlow<Boolean> = _isPro.asStateFlow()
@@ -91,13 +93,28 @@ class ProEntitlementManager @Inject constructor(
     }
 
     private fun effectivePro(prefs: Preferences): Boolean {
+        if (FREE_EVERYTHING) return true
         val cached = prefs[PRO_CACHE_KEY] ?: false
         val debugOverride = BuildConfig.DEBUG && (prefs[DEBUG_OVERRIDE_KEY] ?: false)
         return cached || debugOverride
     }
 
-    private companion object {
-        val PRO_CACHE_KEY = booleanPreferencesKey("pro_entitled_cache")
-        val DEBUG_OVERRIDE_KEY = booleanPreferencesKey("pro_debug_override")
+    companion object {
+        /**
+         * Launch switch: every feature is free for now.
+         *
+         * While this is true, [isPro] is always true, so every [FeatureGate] and
+         * Insights lens unlocks and the paywall is never reached. The Play Billing
+         * stack ([EntitlementSource]/[BillingGateway]/`BillingClientWrapper`,
+         * `PaywallScreen`, the `pro_*` products) is left intact and compilable.
+         *
+         * TODO(monetize): to re-introduce subscriptions, flip this to `false` and
+         * create the `pro_*` products in the Play Console. No other code change is
+         * required — real entitlement resolution resumes automatically.
+         */
+        const val FREE_EVERYTHING = true
+
+        private val PRO_CACHE_KEY = booleanPreferencesKey("pro_entitled_cache")
+        private val DEBUG_OVERRIDE_KEY = booleanPreferencesKey("pro_debug_override")
     }
 }

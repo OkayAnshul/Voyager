@@ -86,4 +86,58 @@ class WorkoutRecorderTest {
         // The authoritative summarize now agrees with the live (plausible-only) distance.
         assertEquals(afterClean, slot.captured.distanceMeters, 0.001)
     }
+
+    @Test
+    fun `a low-accuracy fix draws on the route but adds no distance`() = runTest {
+        recorder.start(WorkoutType.RUN, nowMs = 0L)
+        recorder.onLocation(0.0, 0.0, 0L, accuracyM = 5f)
+        // ~111 m of travel, but this fix's accuracy (80 m) is worse than the 30 m gate.
+        recorder.onLocation(0.001, 0.0, 10_000L, accuracyM = 80f)
+        assertEquals("poor-accuracy leg must not accumulate distance",
+            0.0, recorder.liveStats.value!!.distanceMeters, 0.001)
+        // The point is still on the drawn route for the live map.
+        assertEquals(2, recorder.liveRoute.value.size)
+    }
+
+    @Test
+    fun `altitude drives elevation gain and is persisted in the stream`() = runTest {
+        val slot = slot<ActivityEntity>()
+        coEvery { activityDao.insert(capture(slot)) } returns 9L
+
+        recorder.start(WorkoutType.HIKE, nowMs = 0L)
+        recorder.onLocation(0.0, 0.0, 0L, altitudeM = 100.0, accuracyM = 5f)
+        recorder.onLocation(0.001, 0.0, 10_000L, altitudeM = 110.0, accuracyM = 5f) // +10 m climb
+        assertTrue("live elevation gain should reflect the climb",
+            recorder.liveStats.value!!.elevationGainM >= 9.0)
+
+        recorder.stop()
+        assertEquals(10.0, slot.captured.elevationGainM, 0.5)
+        assertTrue("altitude stream persisted", slot.captured.encodedAltitudes.isNotEmpty())
+        assertTrue("time stream persisted", slot.captured.encodedTimes.isNotEmpty())
+    }
+
+    @Test
+    fun `auto-pause keeps a mid-run stop out of moving time`() = runTest {
+        recorder.start(WorkoutType.RUN, nowMs = 0L)
+        recorder.onLocation(0.0, 0.0, 0L, accuracyM = 5f)
+        recorder.onLocation(0.001, 0.0, 10_000L, accuracyM = 5f)   // ~11 m/s — moving
+        recorder.onLocation(0.001, 0.0, 70_000L, accuracyM = 5f)   // stood still 60 s — stopped
+        val stats = recorder.liveStats.value!!
+        assertTrue("a stationary last leg reads as paused", stats.isPaused)
+        assertEquals("only the moving leg counts toward moving time", 10_000L, stats.movingTimeMs)
+        assertTrue("elapsed still includes the stop", stats.durationMs >= 70_000L)
+    }
+
+    @Test
+    fun `manual pause freezes distance until resumed`() = runTest {
+        recorder.start(WorkoutType.RUN, nowMs = 0L)
+        recorder.onLocation(0.0, 0.0, 0L, accuracyM = 5f)
+        recorder.pause()
+        recorder.onLocation(0.001, 0.0, 10_000L, accuracyM = 5f)   // moved, but paused
+        assertEquals(0.0, recorder.liveStats.value!!.distanceMeters, 0.001)
+        assertTrue(recorder.liveStats.value!!.isPaused)
+        recorder.resume()
+        recorder.onLocation(0.002, 0.0, 20_000L, accuracyM = 5f)   // counts from the resume point
+        assertTrue(recorder.liveStats.value!!.distanceMeters > 100.0)
+    }
 }

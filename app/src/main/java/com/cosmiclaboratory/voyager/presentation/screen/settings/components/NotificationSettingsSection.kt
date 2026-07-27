@@ -107,18 +107,6 @@ fun NotificationSettingsSection(
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
 
-                // Tracking Status
-                NotificationToggleRow(
-                    icon = Icons.Default.MyLocation,
-                    title = "Tracking Status",
-                    description = "Show tracking status in notification bar",
-                    checked = settings.trackingStatusNotificationEnabled && hasNotificationPermission,
-                    enabled = hasNotificationPermission,
-                    onCheckedChange = { onUpdateSetting("trackingStatusNotificationEnabled", it) }
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
                 // Daily Insights
                 NotificationToggleRow(
                     icon = Icons.Default.Insights,
@@ -155,11 +143,11 @@ fun NotificationSettingsSection(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Place Confirmation
+                // Discovery & Routine — new places you visit, and routines you miss
                 NotificationToggleRow(
                     icon = Icons.Default.Place,
-                    title = "Place Confirmation",
-                    description = "Prompt to confirm newly detected places",
+                    title = "Discovery & routine alerts",
+                    description = "A new place you visited, or a routine you missed",
                     checked = settings.placeConfirmationPromptsEnabled && hasNotificationPermission,
                     enabled = hasNotificationPermission,
                     onCheckedChange = { onUpdateSetting("placeConfirmationPromptsEnabled", it) }

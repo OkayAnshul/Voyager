@@ -2,6 +2,7 @@ package com.cosmiclaboratory.voyager.pipeline
 
 import com.cosmiclaboratory.voyager.capture.AccelCapture
 import com.cosmiclaboratory.voyager.capture.ActivityCapture
+import com.cosmiclaboratory.voyager.capture.BaroCapture
 import com.cosmiclaboratory.voyager.capture.AdaptiveSamplingPolicy
 import com.cosmiclaboratory.voyager.capture.DormantModeManager
 import com.cosmiclaboratory.voyager.capture.GeofenceEventHandler
@@ -54,6 +55,7 @@ class PipelineConsumer @Inject constructor(
     private val locationCapture: LocationCapture,
     private val activityCapture: ActivityCapture,
     private val accelCapture: AccelCapture,
+    private val baroCapture: BaroCapture,
     private val dormantModeManager: DormantModeManager,
     private val geofenceEventHandler: GeofenceEventHandler,
     private val placeLinkingService: PlaceLinkingService,
@@ -251,7 +253,12 @@ class PipelineConsumer @Inject constructor(
 
         // Feed an active workout recording with the cleaned (Kalman-smoothed, deduped,
         // spoof-checked) fix. No-op unless a workout is in progress (WorkoutRecorder guards it).
-        workoutRecorder.onLocation(smoothed.lat, smoothed.lng, smoothed.capturedAt)
+        // Prefer barometric altitude (far steadier than GPS altitude) when the device has a
+        // pressure sensor; fall back to the fix's GPS altitude.
+        val workoutAltitude = baroCapture.latestAltitudeM(smoothed.capturedAt) ?: smoothed.altitudeM
+        workoutRecorder.onLocation(
+            smoothed.lat, smoothed.lng, smoothed.capturedAt, workoutAltitude, smoothed.accuracyM
+        )
 
         // 5. Displacement-based movement detection
         val prevSample = lastAcceptedSample

@@ -7,10 +7,14 @@ import androidx.room.withTransaction
 import com.cosmiclaboratory.voyager.BuildConfig
 import com.cosmiclaboratory.voyager.domain.model.DateRange
 import com.cosmiclaboratory.voyager.domain.model.ImportSummary
+import com.cosmiclaboratory.voyager.domain.model.TimelineSegment
 import com.cosmiclaboratory.voyager.domain.model.enums.ExportFormat
 import com.cosmiclaboratory.voyager.domain.repository.ExportRepository
+import com.cosmiclaboratory.voyager.domain.repository.GeocodingRepository
 import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
+import com.cosmiclaboratory.voyager.domain.repository.TimelineRepository
 import com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
+import kotlinx.coroutines.flow.first
 import com.cosmiclaboratory.voyager.storage.database.VoyagerDatabase
 import com.cosmiclaboratory.voyager.storage.database.dao.MovementSegmentDao
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
@@ -24,7 +28,6 @@ import com.cosmiclaboratory.voyager.storage.database.entity.PlaceEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.RouteEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.TrackingSessionEntity
 import com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity
-import com.cosmiclaboratory.voyager.storage.database.entity.displayName
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -41,8 +44,18 @@ class ExportRepositoryImpl @Inject constructor(
     private val placeDao: PlaceDao,
     private val rawLocationSampleDao: RawLocationSampleDao,
     private val trackingSessionDao: TrackingSessionDao,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val geocodingRepository: GeocodingRepository,
+    private val timelineRepository: TimelineRepository
 ) : ExportRepository {
+
+    /**
+     * Reconciled + view-filtered segments for a day — exactly what the user sees on the
+     * timeline (merged continuous tracks, override-coalesced types, resolved names),
+     * so shared GPX/GeoJSON tracks match the app instead of the raw fragmented segments.
+     */
+    private suspend fun reconciledSegmentsForDay(dayKey: String): List<TimelineSegment> =
+        timelineRepository.observeDay(dayKey).first().segments
 
     private val json = Json {
         prettyPrint = false
@@ -59,9 +72,11 @@ class ExportRepositoryImpl @Inject constructor(
             rawSamplesForDays(dayKey, dayKey, stripCoords)
         } else emptyList()
 
+        // GPX/GeoJSON tracks use the reconciled timeline (continuous, what-you-see);
+        // CSV/VoyagerJSON stay on raw segments (analytical dump / lossless backup).
         val content = when (format) {
-            ExportFormat.GPX -> buildGpx(segments, visits, stripCoords)
-            ExportFormat.GEOJSON -> buildGeoJson(segments, visits, stripCoords)
+            ExportFormat.GPX -> buildGpx(reconciledSegmentsForDay(dayKey), visits, stripCoords)
+            ExportFormat.GEOJSON -> buildGeoJson(reconciledSegmentsForDay(dayKey), visits, stripCoords)
             ExportFormat.CSV -> buildCsv(segments)
             ExportFormat.VOYAGER_JSON -> buildVoyagerJson(segments, visits, rawSamples, stripCoords)
         }
@@ -89,8 +104,8 @@ class ExportRepositoryImpl @Inject constructor(
         } else emptyList()
 
         val content = when (format) {
-            ExportFormat.GPX -> buildGpx(allSegments, allVisits, stripCoords)
-            ExportFormat.GEOJSON -> buildGeoJson(allSegments, allVisits, stripCoords)
+            ExportFormat.GPX -> buildGpx(dayKeys.flatMap { reconciledSegmentsForDay(it) }, allVisits, stripCoords)
+            ExportFormat.GEOJSON -> buildGeoJson(dayKeys.flatMap { reconciledSegmentsForDay(it) }, allVisits, stripCoords)
             ExportFormat.CSV -> buildCsv(allSegments)
             ExportFormat.VOYAGER_JSON -> buildVoyagerJson(allSegments, allVisits, rawSamples, stripCoords)
         }
@@ -262,7 +277,7 @@ class ExportRepositoryImpl @Inject constructor(
     }
 
     private suspend fun buildGpx(
-        segments: List<com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity>,
+        segments: List<TimelineSegment>,
         visits: List<com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity>,
         stripCoords: Boolean
     ): String {
@@ -270,13 +285,13 @@ class ExportRepositoryImpl @Inject constructor(
         sb.appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
         sb.appendLine("""<gpx version="1.1" creator="Voyager" xmlns="http://www.topografix.com/GPX/1/1">""")
 
-        // Transit segments as tracks
+        // Movement segments as tracks — reconciled, so each track is a continuous leg.
         for (segment in segments) {
-            val route = routeDao.getBySegmentId(segment.segmentId) ?: continue
+            val route = segment.route ?: continue
             val points = PolylineCodec.decode(route.encodedPolyline)
             if (points.isEmpty()) continue
 
-            sb.appendLine("""  <trk><name>Segment ${segment.segmentId}</name><trkseg>""")
+            sb.appendLine("""  <trk><name>${escapeXml(route.transportMode)}</name><trkseg>""")
             for ((lat, lng) in points) {
                 sb.appendLine("""    <trkpt lat="${lat.stripIf(stripCoords)}" lon="${lng.stripIf(stripCoords)}"/>""")
             }
@@ -288,7 +303,7 @@ class ExportRepositoryImpl @Inject constructor(
             val lat = visit.centroidLat ?: continue
             val lng = visit.centroidLng ?: continue
             val placeName = if (visit.placeId != 0L) {
-                placeDao.getById(visit.placeId)?.displayName() ?: "Visit"
+                placeDao.getById(visit.placeId)?.let { geocodingRepository.resolveDisplayName(it.placeId) } ?: "Visit"
             } else "Visit"
             sb.appendLine("""  <wpt lat="${lat.stripIf(stripCoords)}" lon="${lng.stripIf(stripCoords)}"><name>${escapeXml(placeName)}</name><time>${java.time.Instant.ofEpochMilli(visit.arrivalAt)}</time></wpt>""")
         }
@@ -298,15 +313,15 @@ class ExportRepositoryImpl @Inject constructor(
     }
 
     private suspend fun buildGeoJson(
-        segments: List<com.cosmiclaboratory.voyager.storage.database.entity.MovementSegmentEntity>,
+        segments: List<TimelineSegment>,
         visits: List<com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity>,
         stripCoords: Boolean
     ): String {
         val features = mutableListOf<String>()
 
-        // Transit segments as LineStrings
+        // Movement segments as LineStrings — reconciled continuous legs.
         for (segment in segments) {
-            val route = routeDao.getBySegmentId(segment.segmentId) ?: continue
+            val route = segment.route ?: continue
             val points = PolylineCodec.decode(route.encodedPolyline)
             if (points.isEmpty()) continue
 
@@ -321,7 +336,7 @@ class ExportRepositoryImpl @Inject constructor(
             val lat = visit.centroidLat ?: continue
             val lng = visit.centroidLng ?: continue
             val placeName = if (visit.placeId != 0L) {
-                placeDao.getById(visit.placeId)?.displayName()
+                placeDao.getById(visit.placeId)?.let { geocodingRepository.resolveDisplayName(it.placeId) }
             } else null
             features.add("""{"type":"Feature","properties":{"visitId":${visit.visitId},"placeName":${if (placeName != null) "\"${escapeJson(placeName)}\"" else "null"},"arrivalAt":${visit.arrivalAt},"departureAt":${visit.departureAt ?: "null"},"dwellMs":${visit.dwellMs ?: "null"}},"geometry":{"type":"Point","coordinates":[${lng.stripIf(stripCoords)},${lat.stripIf(stripCoords)}]}}""")
         }

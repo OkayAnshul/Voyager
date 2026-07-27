@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,8 +20,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.delay
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -129,7 +133,8 @@ fun DashboardContent(
         item {
             VoyagerCard(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = onNavigateToSearch
+                onClick = onNavigateToSearch,
+                variant = CardVariant.GLASS
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -200,20 +205,39 @@ fun DashboardContent(
             }
         }
 
-        // ── 2. ACTIVITY RING HERO ────────────────────────────────────────
+        // ── 2. HERO — "Capturing Now" stat card + activity rings, or the
+        // "Awaiting Signal" welcome when today has no data yet. The first hour
+        // never shows a dead, all-zero screen — the welcome carries the privacy
+        // promise until real data arrives.
         item {
+            val hasDataToday = uiState.topPlaces.isNotEmpty() ||
+                (uiState.dailySummary?.totalDistanceM ?: 0.0) > 50.0 ||
+                uiState.totalStepsToday > 30 ||
+                uiState.activeVisit != null ||
+                uiState.dailySummary?.firstActivityAt != null
             AnimatedVisibility(
                 visible = staggerVisible,
                 enter = fadeIn(tween(400, delayMillis = 120)) + slideInVertically(tween(500, delayMillis = 120)) { it / 4 }
             ) {
-                DayHeroCard(
-                    distanceM = uiState.dailySummary?.totalDistanceM ?: 0.0,
-                    steps = uiState.totalStepsToday,
-                    firstActivityAt = uiState.dailySummary?.firstActivityAt,
-                    lastActivityAt = uiState.dailySummary?.lastActivityAt,
-                    sessionStartedAt = uiState.sessionStartedAt,
-                    isTracking = uiState.isTracking
-                )
+                if (!hasDataToday) {
+                    AwaitingSignalCard(isTracking = uiState.isTracking, isPaused = uiState.isPaused)
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(VoyagerSpacing.lg)) {
+                        CapturingNowCard(
+                            distanceM = uiState.dailySummary?.totalDistanceM ?: 0.0,
+                            steps = uiState.totalStepsToday,
+                            isTracking = uiState.isTracking
+                        )
+                        RingsBlock(
+                            distanceM = uiState.dailySummary?.totalDistanceM ?: 0.0,
+                            steps = uiState.totalStepsToday,
+                            firstActivityAt = uiState.dailySummary?.firstActivityAt,
+                            lastActivityAt = uiState.dailySummary?.lastActivityAt,
+                            sessionStartedAt = uiState.sessionStartedAt,
+                            isTracking = uiState.isTracking
+                        )
+                    }
+                }
             }
         }
 
@@ -269,7 +293,7 @@ fun DashboardContent(
         // The chosen Job decides which of these the user sees first.
         val placesSection: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
             if (uiState.topPlaces.isNotEmpty()) {
-                item { SectionHeader(title = "Today's Places") }
+                item { SectionHeader(title = "Today's Places", accent = VoyagerColors.Primary) }
                 items(uiState.topPlaces, key = { it.placeId }) { place ->
                     TopPlaceCard(place = place)
                 }
@@ -277,7 +301,7 @@ fun DashboardContent(
         }
         val insightsSection: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
             if (uiState.insights.isNotEmpty()) {
-                item { SectionHeader(title = "Insights") }
+                item { SectionHeader(title = "Insights", accent = VoyagerColors.AccentPurple) }
                 items(uiState.insights.take(3), key = { it.title }) { insight ->
                     InsightCard(insight = insight)
                 }
@@ -285,7 +309,7 @@ fun DashboardContent(
         }
         val anomaliesSection: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
             if (uiState.anomalies.isNotEmpty()) {
-                item { SectionHeader(title = "Anomalies") }
+                item { SectionHeader(title = "Anomalies", accent = VoyagerColors.AccentAmber) }
                 items(uiState.anomalies.take(3), key = { it.metricKey + it.impactedDay }) { anomaly ->
                     AnomalyAlertCard(
                         metricKey = anomaly.metricKey,
@@ -309,7 +333,10 @@ fun DashboardContent(
         orderedSections.forEach { section -> section() }
 
         // ── 6b. BATTERY SELF-REPORT ──────────────────────────────────────
-        uiState.batteryPercentPerDay?.let { perDay ->
+        // The figure is withheld until BatteryUsageReporter is confident; while it
+        // gathers signal we show a calm "measuring" card rather than a vanished one.
+        val batteryPerDay = uiState.batteryPercentPerDay
+        if (batteryPerDay != null) {
             item {
                 VoyagerCard(modifier = Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -334,66 +361,57 @@ fun DashboardContent(
                             )
                         }
                         Text(
-                            text = "~$perDay%/day",
+                            text = "~$batteryPerDay%/day",
                             style = MonoStatMedium,
                             color = VoyagerColors.OnSurface
                         )
                     }
                 }
             }
+        } else if (uiState.isTracking) {
+            item {
+                VoyagerCard(modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.BatteryChargingFull,
+                            contentDescription = null,
+                            tint = VoyagerColors.OnSurfaceVariant,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Battery while tracking",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = VoyagerColors.OnSurface
+                            )
+                            Text(
+                                text = "Measuring your honest drain — appears after a full day of tracking.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = VoyagerColors.OnSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
         }
 
-        // ── 7. QUICK ACTIONS ─────────────────────────────────────────────
+        // ── 7. SHORTCUTS ─────────────────────────────────────────────────
         item {
-            SectionHeader(title = "Quick Actions")
+            SectionHeader(title = "Shortcuts", accent = VoyagerColors.AccentGreen)
         }
         item {
             androidx.compose.foundation.layout.FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                maxItemsInEachRow = 3
+                horizontalArrangement = Arrangement.spacedBy(VoyagerSpacing.sm),
+                verticalArrangement = Arrangement.spacedBy(VoyagerSpacing.sm)
             ) {
-                VoyagerOutlinedButton(
-                    onClick = onRunPlaceDetection,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Detect", style = MaterialTheme.typography.labelSmall)
-                }
-                VoyagerOutlinedButton(
-                    onClick = onNavigateToInsights,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.Insights, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Stats", style = MaterialTheme.typography.labelSmall)
-                }
-                VoyagerOutlinedButton(
-                    onClick = onNavigateToExport,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Export", style = MaterialTheme.typography.labelSmall)
-                }
-                VoyagerOutlinedButton(
-                    onClick = onNavigateToDayStory,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Photos", style = MaterialTheme.typography.labelSmall)
-                }
-                VoyagerOutlinedButton(
-                    onClick = onNavigateToTrips,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.Luggage, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Trips", style = MaterialTheme.typography.labelSmall)
-                }
+                ShortcutChip(icon = Icons.Default.Luggage, label = "Trips", onClick = onNavigateToTrips)
+                ShortcutChip(icon = Icons.Default.Share, label = "Export", onClick = onNavigateToExport)
+                ShortcutChip(icon = Icons.Default.PhotoLibrary, label = "Photos", onClick = onNavigateToDayStory)
+                ShortcutChip(icon = Icons.Default.Insights, label = "Stats", onClick = onNavigateToInsights)
+                ShortcutChip(icon = Icons.Default.MyLocation, label = "Detect", onClick = onRunPlaceDetection)
             }
         }
 
@@ -405,6 +423,372 @@ fun DashboardContent(
 // ============================================================================
 // PRIVATE COMPOSABLE COMPONENTS
 // ============================================================================
+
+/**
+ * The signature "Capturing Now" stat card: a frosted-glass surface carrying
+ * today's two headline numbers — distance + steps — in JetBrains Mono, with a
+ * live pulse when tracking is active. The numbers roll up on change.
+ */
+@Composable
+private fun CapturingNowCard(
+    distanceM: Double,
+    steps: Int,
+    isTracking: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val animatedDistance = remember { Animatable(0f) }
+    val animatedSteps = remember { Animatable(0f) }
+    LaunchedEffect(distanceM) {
+        animatedDistance.snapTo(0f)
+        animatedDistance.animateTo(distanceM.toFloat(), tween(900, easing = FastOutSlowInEasing))
+    }
+    LaunchedEffect(steps) {
+        animatedSteps.snapTo(0f)
+        animatedSteps.animateTo(steps.toFloat(), tween(900, easing = FastOutSlowInEasing))
+    }
+
+    GlassCard(
+        modifier = modifier.fillMaxWidth(),
+        tint = if (isTracking) VoyagerGradients.activeCard else null
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (isTracking) "CAPTURING NOW" else "TODAY",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.5.sp,
+                color = if (isTracking) VoyagerColors.AccentGreen else VoyagerColors.OnSurfaceVariant
+            )
+            if (isTracking) PulsingDot(size = 8.dp, color = VoyagerColors.AccentBlue)
+        }
+        Spacer(Modifier.height(VoyagerSpacing.lg))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(VoyagerSpacing.xl)
+        ) {
+            CapturingStat(
+                modifier = Modifier.weight(1f),
+                value = String.format("%.1f", animatedDistance.value / 1000.0),
+                label = "KM DISTANCE",
+                color = VoyagerColors.OnSurface
+            )
+            CapturingStat(
+                modifier = Modifier.weight(1f),
+                value = "%,d".format(animatedSteps.value.toInt()),
+                label = "STEPS TODAY",
+                color = VoyagerColors.AccentGreen
+            )
+        }
+    }
+}
+
+@Composable
+private fun CapturingStat(
+    value: String,
+    label: String,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = value,
+            style = MonoStatLarge.copy(fontSize = 34.sp, lineHeight = 40.sp),
+            color = color,
+            maxLines = 1
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            letterSpacing = 1.sp,
+            color = VoyagerColors.OnSurfaceVariant
+        )
+    }
+}
+
+/**
+ * Standalone activity-rings block: three concentric rings (Distance · Steps ·
+ * Active time) with a walking glyph at the centre and a colour legend beneath.
+ * The active-time ring ticks live while tracking.
+ */
+@Composable
+private fun RingsBlock(
+    distanceM: Double,
+    steps: Int,
+    firstActivityAt: Long?,
+    lastActivityAt: Long?,
+    sessionStartedAt: Long?,
+    isTracking: Boolean,
+    modifier: Modifier = Modifier
+) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    if (isTracking) {
+        LaunchedEffect(Unit) {
+            while (true) { now = System.currentTimeMillis(); delay(1000) }
+        }
+    }
+    val effectiveStart = firstActivityAt ?: if (isTracking) sessionStartedAt else null
+    val activeMs = when {
+        effectiveStart != null && isTracking -> now - effectiveStart
+        effectiveStart != null -> (lastActivityAt ?: effectiveStart) - effectiveStart
+        else -> 0L
+    }.coerceAtLeast(0L)
+
+    val distanceProgress = (distanceM / 5000.0).toFloat().coerceIn(0f, 1f)
+    val stepsProgress = (steps / 10000f).coerceIn(0f, 1f)
+    val activeProgress = (activeMs / 1_800_000f).coerceIn(0f, 1f) // goal: 30 min
+
+    val rings = listOf(
+        ActivityRing(progress = distanceProgress, color = VoyagerColors.AccentPurple, label = "Distance", valueText = formatDistance(distanceM)),
+        ActivityRing(progress = stepsProgress, color = VoyagerColors.AccentGreen, label = "Steps", valueText = "%,d".format(steps)),
+        ActivityRing(progress = activeProgress, color = VoyagerColors.AccentBlue, label = "Active", valueText = formatDuration(activeMs))
+    )
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(VoyagerSpacing.lg)
+    ) {
+        VoyagerActivityRings(
+            rings = rings,
+            ringSize = 184.dp,
+            strokeWidth = 14.dp,
+            gap = 6.dp
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .background(VoyagerColors.SurfaceBright, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.DirectionsWalk,
+                    contentDescription = null,
+                    tint = VoyagerColors.OnSurface,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(VoyagerSpacing.xl)) {
+            LegendDot("Dist", VoyagerColors.AccentPurple)
+            LegendDot("Steps", VoyagerColors.AccentGreen)
+            LegendDot("Time", VoyagerColors.AccentBlue)
+        }
+    }
+}
+
+@Composable
+private fun LegendDot(label: String, color: Color) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(VoyagerSpacing.xs)
+    ) {
+        Box(modifier = Modifier.size(8.dp).background(color, CircleShape))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = VoyagerColors.OnSurfaceVariant
+        )
+    }
+}
+
+/**
+ * "Awaiting Signal" welcome — shown before today has any data. Pin glyph in a
+ * primary glow, reassurance copy, two zeroed stat cards, and the privacy promise
+ * (on-device, low-power) so the first hour never feels empty.
+ */
+@Composable
+private fun AwaitingSignalCard(
+    isTracking: Boolean,
+    isPaused: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val heroTitle = when {
+        isTracking -> "Awaiting signal"
+        isPaused -> "Tracking paused"
+        else -> "Ready when you are"
+    }
+    val heroBody = when {
+        isTracking -> "Move around for a few minutes —\nyour first places will appear here."
+        isPaused -> "Resume above to keep\nrecording your day."
+        else -> "Start tracking above to begin\nrecording your day."
+    }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = VoyagerSpacing.lg),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(VoyagerSpacing.lg)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(104.dp)
+                .drawBehind { drawRect(VoyagerGradients.primaryGlow(size.width, size.height)) },
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(76.dp)
+                    .background(VoyagerColors.SurfaceBright, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.LocationOn,
+                    contentDescription = null,
+                    tint = VoyagerColors.Primary,
+                    modifier = Modifier.size(34.dp)
+                )
+            }
+        }
+        Text(
+            text = heroTitle,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = VoyagerColors.OnSurface
+        )
+        Text(
+            text = heroBody,
+            style = MaterialTheme.typography.bodyMedium,
+            color = VoyagerColors.OnSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(VoyagerSpacing.md)
+        ) {
+            WelcomeStatCard(modifier = Modifier.weight(1f), label = "DISTANCE", value = "0.0", unit = "km")
+            WelcomeStatCard(modifier = Modifier.weight(1f), label = "LOCATIONS", value = "0", unit = "stops")
+        }
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(VoyagerSpacing.md)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Shield,
+                    contentDescription = null,
+                    tint = VoyagerColors.AccentGreen,
+                    modifier = Modifier.size(28.dp)
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Private by Design",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = VoyagerColors.OnSurface
+                    )
+                    Text(
+                        text = "Everything stays on your device.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VoyagerColors.OnSurfaceVariant
+                    )
+                }
+            }
+            Spacer(Modifier.height(VoyagerSpacing.md))
+            Row(horizontalArrangement = Arrangement.spacedBy(VoyagerSpacing.sm)) {
+                EngineChip(label = "Kinetic Engine", dot = true)
+                EngineChip(label = "Ultra-low power", icon = Icons.Default.Bolt)
+            }
+        }
+    }
+}
+
+@Composable
+private fun WelcomeStatCard(
+    label: String,
+    value: String,
+    unit: String,
+    modifier: Modifier = Modifier
+) {
+    VoyagerCard(modifier = modifier, variant = CardVariant.GLASS, padding = VoyagerSpacing.lg) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            letterSpacing = 1.sp,
+            color = VoyagerColors.OnSurfaceVariant
+        )
+        Spacer(Modifier.height(VoyagerSpacing.xs))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = value,
+                style = MonoStatLarge.copy(fontSize = 30.sp, lineHeight = 34.sp),
+                color = VoyagerColors.OnSurface
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = unit,
+                style = MaterialTheme.typography.labelMedium,
+                color = VoyagerColors.OnSurfaceVariant,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun EngineChip(
+    label: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    dot: Boolean = false,
+    color: Color = VoyagerColors.AccentGreen
+) {
+    Surface(
+        shape = VoyagerShapes.pill,
+        color = color.copy(alpha = 0.12f),
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = VoyagerSpacing.md, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(VoyagerSpacing.xs)
+        ) {
+            if (dot) Box(modifier = Modifier.size(7.dp).background(color, CircleShape))
+            if (icon != null) {
+                Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(13.dp))
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+                color = color
+            )
+        }
+    }
+}
+
+/** Pill shortcut to a Proof/utility screen. */
+@Composable
+private fun ShortcutChip(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = VoyagerShapes.pill,
+        color = VoyagerSurfaces.glassSurface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, VoyagerColors.PrimaryDim.copy(alpha = 0.30f)),
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = VoyagerSpacing.lg, vertical = VoyagerSpacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(VoyagerSpacing.sm)
+        ) {
+            Icon(icon, contentDescription = null, tint = VoyagerColors.Primary, modifier = Modifier.size(18.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = VoyagerColors.OnSurface
+            )
+        }
+    }
+}
 
 /** Live-ticking active time card — increments every second while tracking is active */
 @Composable
@@ -586,49 +970,6 @@ private fun ModePill(label: String, color: Color) {
 }
 
 @Composable
-private fun TrackingStatusCard(
-    isTracking: Boolean,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = if (isTracking) VoyagerColors.AccentGreen.copy(alpha = 0.08f) else VoyagerColors.Surface,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (isTracking) VoyagerColors.AccentGreen.copy(alpha = 0.4f)
-            else VoyagerColors.PrimaryDim.copy(alpha = 0.3f)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                if (isTracking) {
-                    PulsingDot(size = 8.dp, color = VoyagerColors.AccentGreen)
-                }
-                Text(
-                    text = if (isTracking) "Active" else "Off",
-                    style = MonoStatMedium,
-                    color = if (isTracking) VoyagerColors.AccentGreen else VoyagerColors.OnSurfaceVariant,
-                    maxLines = 1
-                )
-            }
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = "Tracking",
-                style = MaterialTheme.typography.labelSmall,
-                color = VoyagerColors.OnSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
 private fun StepsChartCard(
     stepChart: List<HourlySteps>,
     totalStepsToday: Int
@@ -709,44 +1050,59 @@ private fun StepsChartCard(
 
 @Composable
 private fun TopPlaceCard(place: PlaceSummary) {
-    VoyagerCard(modifier = Modifier.fillMaxWidth(), padding = 12.dp) {
+    VoyagerCard(
+        modifier = Modifier.fillMaxWidth(),
+        variant = CardVariant.GLASS,
+        padding = VoyagerSpacing.md
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(VoyagerSpacing.md)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    place.emoji?.let { emoji ->
-                        Text(text = emoji, style = MaterialTheme.typography.titleMedium)
-                    }
-                    Text(
-                        text = place.displayName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = VoyagerColors.OnSurface
+            // Leading category tile
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(VoyagerColors.Primary.copy(alpha = 0.15f), VoyagerShapes.badge),
+                contentAlignment = Alignment.Center
+            ) {
+                val emoji = place.emoji
+                if (emoji != null) {
+                    Text(text = emoji, style = MaterialTheme.typography.titleMedium)
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Place,
+                        contentDescription = null,
+                        tint = VoyagerColors.Primary,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
-                if (place.category != "UNKNOWN" && place.category != "Unknown Place") {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    CategoryChip(categoryName = place.category)
-                }
             }
-            Column(horizontalAlignment = Alignment.End) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "${place.visitCount} visits",
-                    style = MonoTimestamp,
-                    color = VoyagerColors.OnSurfaceVariant
+                    text = place.displayName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = VoyagerColors.OnSurface,
+                    maxLines = 1
                 )
+                val category = place.category.takeIf { it != "UNKNOWN" && it != "Unknown Place" }
                 Text(
-                    text = formatDuration(place.totalDwellMs),
-                    style = MonoTimestamp,
-                    color = VoyagerColors.OnSurfaceVariant
+                    text = buildString {
+                        if (category != null) append("$category · ")
+                        append("${place.visitCount} visit${if (place.visitCount != 1) "s" else ""}")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VoyagerColors.OnSurfaceVariant,
+                    maxLines = 1
                 )
             }
+            Text(
+                text = formatDuration(place.totalDwellMs),
+                style = MonoStatSmall,
+                color = VoyagerColors.OnSurface
+            )
         }
     }
 }
@@ -927,111 +1283,6 @@ private fun GreetingHeader(places: Int, distanceM: Double) {
         Text(
             text = subLine,
             style = MaterialTheme.typography.bodyMedium,
-            color = VoyagerColors.OnSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun DayHeroCard(
-    distanceM: Double,
-    steps: Int,
-    firstActivityAt: Long?,
-    lastActivityAt: Long?,
-    sessionStartedAt: Long?,
-    isTracking: Boolean
-) {
-    val distanceProgress = (distanceM / 5000.0).toFloat().coerceIn(0f, 1f)
-    val stepsProgress = (steps / 10000f).coerceIn(0f, 1f)
-
-    // Active time progress — uses live clock when tracking
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    if (isTracking) {
-        LaunchedEffect(Unit) {
-            while (true) { now = System.currentTimeMillis(); delay(1000) }
-        }
-    }
-    val effectiveStart = firstActivityAt ?: if (isTracking) sessionStartedAt else null
-    val activeMs = when {
-        effectiveStart != null && isTracking -> now - effectiveStart
-        effectiveStart != null -> (lastActivityAt ?: effectiveStart) - effectiveStart
-        else -> 0L
-    }.coerceAtLeast(0L)
-    val activeTimeProgress = (activeMs / 1_800_000f).coerceIn(0f, 1f) // goal: 30 min
-
-    // Animated count-up values
-    val animatedDistance = remember { Animatable(0f) }
-    val animatedSteps = remember { Animatable(0f) }
-    LaunchedEffect(distanceM) {
-        animatedDistance.snapTo(0f)
-        animatedDistance.animateTo(distanceM.toFloat(), tween(900, easing = FastOutSlowInEasing))
-    }
-    LaunchedEffect(steps) {
-        animatedSteps.snapTo(0f)
-        animatedSteps.animateTo(steps.toFloat(), tween(900, easing = FastOutSlowInEasing))
-    }
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = VoyagerColors.Surface,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp, VoyagerColors.Primary.copy(alpha = 0.15f)
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    VoyagerGradients.heroCard
-                )
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "Today",
-                style = MaterialTheme.typography.labelMedium,
-                color = VoyagerColors.OnSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            ActivityRings(
-                distanceProgress = distanceProgress,
-                stepsProgress = stepsProgress,
-                activeTimeProgress = activeTimeProgress,
-                size = 140.dp
-            )
-            Spacer(modifier = Modifier.height(20.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                HeroStat(
-                    value = formatDistance(animatedDistance.value.toDouble()),
-                    label = "Distance",
-                    color = VoyagerColors.Primary
-                )
-                HeroStat(
-                    value = animatedSteps.value.toInt().toString(),
-                    label = "Steps",
-                    color = VoyagerColors.AccentBlue
-                )
-                HeroStat(
-                    value = formatDuration(activeMs),
-                    label = "Active",
-                    color = VoyagerColors.AccentGreen
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun HeroStat(value: String, label: String, color: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = value, style = MonoStatMedium, color = color)
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
             color = VoyagerColors.OnSurfaceVariant
         )
     }

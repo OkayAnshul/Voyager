@@ -113,7 +113,7 @@ fun PaywallScreen(
         }
 
         // ── Benefits ───────────────────────────────────────────────────
-        VoyagerCard(modifier = Modifier.fillMaxWidth()) {
+        VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 PRO_BENEFITS.forEach { benefit ->
                     Row(verticalAlignment = Alignment.Top) {
@@ -204,7 +204,7 @@ private fun ProductCard(
     val highlighted = product.type == ProProductType.LIFETIME
     VoyagerCard(
         modifier = Modifier.fillMaxWidth(),
-        variant = if (highlighted) CardVariant.HIGHLIGHTED else CardVariant.FLAT
+        variant = if (highlighted) CardVariant.HIGHLIGHTED else CardVariant.GLASS
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -276,7 +276,7 @@ private fun PurchasedCard(onClose: () -> Unit) {
 
 @Composable
 private fun InfoCard(message: String) {
-    VoyagerCard(modifier = Modifier.fillMaxWidth()) {
+    VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS) {
         Text(
             text = message,
             style = MaterialTheme.typography.bodyMedium,

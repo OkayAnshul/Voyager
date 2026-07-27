@@ -4,11 +4,11 @@ import com.cosmiclaboratory.voyager.domain.model.DayStory
 import com.cosmiclaboratory.voyager.domain.model.DayStoryPlace
 import com.cosmiclaboratory.voyager.domain.model.DevicePhoto
 import com.cosmiclaboratory.voyager.domain.photo.PhotoLibrary
+import com.cosmiclaboratory.voyager.domain.repository.GeocodingRepository
 import com.cosmiclaboratory.voyager.domain.util.LocationUtils
 import com.cosmiclaboratory.voyager.storage.database.dao.PlaceDao
 import com.cosmiclaboratory.voyager.storage.database.dao.VisitDao
 import com.cosmiclaboratory.voyager.storage.database.entity.VisitEntity
-import com.cosmiclaboratory.voyager.storage.database.entity.displayName
 import java.time.LocalDate
 import java.time.ZoneId
 import javax.inject.Inject
@@ -25,7 +25,8 @@ import javax.inject.Inject
 class BuildDayStoryUseCase @Inject constructor(
     private val visitDao: VisitDao,
     private val placeDao: PlaceDao,
-    private val photoLibrary: PhotoLibrary
+    private val photoLibrary: PhotoLibrary,
+    private val geocodingRepository: GeocodingRepository
 ) {
 
     /** Whether the photo-library permission is currently granted. */
@@ -68,7 +69,8 @@ class BuildDayStoryUseCase @Inject constructor(
                 val place = places[visit.placeId]
                 DayStoryPlace(
                     placeId = visit.placeId,
-                    displayName = place?.displayName() ?: "Unknown place",
+                    displayName = place?.let { geocodingRepository.resolveDisplayName(it.placeId) }
+                        ?: geocodingRepository.resolveDisplayNameForCoordinates(visit.centroidLat ?: 0.0, visit.centroidLng ?: 0.0),
                     emoji = place?.emoji,
                     arrivalAt = visit.arrivalAt,
                     departureAt = visit.departureAt,

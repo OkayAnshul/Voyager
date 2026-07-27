@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -68,9 +69,21 @@ class TimelineStateStore @Inject constructor(
         _inProgressSegment.value = snapshot
     }
 
-    val state: StateFlow<TrackingRuntimeState> = currentRuntimeStateDao.observe()
-        .map { entity -> entity?.toDomainModel() ?: EMPTY_STATE }
-        .stateIn(scope, SharingStarted.Eagerly, EMPTY_STATE)
+    /**
+     * In-memory only — whether an open session is manually paused. Not persisted (like
+     * [_inProgressSegment]); a pause therefore does not survive process death. Folded into
+     * [state] so every consumer of the runtime state sees the paused flag.
+     */
+    private val _paused = MutableStateFlow(false)
+
+    fun setPaused(paused: Boolean) {
+        _paused.value = paused
+    }
+
+    val state: StateFlow<TrackingRuntimeState> =
+        combine(currentRuntimeStateDao.observe(), _paused) { entity, paused ->
+            (entity?.toDomainModel() ?: EMPTY_STATE).copy(paused = paused)
+        }.stateIn(scope, SharingStarted.Eagerly, EMPTY_STATE)
 
     suspend fun initialize() {
         val existing = currentRuntimeStateDao.get()
@@ -119,7 +132,7 @@ class TimelineStateStore @Inject constructor(
 
     suspend fun getState(): TrackingRuntimeState {
         val entity = currentRuntimeStateDao.get()
-        return entity?.toDomainModel() ?: EMPTY_STATE
+        return (entity?.toDomainModel() ?: EMPTY_STATE).copy(paused = _paused.value)
     }
 
     private fun CurrentRuntimeStateEntity.toDomainModel(): TrackingRuntimeState {

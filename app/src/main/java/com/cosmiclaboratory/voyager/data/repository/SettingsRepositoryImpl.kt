@@ -2,6 +2,10 @@ package com.cosmiclaboratory.voyager.data.repository
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
+import com.cosmiclaboratory.voyager.domain.model.DistanceUnit
+import com.cosmiclaboratory.voyager.domain.model.MileagePurpose
+import com.cosmiclaboratory.voyager.domain.model.MileageRateConfig
+import com.cosmiclaboratory.voyager.domain.model.MileageRatePreset
 import com.cosmiclaboratory.voyager.domain.model.SettingsPresets
 import com.cosmiclaboratory.voyager.domain.model.UserSettings
 import com.cosmiclaboratory.voyager.domain.model.enums.*
@@ -83,14 +87,22 @@ class SettingsRepositoryImpl @Inject constructor(
         val DERIVED_DATA_RETENTION_DAYS = intPreferencesKey("derived_data_retention_days")
         val CORRECTION_FEEDBACK_RETENTION_DAYS = intPreferencesKey("correction_feedback_retention_days")
         val AUTO_CLEANUP_ENABLED = booleanPreferencesKey("auto_cleanup_enabled")
-        // Map
-        val CLUSTER_MARKERS_AT_ZOOM = intPreferencesKey("cluster_markers_at_zoom")
+        // Mileage (tax deduction / reimbursement)
+        val MILEAGE_DISTANCE_UNIT = stringPreferencesKey("mileage_distance_unit")
+        val MILEAGE_CURRENCY_CODE = stringPreferencesKey("mileage_currency_code")
+        val MILEAGE_RATE_PRESET = stringPreferencesKey("mileage_rate_preset")
+        val MILEAGE_CUSTOM_RATE_BUSINESS = doublePreferencesKey("mileage_custom_rate_business")
+        val MILEAGE_CUSTOM_RATE_MEDICAL = doublePreferencesKey("mileage_custom_rate_medical")
+        val MILEAGE_CUSTOM_RATE_CHARITABLE = doublePreferencesKey("mileage_custom_rate_charitable")
     }
 
     // Built once and shared — every consumer reads the same StateFlow,
     // so adding settings consumers never spawns extra DataStore collectors.
     private val settingsFlow: StateFlow<UserSettings> =
         dataStore.data.map { prefs ->
+            // Locale-aware fallback for the mileage config when nothing is persisted yet, so a
+            // fresh install outside the US isn't stuck on USD/miles/IRS.
+            val mileageDefault = MileageRateConfig.defaultForLocale()
             UserSettings(
                 trackingEnabled = prefs[TRACKING_ENABLED] ?: true,
                 trackingTier = TrackingTier.fromName(prefs[TRACKING_TIER]),
@@ -156,8 +168,20 @@ class SettingsRepositoryImpl @Inject constructor(
                 derivedDataRetentionDays = prefs[DERIVED_DATA_RETENTION_DAYS] ?: 365,
                 correctionFeedbackRetentionDays = prefs[CORRECTION_FEEDBACK_RETENTION_DAYS] ?: 180,
                 autoCleanupEnabled = prefs[AUTO_CLEANUP_ENABLED] ?: true,
-                // Map
-                clusterMarkersAtZoom = prefs[CLUSTER_MARKERS_AT_ZOOM] ?: 12
+                // Mileage (tax deduction / reimbursement)
+                mileageDistanceUnit = prefs[MILEAGE_DISTANCE_UNIT]
+                    ?.let { runCatching { DistanceUnit.valueOf(it) }.getOrNull() }
+                    ?: mileageDefault.distanceUnit,
+                mileageCurrencyCode = prefs[MILEAGE_CURRENCY_CODE] ?: mileageDefault.currencyCode,
+                mileageRatePreset = prefs[MILEAGE_RATE_PRESET]
+                    ?.let { MileageRatePreset.fromName(it) }
+                    ?: mileageDefault.ratePreset,
+                mileageCustomRateBusiness = prefs[MILEAGE_CUSTOM_RATE_BUSINESS]
+                    ?: (mileageDefault.customRates[MileagePurpose.BUSINESS] ?: 0.0),
+                mileageCustomRateMedical = prefs[MILEAGE_CUSTOM_RATE_MEDICAL]
+                    ?: (mileageDefault.customRates[MileagePurpose.MEDICAL] ?: 0.0),
+                mileageCustomRateCharitable = prefs[MILEAGE_CUSTOM_RATE_CHARITABLE]
+                    ?: (mileageDefault.customRates[MileagePurpose.CHARITABLE] ?: 0.0)
             )
         }.stateIn(scope, SharingStarted.Eagerly, UserSettings())
 
@@ -236,8 +260,13 @@ class SettingsRepositoryImpl @Inject constructor(
                 "derived_data_retention_days" -> prefs[DERIVED_DATA_RETENTION_DAYS] = (value as Number).toInt()
                 "correction_feedback_retention_days" -> prefs[CORRECTION_FEEDBACK_RETENTION_DAYS] = (value as Number).toInt()
                 "auto_cleanup_enabled" -> prefs[AUTO_CLEANUP_ENABLED] = value as Boolean
-                // Map
-                "cluster_markers_at_zoom" -> prefs[CLUSTER_MARKERS_AT_ZOOM] = (value as Number).toInt()
+                // Mileage (tax deduction / reimbursement)
+                "mileage_distance_unit" -> prefs[MILEAGE_DISTANCE_UNIT] = value as String
+                "mileage_currency_code" -> prefs[MILEAGE_CURRENCY_CODE] = value as String
+                "mileage_rate_preset" -> prefs[MILEAGE_RATE_PRESET] = value as String
+                "mileage_custom_rate_business" -> prefs[MILEAGE_CUSTOM_RATE_BUSINESS] = (value as Number).toDouble()
+                "mileage_custom_rate_medical" -> prefs[MILEAGE_CUSTOM_RATE_MEDICAL] = (value as Number).toDouble()
+                "mileage_custom_rate_charitable" -> prefs[MILEAGE_CUSTOM_RATE_CHARITABLE] = (value as Number).toDouble()
             }
         }
     }

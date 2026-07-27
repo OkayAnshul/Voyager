@@ -31,6 +31,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.cosmiclaboratory.voyager.platform.notification.VoyagerNotificationManager
 import androidx.navigation.navArgument
 import com.cosmiclaboratory.voyager.domain.model.enums.PermissionState
 import com.cosmiclaboratory.voyager.platform.coordinator.PermissionMonitor
@@ -40,10 +41,10 @@ import com.cosmiclaboratory.voyager.presentation.navigation.VoyagerDestination.C
 import com.cosmiclaboratory.voyager.presentation.screen.analytics.StatisticsScreen
 import com.cosmiclaboratory.voyager.presentation.screen.dashboard.DashboardScreen
 import com.cosmiclaboratory.voyager.presentation.screen.map.MapScreen
-import com.cosmiclaboratory.voyager.presentation.screen.onboarding.FeatureWalkthroughScreen
+import com.cosmiclaboratory.voyager.presentation.screen.onboarding.IntroScreen
 import com.cosmiclaboratory.voyager.presentation.screen.onboarding.PermissionOnboardingScreen
 import com.cosmiclaboratory.voyager.presentation.screen.onboarding.PersonaPickScreen
-import com.cosmiclaboratory.voyager.presentation.screen.onboarding.WalkthroughPreferences
+import com.cosmiclaboratory.voyager.presentation.screen.onboarding.IntroPreferences
 import com.cosmiclaboratory.voyager.presentation.screen.onboarding.PermissionReminderBanner
 import com.cosmiclaboratory.voyager.presentation.screen.place.PlaceDetailScreen
 import com.cosmiclaboratory.voyager.presentation.screen.search.SearchScreen
@@ -58,7 +59,6 @@ import com.cosmiclaboratory.voyager.presentation.screen.debug.PipelineDebugScree
 import com.cosmiclaboratory.voyager.presentation.screen.developer.DeveloperProfileScreen
 import com.cosmiclaboratory.voyager.presentation.screen.developer.OpenSourceLicensesScreen
 import com.cosmiclaboratory.voyager.presentation.screen.segment.SegmentDetailSheet
-import com.cosmiclaboratory.voyager.presentation.screen.visit.VisitDetailSheet
 import com.cosmiclaboratory.voyager.presentation.state.SharedUiState
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerColors
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerGradients
@@ -66,16 +66,14 @@ import com.cosmiclaboratory.voyager.ui.theme.VoyagerTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
-private enum class AppPhase { SPLASH, RESTORE, GOOGLE_IMPORT, ONBOARDING, PERSONA, WALKTHROUGH, MAIN }
+private enum class AppPhase { SPLASH, INTRO, PERMISSIONS, PERSONA, MAIN }
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     @Inject lateinit var permissionMonitor: PermissionMonitor
     @Inject lateinit var sharedUiState: SharedUiState
-    @Inject lateinit var walkthroughPreferences: WalkthroughPreferences
-    @Inject lateinit var restorePreferences: com.cosmiclaboratory.voyager.presentation.screen.onboarding.RestorePreferences
-    @Inject lateinit var googleTimelineImportPreferences: com.cosmiclaboratory.voyager.presentation.screen.onboarding.GoogleTimelineImportPreferences
+    @Inject lateinit var introPreferences: IntroPreferences
     @Inject lateinit var settingsRepository: com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 
     private val locationPermissionLauncher = registerForActivityResult(
@@ -109,11 +107,7 @@ class MainActivity : ComponentActivity() {
                 val permissionState by permissionMonitor.permissionState.collectAsState()
                 val needsOnboarding = permissionState == PermissionState.NOTHING ||
                     permissionState == PermissionState.NO_LOCATION_WITH_AR
-                val hasSeenWalkthrough by walkthroughPreferences.hasSeen
-                    .collectAsState(initial = true)
-                val hasSeenRestore by restorePreferences.hasSeen
-                    .collectAsState(initial = true)
-                val hasSeenGoogleImport by googleTimelineImportPreferences.hasSeen
+                val hasSeenIntro by introPreferences.hasSeen
                     .collectAsState(initial = true)
                 val settings by settingsRepository.observeSettings().collectAsState()
                 val hasChosenPersona = settings.activeJob.isNotBlank()
@@ -131,48 +125,28 @@ class MainActivity : ComponentActivity() {
                 val coroutineScope = rememberCoroutineScope()
                 var phase by remember { mutableStateOf(AppPhase.SPLASH) }
 
-                fun nextAfterPermissions(): AppPhase = when {
-                    !hasChosenPersona -> AppPhase.PERSONA
-                    !hasSeenWalkthrough -> AppPhase.WALKTHROUGH
-                    else -> AppPhase.MAIN
-                }
+                fun nextAfterPermissions(): AppPhase =
+                    if (!hasChosenPersona) AppPhase.PERSONA else AppPhase.MAIN
 
                 when (phase) {
                     AppPhase.SPLASH -> {
                         AnimatedSplashContent(onComplete = {
                             phase = when {
-                                // Fresh install: offer a one-time restore, then a
-                                // one-time Google Timeline import, before onboarding.
-                                needsOnboarding && !hasSeenRestore -> AppPhase.RESTORE
-                                needsOnboarding && !hasSeenGoogleImport -> AppPhase.GOOGLE_IMPORT
-                                needsOnboarding -> AppPhase.ONBOARDING
+                                // Fresh install: show the one-time intro (what Voyager
+                                // does + how it's different) before asking permissions.
+                                !hasSeenIntro -> AppPhase.INTRO
+                                needsOnboarding -> AppPhase.PERMISSIONS
                                 else -> nextAfterPermissions()
                             }
                         })
                     }
-                    AppPhase.RESTORE -> {
-                        com.cosmiclaboratory.voyager.presentation.screen.onboarding.RestoreScreen(
-                            onComplete = {
-                                phase = when {
-                                    needsOnboarding && !hasSeenGoogleImport -> AppPhase.GOOGLE_IMPORT
-                                    needsOnboarding -> AppPhase.ONBOARDING
-                                    else -> nextAfterPermissions()
-                                }
-                            }
-                        )
+                    AppPhase.INTRO -> {
+                        IntroScreen(onComplete = {
+                            coroutineScope.launch { introPreferences.markSeen() }
+                            phase = if (needsOnboarding) AppPhase.PERMISSIONS else nextAfterPermissions()
+                        })
                     }
-                    AppPhase.GOOGLE_IMPORT -> {
-                        com.cosmiclaboratory.voyager.presentation.screen.onboarding.GoogleTimelineImportScreen(
-                            onComplete = {
-                                phase = if (needsOnboarding) {
-                                    AppPhase.ONBOARDING
-                                } else {
-                                    nextAfterPermissions()
-                                }
-                            }
-                        )
-                    }
-                    AppPhase.ONBOARDING -> {
+                    AppPhase.PERMISSIONS -> {
                         PermissionOnboardingScreen(onComplete = {
                             permissionMonitor.refresh()
                             phase = nextAfterPermissions()
@@ -180,12 +154,6 @@ class MainActivity : ComponentActivity() {
                     }
                     AppPhase.PERSONA -> {
                         PersonaPickScreen(onComplete = {
-                            phase = if (!hasSeenWalkthrough) AppPhase.WALKTHROUGH else AppPhase.MAIN
-                        })
-                    }
-                    AppPhase.WALKTHROUGH -> {
-                        FeatureWalkthroughScreen(onComplete = {
-                            coroutineScope.launch { walkthroughPreferences.markSeen() }
                             phase = AppPhase.MAIN
                         })
                     }
@@ -282,9 +250,51 @@ fun VoyagerApp(
     val snackbarHostState = remember { SnackbarHostState() }
     val appScope = rememberCoroutineScope()
 
+    // Respect the system "Remove animations" accessibility setting app-wide.
+    val motionContext = androidx.compose.ui.platform.LocalContext.current
+    val reduceMotion = remember {
+        try {
+            android.provider.Settings.Global.getFloat(
+                motionContext.contentResolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            ) == 0f
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    // Notification deep-links: a launch intent may carry EXTRA_DEST to open a specific screen.
+    val deepLinkContext = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.DisposableEffect(navController) {
+        val activity = deepLinkContext as? androidx.activity.ComponentActivity
+        fun route(intent: android.content.Intent?) {
+            val dest = intent?.getStringExtra(VoyagerNotificationManager.EXTRA_DEST) ?: return
+            intent.removeExtra(VoyagerNotificationManager.EXTRA_DEST)
+            runCatching {
+                when {
+                    dest == VoyagerNotificationManager.DEST_PROOF ->
+                        navController.navigateToTab(VoyagerDestination.Proof.route)
+                    dest == VoyagerNotificationManager.DEST_INSIGHTS ->
+                        navController.navigateToTab(VoyagerDestination.Insights.route)
+                    dest == VoyagerNotificationManager.DEST_ACTIVITIES ->
+                        navController.navigateToTab(VoyagerDestination.Activities.route)
+                    dest.startsWith("place:") -> dest.removePrefix("place:").toLongOrNull()?.let {
+                        navController.navigate(VoyagerDestination.PlaceDetail.createRoute(it))
+                    }
+                }
+            }
+        }
+        route(activity?.intent)
+        val listener = androidx.core.util.Consumer<android.content.Intent> { route(it) }
+        activity?.addOnNewIntentListener(listener)
+        onDispose { activity?.removeOnNewIntentListener(listener) }
+    }
+
     CompositionLocalProvider(
         LocalPermissionActions provides permissionActions,
-        LocalPermissionSnapshot provides permissionSnapshot
+        LocalPermissionSnapshot provides permissionSnapshot,
+        com.cosmiclaboratory.voyager.presentation.theme.LocalReduceMotion provides reduceMotion
     ) {
     Scaffold(
         modifier = Modifier
@@ -323,13 +333,7 @@ fun VoyagerApp(
                             pts.forEach { drawCircle(VoyagerColors.PrimaryDim, r, it) }
                         }
                         Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = "Voyager",
-                            fontFamily = com.cosmiclaboratory.voyager.ui.theme.GreatVibesFontFamily,
-                            fontSize = 26.sp,
-                            letterSpacing = 0.5.sp,
-                            color = VoyagerColors.Primary
-                        )
+                        com.cosmiclaboratory.voyager.presentation.theme.VoyagerWordmark()
                     }
 
                     if (showVoyagerStory) {
@@ -392,17 +396,12 @@ fun VoyagerApp(
                         }
                     }) {
                         BadgedBox(
+                            // Quiet cue only — a small muted dot when reviews are waiting,
+                            // never a loud count. Reviews are surfaced silently here rather
+                            // than shouting on the timeline.
                             badge = {
                                 if (pendingReviewCount > 0) {
-                                    Badge(
-                                        containerColor = VoyagerColors.Error,
-                                        contentColor = VoyagerColors.OnPrimary
-                                    ) {
-                                        Text(
-                                            text = if (pendingReviewCount > 99) "99+" else pendingReviewCount.toString(),
-                                            style = MaterialTheme.typography.labelSmall
-                                        )
-                                    }
+                                    Badge(containerColor = VoyagerColors.Primary.copy(alpha = 0.7f))
                                 }
                             }
                         ) {
@@ -437,27 +436,13 @@ fun VoyagerApp(
                         .fillMaxWidth()
                         .background(VoyagerGradients.navBar)
                 ) {
-                NavigationBar(
-                    containerColor = Color.Transparent
-                ) {
-                    bottomNavItems.forEachIndexed { _, destination ->
-                        NavigationBarItem(
-                            selected = selectedTab == destination.route,
-                            onClick = {
-                                navController.navigateToTab(destination.route)
-                            },
-                            icon = { Icon(destination.icon, contentDescription = destination.title) },
-                            label = { Text(destination.title) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = VoyagerColors.Primary,
-                                selectedTextColor = VoyagerColors.Primary,
-                                unselectedIconColor = VoyagerColors.OnSurfaceVariant,
-                                unselectedTextColor = VoyagerColors.OnSurfaceVariant,
-                                indicatorColor = VoyagerColors.PrimaryContainer
-                            )
-                        )
-                    }
-                }
+                    com.cosmiclaboratory.voyager.presentation.navigation.VoyagerNavBar(
+                        items = bottomNavItems,
+                        selectedRoute = selectedTab,
+                        onItemSelected = { destination ->
+                            navController.navigateToTab(destination.route)
+                        }
+                    )
                 } // Box
             }
         }
@@ -502,7 +487,9 @@ fun VoyagerApp(
                 )
             }
             composable(VoyagerDestination.Map.route) {
-                MapScreen()
+                MapScreen(
+                    onRecord = { navController.navigate(VoyagerDestination.Record.route) }
+                )
             }
             composable(VoyagerDestination.Timeline.route) {
                 TimelineScreen(
@@ -528,6 +515,45 @@ fun VoyagerApp(
                     }
                 )
             }
+            // Proof hub — first-class tab aggregating Mileage, Trips, Export
+            composable(VoyagerDestination.Proof.route) {
+                com.cosmiclaboratory.voyager.presentation.screen.proof.ProofScreen(
+                    onNavigateToMileage = { navController.navigate(VoyagerDestination.Mileage.route) },
+                    onNavigateToTrips = { navController.navigate(VoyagerDestination.Trips.route) },
+                    onNavigateToExport = { navController.navigate(VoyagerDestination.Export.route) },
+                    onNavigateToPaywall = { navController.navigate(VoyagerDestination.Paywall.route) }
+                )
+            }
+            // Athlete persona — workout recording + activity feed
+            composable(VoyagerDestination.Record.route) {
+                com.cosmiclaboratory.voyager.presentation.screen.workout.WorkoutRecordScreen(
+                    onBack = { navController.popBackStack() },
+                    onViewActivities = { navController.navigateToTab(VoyagerDestination.Activities.route) }
+                )
+            }
+            // Activities is a first-class bottom-nav tab — no back arrow.
+            composable(VoyagerDestination.Activities.route) {
+                com.cosmiclaboratory.voyager.presentation.screen.workout.ActivitiesScreen(
+                    onRecord = { navController.navigate(VoyagerDestination.Record.route) },
+                    onActivityClick = { activityId ->
+                        navController.navigate(VoyagerDestination.ActivityDetail.createRoute(activityId))
+                    },
+                    onSegments = { navController.navigate(VoyagerDestination.Segments.route) }
+                )
+            }
+            composable(
+                route = VoyagerDestination.ActivityDetail.route,
+                arguments = listOf(navArgument("activityId") { type = NavType.LongType })
+            ) {
+                com.cosmiclaboratory.voyager.presentation.screen.workout.ActivityDetailScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(VoyagerDestination.Segments.route) {
+                com.cosmiclaboratory.voyager.presentation.screen.workout.SegmentsScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
             // Settings — push-nav from top bar gear icon
             composable(VoyagerDestination.Settings.route) {
                 SettingsScreen(
@@ -545,7 +571,7 @@ fun VoyagerApp(
                     },
                     onNavigateBack = { navController.popBackStack() },
                     onNavigateToFeedback = {
-                        navController.navigate(VoyagerDestination.Feedback.route)
+                        navController.navigate(VoyagerDestination.Feedback.createRoute())
                     },
                     onNavigateToOpenSourceLicenses = {
                         navController.navigate(VoyagerDestination.OpenSourceLicenses.route)
@@ -568,6 +594,9 @@ fun VoyagerApp(
                 com.cosmiclaboratory.voyager.presentation.screen.mileage.MileageScreen(
                     onNavigateToPaywall = {
                         navController.navigate(VoyagerDestination.Paywall.route)
+                    },
+                    onNavigateToSettings = {
+                        navController.navigate(VoyagerDestination.Settings.route)
                     }
                 )
             }
@@ -610,7 +639,7 @@ fun VoyagerApp(
             }
             // PlaceReview — push-nav from top bar bell icon
             composable(VoyagerDestination.PlaceReview.route) {
-                PlaceReviewScreen()
+                PlaceReviewScreen(onNavigateBack = { navController.popBackStack() })
             }
             composable(VoyagerDestination.Export.route) {
                 ExportScreen(onBack = { navController.popBackStack() })
@@ -619,6 +648,9 @@ fun VoyagerApp(
                 SearchScreen(
                     onPlaceClick = { placeId ->
                         navController.navigate(VoyagerDestination.PlaceDetail.createRoute(placeId))
+                    },
+                    onDayClick = { dayKey ->
+                        navController.navigate(VoyagerDestination.DayStory.createRoute(dayKey))
                     }
                 )
             }
@@ -642,14 +674,30 @@ fun VoyagerApp(
                     onNavigateBack = { navController.popBackStack() },
                     onNavigateToLicenses = {
                         navController.navigate(VoyagerDestination.OpenSourceLicenses.route)
+                    },
+                    onSendFeedback = {
+                        navController.navigate(VoyagerDestination.Feedback.createRoute("GENERAL"))
+                    },
+                    onReportIssue = {
+                        navController.navigate(VoyagerDestination.Feedback.createRoute("BUG"))
                     }
                 )
             }
             composable(VoyagerDestination.OpenSourceLicenses.route) {
                 OpenSourceLicensesScreen(onNavigateBack = { navController.popBackStack() })
             }
-            composable(VoyagerDestination.Feedback.route) {
-                FeedbackScreen(onNavigateBack = { navController.popBackStack() })
+            composable(
+                route = VoyagerDestination.Feedback.route,
+                arguments = listOf(navArgument("category") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                })
+            ) { backStackEntry ->
+                FeedbackScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    initialCategory = backStackEntry.arguments?.getString("category")
+                )
             }
             composable(
                 route = VoyagerDestination.SegmentDetail.route,
@@ -657,21 +705,6 @@ fun VoyagerApp(
             ) {
                 SegmentDetailSheet(
                     onDismiss = { navController.popBackStack() },
-                    onNavigateToPaywall = {
-                        navController.popBackStack()
-                        navController.navigate(VoyagerDestination.Paywall.route)
-                    }
-                )
-            }
-            composable(
-                route = VoyagerDestination.VisitDetail.route,
-                arguments = listOf(navArgument("visitId") { type = NavType.LongType })
-            ) {
-                VisitDetailSheet(
-                    onDismiss = { navController.popBackStack() },
-                    onNavigateToPlace = { placeId ->
-                        navController.navigate(VoyagerDestination.PlaceDetail.createRoute(placeId))
-                    },
                     onNavigateToPaywall = {
                         navController.popBackStack()
                         navController.navigate(VoyagerDestination.Paywall.route)

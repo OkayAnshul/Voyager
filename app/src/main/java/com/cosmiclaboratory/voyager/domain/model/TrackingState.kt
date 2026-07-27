@@ -15,9 +15,20 @@ data class TrackingRuntimeState(
     val lastDepartedCentroidLat: Double? = null,
     val lastDepartedCentroidLng: Double? = null,
     val lastDepartureTime: Long? = null,
-    val lastDepartedVisitId: Long? = null
+    val lastDepartedVisitId: Long? = null,
+    /**
+     * True when the user manually paused an open session: the foreground service is
+     * torn down but the session stays open so Resume can restart capture. Held in
+     * memory by [com.cosmiclaboratory.voyager.storage.TimelineStateStore] (not persisted),
+     * so a pause does not survive process death.
+     */
+    val paused: Boolean = false
 ) {
-    val isTracking: Boolean get() = activeSessionId != null
+    /** Actively capturing right now — an open session that is NOT paused. */
+    val isTracking: Boolean get() = activeSessionId != null && !paused
+
+    /** Session open but manually paused (capture stopped, resumable). */
+    val isPaused: Boolean get() = activeSessionId != null && paused
 }
 
 @Serializable

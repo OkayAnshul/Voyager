@@ -8,11 +8,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.cosmiclaboratory.voyager.presentation.theme.CardVariant
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerCard
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerColors
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerGradients
 
 private data class LicenseEntry(
     val name: String,
@@ -46,9 +49,7 @@ private val LICENSES = listOf(
     LicenseEntry("Overpass API", "Server: AGPL-3.0 (data: ODbL)", "https://overpass-api.de/"),
     LicenseEntry("OpenStreetMap data", "Open Database License (ODbL)", "https://www.openstreetmap.org/copyright"),
     LicenseEntry("Inter font", "SIL Open Font License 1.1", "https://rsms.me/inter/"),
-    LicenseEntry("JetBrains Mono font", "SIL Open Font License 1.1", "https://www.jetbrains.com/lp/mono/"),
-    LicenseEntry("Great Vibes font", "SIL Open Font License 1.1", "https://fonts.google.com/specimen/Great+Vibes"),
-    LicenseEntry("MockK / Turbine / Truth (test)", "Apache 2.0", "https://mockk.io")
+    LicenseEntry("JetBrains Mono font", "SIL Open Font License 1.1", "https://www.jetbrains.com/lp/mono/")
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,6 +59,7 @@ fun OpenSourceLicensesScreen(
 ) {
     val uriHandler = LocalUriHandler.current
     Scaffold(
+        containerColor = VoyagerColors.Background,
         topBar = {
             TopAppBar(
                 title = { Text("Open-source licenses", fontWeight = FontWeight.Bold) },
@@ -65,13 +67,18 @@ fun OpenSourceLicensesScreen(
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = VoyagerColors.Background,
+                    titleContentColor = VoyagerColors.OnSurface
+                )
             )
         }
     ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .drawBehind { drawRect(brush = VoyagerGradients.screenBackground(size.width, size.height)) }
                 .padding(padding),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -87,6 +94,7 @@ fun OpenSourceLicensesScreen(
             items(LICENSES) { entry ->
                 VoyagerCard(
                     modifier = Modifier.fillMaxWidth(),
+                    variant = CardVariant.GLASS,
                     onClick = { uriHandler.openUri(entry.url) }
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {

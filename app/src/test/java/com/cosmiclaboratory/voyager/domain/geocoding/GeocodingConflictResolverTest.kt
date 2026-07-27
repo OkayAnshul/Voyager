@@ -125,4 +125,82 @@ class GeocodingConflictResolverTest {
         assertThat(resolver.confidenceTier(low, listOf(low, corroborating)))
             .isEqualTo(ConfidenceTier.MEDIUM)
     }
+
+    // ---- Display-name resolution chain ----
+
+    @Test
+    fun `resolveDisplayName prefers the user name above all`() {
+        assertThat(
+            resolver.resolveDisplayName(
+                userDisplayName = "Home", userCategory = "WORK",
+                bestProviderName = "123 Main St", nearbyContext = "Downtown",
+                semanticLabel = "Frequent stop", lat = 0.0, lng = 0.0
+            )
+        ).isEqualTo("Home")
+    }
+
+    @Test
+    fun `resolveDisplayName uses the gated provider name over nearby context`() {
+        assertThat(
+            resolver.resolveDisplayName(
+                userDisplayName = null, userCategory = null,
+                bestProviderName = "123 Main St", nearbyContext = "Downtown",
+                semanticLabel = null, lat = 0.0, lng = 0.0
+            )
+        ).isEqualTo("123 Main St")
+    }
+
+    @Test
+    fun `resolveDisplayName falls back to Near-context when there is no provider name`() {
+        // The bug this fixes: nearbyContext was declared but ignored, so an unnamed
+        // place fell straight through to coordinates.
+        assertThat(
+            resolver.resolveDisplayName(
+                userDisplayName = null, userCategory = null,
+                bestProviderName = null, nearbyContext = "Patia, Bhubaneswar",
+                semanticLabel = null, lat = 20.29, lng = 85.82
+            )
+        ).isEqualTo("Near Patia, Bhubaneswar")
+    }
+
+    @Test
+    fun `resolveDisplayName falls back to coordinates only when nothing is known`() {
+        assertThat(
+            resolver.resolveDisplayName(
+                userDisplayName = null, userCategory = null,
+                bestProviderName = null, nearbyContext = null,
+                semanticLabel = null, lat = 20.2961, lng = 85.8245
+            )
+        ).isEqualTo("20.2961, 85.8245")
+    }
+
+    // ---- Nearby-context builder ----
+
+    @Test
+    fun `nearbyContext prefers neighborhood, then street+city, then city`() {
+        val neighborhood = candidate(
+            GeocodingProviderId.PHOTON, 0.5f,
+            structured = StructuredAddress(neighborhood = "Marylebone", city = "London")
+        )
+        assertThat(resolver.nearbyContext(listOf(neighborhood))).isEqualTo("Marylebone")
+
+        val streetCity = candidate(
+            GeocodingProviderId.PHOTON, 0.5f,
+            structured = StructuredAddress(street = "Baker Street", city = "London")
+        )
+        assertThat(resolver.nearbyContext(listOf(streetCity))).isEqualTo("Baker Street, London")
+
+        val cityOnly = candidate(
+            GeocodingProviderId.PHOTON, 0.5f,
+            structured = StructuredAddress(city = "London")
+        )
+        assertThat(resolver.nearbyContext(listOf(cityOnly))).isEqualTo("London")
+
+        assertThat(resolver.nearbyContext(emptyList())).isNull()
+    }
+
+    @Test
+    fun `coordinatePlaceholder matches the coordinate fallback format`() {
+        assertThat(resolver.coordinatePlaceholder(20.2961, 85.8245)).isEqualTo("20.2961, 85.8245")
+    }
 }

@@ -113,9 +113,11 @@ class MapViewModel @Inject constructor(
                     if (route != null) {
                         _uiState.update { it.copy(focusedRoute = route, focusedVisitMarker = null) }
                     } else {
-                        // VISIT segment — find the visit marker by matching segment to place
+                        // VISIT segment — find the visit marker by matching segment to place.
+                        // If there's no genuine match, highlight nothing rather than an
+                        // arbitrary pin (was: visitMarkers.firstOrNull(), which pointed the
+                        // user at the wrong place). See catalog W3.2.
                         val marker = mapRepository.getVisitMarkerForSegment(segmentId)
-                            ?: _uiState.value.visitMarkers.firstOrNull()
                         _uiState.update { it.copy(focusedRoute = null, focusedVisitMarker = marker) }
                     }
                 } else {

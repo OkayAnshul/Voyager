@@ -1,27 +1,59 @@
 package com.cosmiclaboratory.voyager.presentation.screen.tracking
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.LocationOff
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cosmiclaboratory.voyager.LocalPermissionActions
 import com.cosmiclaboratory.voyager.domain.model.enums.PermissionState
+import com.cosmiclaboratory.voyager.presentation.theme.PulsingDot
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerButton
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerCard
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerColors
-import kotlinx.coroutines.delay
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerOutlinedButton
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerPrimaryButton
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerSpacing
 
-@OptIn(ExperimentalFoundationApi::class)
+/**
+ * The dashboard's live-tracking control.
+ *
+ * While **off**, it's a prominent, inviting "Start tracking" hero (starting should be easy).
+ * While **active/paused**, it collapses into a small, stylish status chip — a pulsing dot +
+ * one line of status — with Pause/Resume/Stop **hidden behind a tap** (the chevron), so the
+ * session can't be stopped by accident. Tap the chip to reveal the controls.
+ */
 @Composable
 fun TrackingControlBanner(
     modifier: Modifier = Modifier,
@@ -30,164 +62,165 @@ fun TrackingControlBanner(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val permissionActions = LocalPermissionActions.current
     val isTracking = uiState.runtimeState?.isTracking == true
-    val isPaused = uiState.runtimeState?.activeSessionId != null && !isTracking
+    val isPaused = uiState.runtimeState?.isPaused == true
+    val permissionMissing = uiState.permissionState == PermissionState.NOTHING ||
+        uiState.permissionState == PermissionState.NO_LOCATION_WITH_AR
+    val degraded = uiState.permissionState != PermissionState.FULL && !permissionMissing
+
     var showStopConfirmation by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
 
-    var toggleBurst by remember { mutableStateOf(false) }
-    LaunchedEffect(isTracking) {
-        toggleBurst = true
-        delay(500)
-        toggleBurst = false
+    // First-run fix: "Grant & start" only launches the permission request; once the grant
+    // lands (permissionState changes) auto-start so the user needn't tap the button twice.
+    var pendingStart by remember { mutableStateOf(false) }
+    LaunchedEffect(uiState.permissionState) {
+        if (pendingStart && !permissionMissing && !isTracking && !isPaused) {
+            viewModel.onIntent(TrackingControlIntent.StartTracking)
+            pendingStart = false
+        }
     }
 
-    val bannerScale by animateFloatAsState(
-        targetValue = if (toggleBurst) 1.02f else 1.0f,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
-        label = "bannerScale"
-    )
-    val borderColor by animateColorAsState(
-        targetValue = if (toggleBurst) VoyagerColors.AccentGreen
-                      else VoyagerColors.PrimaryDim.copy(alpha = 0.3f),
-        animationSpec = tween(300),
-        label = "borderColor"
-    )
-
-    OutlinedCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .graphicsLayer { scaleX = bannerScale; scaleY = bannerScale },
-        border = BorderStroke(1.dp, borderColor),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = when {
-                isTracking -> MaterialTheme.colorScheme.primaryContainer
-                isPaused -> VoyagerColors.AccentAmber.copy(alpha = 0.15f)
-                else -> MaterialTheme.colorScheme.surfaceVariant
-            }
+    if (isTracking || isPaused) {
+        // ── Compact, collapsible status chip (controls tucked away) ──────────
+        val accent: Color = if (isPaused) VoyagerColors.AccentAmber else VoyagerColors.AccentGreen
+        val chevronRotation by animateFloatAsState(
+            targetValue = if (expanded) 180f else 0f,
+            label = "chevron"
         )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+        val subtitle = when {
+            isPaused -> "Capture paused"
+            else -> uiState.health?.lastSampleAt?.let { lastAt ->
+                "Recording · last sample ${(System.currentTimeMillis() - lastAt) / 1000}s ago"
+            } ?: "Recording your day"
+        }
+
+        VoyagerCard(
+            modifier = modifier.fillMaxWidth(),
+            onClick = { expanded = !expanded },
+            padding = VoyagerSpacing.md,
+            tintColor = accent.copy(alpha = if (isPaused) 0.12f else 0.10f)
         ) {
-            // Status icon
-            Icon(
-                imageVector = when {
-                    isTracking -> Icons.Default.MyLocation
-                    isPaused -> Icons.Default.Pause
-                    else -> Icons.Default.LocationOff
-                },
-                contentDescription = null,
-                tint = when {
-                    isTracking -> MaterialTheme.colorScheme.primary
-                    isPaused -> VoyagerColors.AccentAmber
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isPaused) {
+                    Icon(
+                        imageVector = Icons.Default.Pause,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(18.dp)
+                    )
+                } else {
+                    PulsingDot(size = 10.dp, color = accent)
                 }
-            )
-
-            Spacer(Modifier.width(12.dp))
-
-            // Status text
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = when {
-                        isTracking -> "Tracking Active"
-                        isPaused -> "Tracking Paused"
-                        else -> "Tracking Stopped"
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                    color = when {
-                        isPaused -> VoyagerColors.AccentAmber
-                        else -> MaterialTheme.colorScheme.onSurface
-                    }
-                )
-                uiState.health?.lastSampleAt?.let { lastAt ->
-                    val ago = (System.currentTimeMillis() - lastAt) / 1000
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
                     Text(
-                        text = "Last sample ${ago}s ago",
+                        text = if (isPaused) "Tracking paused" else "Tracking active",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isPaused) accent else VoyagerColors.OnSurface
+                    )
+                    Text(
+                        text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = VoyagerColors.OnSurfaceVariant
                     )
                 }
+                Icon(
+                    imageVector = Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "Hide controls" else "Show controls",
+                    tint = VoyagerColors.OnSurfaceVariant,
+                    modifier = Modifier.rotate(chevronRotation)
+                )
             }
 
-            // Action buttons — simplified: Pause (tap) / Stop (long-press)
-            if (isTracking) {
-                FilledTonalButton(
-                    modifier = Modifier.combinedClickable(
-                        onClick = { viewModel.onIntent(TrackingControlIntent.PauseTracking) },
-                        onLongClick = { showStopConfirmation = true }
-                    ),
-                    onClick = { viewModel.onIntent(TrackingControlIntent.PauseTracking) }
-                ) {
-                    Icon(Icons.Default.Pause, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Pause")
-                }
-            } else {
-                FilledTonalButton(
-                    onClick = {
-                        if (uiState.permissionState == PermissionState.NOTHING ||
-                            uiState.permissionState == PermissionState.NO_LOCATION_WITH_AR) {
-                            permissionActions.requestLocationPermissions()
-                        } else if (isPaused) {
-                            viewModel.onIntent(TrackingControlIntent.ResumeTracking)
+            AnimatedVisibility(visible = expanded) {
+                Column {
+                    Spacer(Modifier.height(VoyagerSpacing.md))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (isPaused) {
+                            VoyagerPrimaryButton(
+                                onClick = { viewModel.onIntent(TrackingControlIntent.ResumeTracking) },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, null)
+                                Spacer(Modifier.width(4.dp)); Text("Resume")
+                            }
                         } else {
-                            viewModel.onIntent(TrackingControlIntent.StartTracking)
+                            VoyagerButton(
+                                onClick = { viewModel.onIntent(TrackingControlIntent.PauseTracking) },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Pause, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp)); Text("Pause")
+                            }
+                        }
+                        VoyagerOutlinedButton(
+                            onClick = { showStopConfirmation = true },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Stop, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp)); Text("Stop")
                         }
                     }
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        when {
-                            uiState.permissionState == PermissionState.NOTHING ||
-                            uiState.permissionState == PermissionState.NO_LOCATION_WITH_AR -> "Grant & Start"
-                            isPaused -> "Resume"
-                            else -> "Start"
-                        }
-                    )
+                    if (degraded) {
+                        Spacer(Modifier.height(10.dp))
+                        PermissionDegradedRow { permissionActions.requestLocationPermissions() }
+                    }
                 }
             }
         }
-
-        // Permission degradation warning
-        if (uiState.permissionState != PermissionState.FULL) {
-            HorizontalDivider()
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+    } else {
+        // ── Off — a prominent, inviting Start hero (starting should be easy) ──
+        VoyagerCard(modifier = modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.Default.Warning,
+                    imageVector = Icons.Default.LocationOff,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(16.dp)
+                    tint = VoyagerColors.OnSurfaceVariant
                 )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Limited permissions - some features unavailable",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(onClick = { permissionActions.requestLocationPermissions() }) {
-                    Text("Fix")
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "Tracking off",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = VoyagerColors.OnSurface
+                    )
+                    Text(
+                        text = "Start to record where your day goes",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VoyagerColors.OnSurfaceVariant
+                    )
                 }
+            }
+            Spacer(Modifier.height(VoyagerSpacing.md))
+            VoyagerPrimaryButton(
+                onClick = {
+                    if (permissionMissing) {
+                        pendingStart = true
+                        permissionActions.requestLocationPermissions()
+                    } else {
+                        viewModel.onIntent(TrackingControlIntent.StartTracking)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.PlayArrow, null)
+                Spacer(Modifier.width(6.dp))
+                Text(if (permissionMissing) "Grant & start tracking" else "Start tracking")
+            }
+            if (degraded) {
+                Spacer(Modifier.height(10.dp))
+                PermissionDegradedRow { permissionActions.requestLocationPermissions() }
             }
         }
     }
 
-    // Stop confirmation dialog
     if (showStopConfirmation) {
         AlertDialog(
             onDismissRequest = { showStopConfirmation = false },
-            title = { Text("Stop Tracking?") },
-            text = { Text("This will end the current tracking session. You can start a new one later.") },
+            title = { Text("Stop tracking?") },
+            text = { Text("This ends the current tracking session. You can start a new one any time.") },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.onIntent(TrackingControlIntent.StopTracking)
@@ -198,5 +231,25 @@ fun TrackingControlBanner(
                 TextButton(onClick = { showStopConfirmation = false }) { Text("Cancel") }
             }
         )
+    }
+}
+
+@Composable
+private fun PermissionDegradedRow(onFix: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            Icons.Default.Warning,
+            contentDescription = null,
+            tint = VoyagerColors.Warning,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = "Limited permissions — some features may be unavailable",
+            style = MaterialTheme.typography.bodySmall,
+            color = VoyagerColors.Warning,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = onFix) { Text("Fix") }
     }
 }

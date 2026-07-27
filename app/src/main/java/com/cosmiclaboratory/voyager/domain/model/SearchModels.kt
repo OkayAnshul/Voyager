@@ -9,7 +9,12 @@ data class SearchFilters(
     val transportModes: Set<SegmentType>? = null,
     val minDwellMs: Long? = null,
     val maxDistanceM: Double? = null
-)
+) {
+    /** True when no filter dimension is set — the repository treats this as "text-only search". */
+    fun isEmpty(): Boolean =
+        dateRange == null && placeCategories.isNullOrEmpty() && transportModes.isNullOrEmpty() &&
+            minDwellMs == null && maxDistanceM == null
+}
 
 data class SearchResults(
     val query: String,

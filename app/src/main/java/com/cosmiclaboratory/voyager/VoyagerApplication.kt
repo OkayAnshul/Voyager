@@ -8,6 +8,7 @@ import com.cosmiclaboratory.voyager.domain.repository.SettingsRepository
 import com.cosmiclaboratory.voyager.domain.usecase.IntegrityRepairUseCase
 import com.cosmiclaboratory.voyager.pipeline.PipelineConsumer
 import com.cosmiclaboratory.voyager.platform.crash.LocalCrashHandler
+import com.cosmiclaboratory.voyager.platform.notification.VoyagerNotificationManager
 import com.cosmiclaboratory.voyager.platform.worker.WorkerScheduler
 import com.cosmiclaboratory.voyager.storage.TimelineStateStore
 import com.cosmiclaboratory.voyager.storage.database.dao.HealthLogDao
@@ -29,6 +30,7 @@ class VoyagerApplication : Application(), Configuration.Provider {
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var integrityRepairUseCase: IntegrityRepairUseCase
     @Inject lateinit var rawLocationSampleDao: RawLocationSampleDao
+    @Inject lateinit var notificationManager: VoyagerNotificationManager
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -53,6 +55,10 @@ class VoyagerApplication : Application(), Configuration.Provider {
 
         // Flush any pending crash files to HealthLog now that DI is ready.
         LocalCrashHandler.flushPending(this, healthLogDao, applicationScope)
+
+        // Create notification channels up front so worker-posted notifications are never
+        // silently dropped when they fire before the tracking service has ever run.
+        notificationManager.createChannels()
 
         applicationScope.launch {
             try {

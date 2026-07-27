@@ -33,7 +33,9 @@ import com.cosmiclaboratory.voyager.presentation.theme.CardVariant
 import com.cosmiclaboratory.voyager.presentation.theme.SectionHeader
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerCard
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerColors
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerEyebrow
 import com.cosmiclaboratory.voyager.presentation.theme.VoyagerGradients
+import com.cosmiclaboratory.voyager.ui.theme.MonoStatLarge
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -83,10 +85,51 @@ private fun TripsContent(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            SectionHeader(
-                title = "Trips",
-                trailingAction = { ProBadge() }
-            )
+            val trips = state.trips
+            if (trips.isNotEmpty()) {
+                val totalKm = trips.sumOf { it.distanceMeters } / 1000.0
+                val totalPlaces = trips.sumOf { it.placeCount }
+                VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            VoyagerEyebrow("Your Trips")
+                            Spacer(Modifier.height(6.dp))
+                            Row(
+                                verticalAlignment = Alignment.Bottom,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "${trips.size}",
+                                    style = MonoStatLarge,
+                                    color = VoyagerColors.OnSurface
+                                )
+                                Text(
+                                    text = if (trips.size == 1) "trip" else "trips",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = VoyagerColors.OnSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = "%.0f km · %d place%s".format(totalKm, totalPlaces, if (totalPlaces == 1) "" else "s"),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = VoyagerColors.OnSurfaceVariant
+                            )
+                        }
+                        ProBadge()
+                    }
+                }
+            } else {
+                SectionHeader(
+                    title = "Trips",
+                    trailingAction = { ProBadge() }
+                )
+            }
         }
 
         when {
@@ -148,7 +191,7 @@ private fun TripCard(trip: Trip, onClick: () -> Unit) {
 
 @Composable
 private fun InfoCard(title: String, body: String) {
-    VoyagerCard(modifier = Modifier.fillMaxWidth()) {
+    VoyagerCard(modifier = Modifier.fillMaxWidth(), variant = CardVariant.GLASS) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleSmall,

@@ -38,6 +38,7 @@ class OverrideSegmentTypeUseCase @Inject constructor(
             segmentId = segmentId,
             overrideType = newType?.name,
             overrideAt = if (newType != null) now else null,
+            corrected = newType != null,
         )
 
         // Keep the route's transportMode aligned with the effective type so

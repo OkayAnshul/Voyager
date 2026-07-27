@@ -179,4 +179,16 @@ class BuildMileageLogUseCaseTest {
 
         coVerify { classificationDao.deleteBySegmentId(3) }
     }
+
+    @Test
+    fun `classifyAll classifies every id with the given purpose`() = runTest {
+        coEvery { classificationDao.getBySegmentId(any()) } returns null
+        val saved = mutableListOf<MileageClassificationEntity>()
+        coEvery { classificationDao.upsert(capture(saved)) } just Runs
+
+        useCase.classifyAll(listOf(1L, 2L, 3L), MileagePurpose.BUSINESS)
+
+        assertThat(saved.map { it.segmentId }).containsExactly(1L, 2L, 3L)
+        assertThat(saved.all { it.purpose == "BUSINESS" }).isTrue()
+    }
 }

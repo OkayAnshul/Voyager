@@ -40,6 +40,12 @@ class WorkoutRecorder @Inject constructor(
     private companion object {
         /** Drop implausible legs (GPS glitch) from live distance/speed. ~180 km/h. */
         const val MAX_PLAUSIBLE_SPEED_MPS = 50f
+        /** A fix less accurate than this still draws on the map but never accumulates distance. */
+        const val MAX_ACCURACY_M = 30f
+        /** Only count elevation change past this band — GPS/baro jitter guard (see WorkoutStatsCalculator). */
+        const val ELEVATION_NOISE_THRESHOLD_M = 3.0
+        /** Below this the clock auto-pauses (a stopped athlete shouldn't accrue "moving" time). */
+        const val MOVING_SPEED_MPS = 0.5f
         val DAY_KEY: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
     }
 
@@ -47,6 +53,10 @@ class WorkoutRecorder @Inject constructor(
 
     private val _liveStats = MutableStateFlow<LiveWorkoutStats?>(null)
     val liveStats: StateFlow<LiveWorkoutStats?> = _liveStats.asStateFlow()
+
+    /** The growing route, for the live map on the Record screen. Emits after each accepted fix. */
+    private val _liveRoute = MutableStateFlow<List<RoutePoint>>(emptyList())
+    val liveRoute: StateFlow<List<RoutePoint>> = _liveRoute.asStateFlow()
 
     @Volatile
     var isRecording: Boolean = false
@@ -59,6 +69,18 @@ class WorkoutRecorder @Inject constructor(
     private var runningDistance = 0.0
     private var maxSpeed = 0f
     private var lastPoint: RoutePoint? = null
+    private var elevationGain = 0.0
+    private var elevationRef: Double? = null
+    private var movingTimeMs = 0L
+
+    /** User-held pause; while set, incoming fixes advance neither distance nor time. */
+    @Volatile
+    var isManuallyPaused: Boolean = false
+        private set
+
+    /** Pause/resume the active recording (no-op when not recording). */
+    fun pause() { if (isRecording) isManuallyPaused = true }
+    fun resume() { if (isRecording) isManuallyPaused = false }
 
     /** Begins recording — switches to the WORKOUT tracking tier. No-op if already recording. */
     suspend fun start(type: WorkoutType, nowMs: Long = System.currentTimeMillis()) = mutex.withLock {
@@ -71,17 +93,35 @@ class WorkoutRecorder @Inject constructor(
         runningDistance = 0.0
         maxSpeed = 0f
         lastPoint = null
+        elevationGain = 0.0
+        elevationRef = null
+        movingTimeMs = 0L
+        isManuallyPaused = false
         isRecording = true
+        _liveRoute.value = emptyList()
         _liveStats.value = LiveWorkoutStats(type, 0.0, 0L, 0f, 0f)
     }
 
-    /** Feeds one GPS fix into the active recording (ignored when not recording). */
-    fun onLocation(lat: Double, lng: Double, timeMs: Long) {
+    /**
+     * Feeds one cleaned fix into the active recording (ignored when not recording).
+     * [altitudeM] is barometric when available (else GPS altitude); a fix worse than
+     * [MAX_ACCURACY_M] still extends the drawn route but does not accumulate distance/speed.
+     */
+    fun onLocation(
+        lat: Double,
+        lng: Double,
+        timeMs: Long,
+        altitudeM: Double? = null,
+        accuracyM: Float? = null
+    ) {
         if (!isRecording) return
-        val point = RoutePoint(lat, lng, timeMs)
+        val point = RoutePoint(lat, lng, timeMs, altitudeM, accuracyM)
         var currentSpeed = 0f
+        var autoPaused = false
         val prev = lastPoint
-        if (prev != null) {
+        val accurate = accuracyM == null || accuracyM <= MAX_ACCURACY_M
+        // While manually paused, the fix still extends the drawn route but advances no stats.
+        if (prev != null && accurate && !isManuallyPaused) {
             val segDist = LocationUtils.calculateDistance(prev.lat, prev.lng, lat, lng)
             val dt = timeMs - prev.timeMs
             if (dt > 0) {
@@ -90,14 +130,44 @@ class WorkoutRecorder @Inject constructor(
                     currentSpeed = s
                     runningDistance += segDist
                     if (s > maxSpeed) maxSpeed = s
+                    // Auto-pause: below a walking crawl, the clock stops so pace isn't diluted.
+                    if (s >= MOVING_SPEED_MPS) movingTimeMs += dt else autoPaused = true
+                }
+            }
+        }
+        // Running elevation gain with the same hysteresis the save-time summary uses.
+        if (altitudeM != null) {
+            val ref = elevationRef
+            if (ref == null) {
+                elevationRef = altitudeM
+            } else {
+                val delta = altitudeM - ref
+                if (delta >= ELEVATION_NOISE_THRESHOLD_M) {
+                    elevationGain += delta
+                    elevationRef = altitudeM
+                } else if (delta <= -ELEVATION_NOISE_THRESHOLD_M) {
+                    elevationRef = altitudeM
                 }
             }
         }
         points.add(point)
         lastPoint = point
+        _liveRoute.value = points.toList()
         val duration = timeMs - startedAt
-        val avg = if (duration > 0) LocationUtils.speedMps(runningDistance, duration) else 0f
-        _liveStats.value = LiveWorkoutStats(type, runningDistance, duration, currentSpeed, avg)
+        // Average speed is over moving time (falls back to elapsed before the first moving leg),
+        // so a mid-run stop doesn't drag the pace down — matching how athletes read their watch.
+        val paceTime = if (movingTimeMs > 0) movingTimeMs else duration
+        val avg = if (paceTime > 0) LocationUtils.speedMps(runningDistance, paceTime) else 0f
+        _liveStats.value = LiveWorkoutStats(
+            type = type,
+            distanceMeters = runningDistance,
+            durationMs = duration,
+            currentSpeedMps = currentSpeed,
+            avgSpeedMps = avg,
+            elevationGainM = elevationGain,
+            movingTimeMs = movingTimeMs,
+            isPaused = isManuallyPaused || autoPaused
+        )
     }
 
     /**
@@ -109,6 +179,7 @@ class WorkoutRecorder @Inject constructor(
         isRecording = false
         settingsRepository.updateSetting("tracking_tier", priorTier.name)
         _liveStats.value = null
+        _liveRoute.value = emptyList()
         val captured = points.toList()
         points.clear()
         if (captured.size < 2) return@withLock null
@@ -123,7 +194,11 @@ class WorkoutRecorder @Inject constructor(
             avgSpeedMps = stats.avgSpeedMps,
             maxSpeedMps = stats.maxSpeedMps,
             encodedPolyline = PolylineEncoder.encode(captured.map { it.lat to it.lng }),
-            dayKey = Instant.ofEpochMilli(startedAt).atZone(ZoneId.systemDefault()).toLocalDate().format(DAY_KEY)
+            dayKey = Instant.ofEpochMilli(startedAt).atZone(ZoneId.systemDefault()).toLocalDate().format(DAY_KEY),
+            elevationGainM = stats.elevationGainM,
+            elevationLossM = stats.elevationLossM,
+            encodedTimes = WorkoutStatsCalculator.encodeTimes(captured, startedAt),
+            encodedAltitudes = WorkoutStatsCalculator.encodeAltitudes(captured)
         )
         val id = activityDao.insert(entity)
         entity.copy(activityId = id).toDomain()
@@ -144,5 +219,9 @@ fun ActivityEntity.toDomain(): Activity = Activity(
     encodedPolyline = encodedPolyline,
     dayKey = dayKey,
     title = title,
-    notes = notes
+    notes = notes,
+    elevationGainM = elevationGainM,
+    elevationLossM = elevationLossM,
+    encodedTimes = encodedTimes,
+    encodedAltitudes = encodedAltitudes
 )

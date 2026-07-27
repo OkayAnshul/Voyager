@@ -36,6 +36,22 @@ object WorkerScheduler {
         scheduleConfidenceDecay(workManager)
         scheduleMergePlaces(workManager)
         scheduleInferPlaceCategory(workManager)
+        scheduleRoutineNudge(workManager)
+    }
+
+    /** Evening routine-break nudge at ~19:30 — late enough that a missed routine is genuinely missed. */
+    private fun scheduleRoutineNudge(workManager: WorkManager) {
+        val initialDelay = computeDelayUntil(hour = 19, minute = 30)
+        val request = PeriodicWorkRequestBuilder<RoutineNudgeWorker>(24, TimeUnit.HOURS)
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .setConstraints(defaultConstraints())
+            .build()
+
+        workManager.enqueueUniquePeriodicWork(
+            RoutineNudgeWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
     }
 
     /**
@@ -310,6 +326,11 @@ object WorkerScheduler {
 
     /**
      * Enqueues a one-shot SearchIndexWorker. Call after geocode, rename, or correction events.
+     *
+     * Uses a distinct unique name (not [SearchIndexWorker.WORK_NAME], which is owned by the 12h
+     * periodic job) so REPLACE only coalesces back-to-back one-shots and never cancels the
+     * periodic schedule. KEEP-like coalescing via REPLACE is fine here: a pending rebuild already
+     * captures every edit made before it runs.
      */
     fun triggerSearchIndexRebuild(workManager: WorkManager) {
         val request = androidx.work.OneTimeWorkRequestBuilder<SearchIndexWorker>()
@@ -317,11 +338,13 @@ object WorkerScheduler {
             .build()
 
         workManager.enqueueUniqueWork(
-            SearchIndexWorker.WORK_NAME,
+            SEARCH_INDEX_ONESHOT_WORK,
             androidx.work.ExistingWorkPolicy.REPLACE,
             request,
         )
     }
+
+    private const val SEARCH_INDEX_ONESHOT_WORK = "search_index_oneshot"
 
     private fun defaultConstraints(): Constraints = Constraints.Builder()
         .setRequiresBatteryNotLow(true)

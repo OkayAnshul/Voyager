@@ -98,4 +98,50 @@ class GeocodingRepositoryImplTest {
 
         coVerify(exactly = 0) { nominatim.reverseGeocode(any(), any()) }
     }
+
+    // ---- resolveDisplayNameForCoordinates: the honest current-location label ----
+
+    @Test
+    fun `a coordinate with a HIGH-tier result resolves to the gated provider name`() = runTest {
+        val android = fakeProvider(GeocodingProviderId.ANDROID_GEOCODER, confidence = 0.85f)
+        val repo = repository(listOf(android), order = listOf(GeocodingProviderId.ANDROID_GEOCODER))
+
+        val name = repo.resolveDisplayNameForCoordinates(12.34, 56.78)
+
+        assertThat(name).isEqualTo("Result from ANDROID_GEOCODER")
+    }
+
+    @Test
+    fun `a weak coordinate result falls back to Near area, never raw coordinates`() = runTest {
+        // Photon 0.30 → normalized 0.285 → NONE tier: no trustworthy name, so the
+        // coarse "Near [street, city]" locator is shown instead of coordinates.
+        val photon = fakeProvider(GeocodingProviderId.PHOTON, confidence = 0.30f)
+        val repo = repository(listOf(photon), order = listOf(GeocodingProviderId.PHOTON))
+
+        val name = repo.resolveDisplayNameForCoordinates(12.34, 56.78)
+
+        assertThat(name).isEqualTo("Near Main St, Townsville")
+    }
+
+    @Test
+    fun `a null-island coordinate never geocodes and reads as unavailable`() = runTest {
+        val android = fakeProvider(GeocodingProviderId.ANDROID_GEOCODER, confidence = 0.85f)
+        val repo = repository(listOf(android), order = listOf(GeocodingProviderId.ANDROID_GEOCODER))
+
+        val name = repo.resolveDisplayNameForCoordinates(0.0, 0.0)
+
+        assertThat(name).isEqualTo("Location unavailable")
+        coVerify(exactly = 0) { android.reverseGeocode(any(), any()) }
+    }
+
+    @Test
+    fun `a resolved coordinate is cached so repeat lookups don't re-geocode`() = runTest {
+        val android = fakeProvider(GeocodingProviderId.ANDROID_GEOCODER, confidence = 0.85f)
+        val repo = repository(listOf(android), order = listOf(GeocodingProviderId.ANDROID_GEOCODER))
+
+        repo.resolveDisplayNameForCoordinates(12.34, 56.78)
+        repo.resolveDisplayNameForCoordinates(12.34, 56.78)
+
+        coVerify(exactly = 1) { android.reverseGeocode(any(), any()) }
+    }
 }

@@ -1,8 +1,10 @@
 package com.cosmiclaboratory.voyager.presentation.screen.search
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -10,18 +12,28 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.cosmiclaboratory.voyager.domain.model.DateRange
+import com.cosmiclaboratory.voyager.domain.model.PlaceCategory
+import com.cosmiclaboratory.voyager.domain.model.SearchFilters
+import com.cosmiclaboratory.voyager.domain.model.enums.SegmentType
 import com.cosmiclaboratory.voyager.presentation.components.*
 import com.cosmiclaboratory.voyager.presentation.theme.*
 import com.cosmiclaboratory.voyager.ui.theme.MonoTimestamp
+import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     onPlaceClick: (Long) -> Unit = {},
+    onDayClick: (String) -> Unit = {},
     viewModel: SearchViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -30,7 +42,7 @@ fun SearchScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(VoyagerColors.Background)
+            .drawBehind { drawRect(brush = VoyagerGradients.screenBackground(size.width, size.height)) }
     ) {
         // Search bar
         VoyagerCard(
@@ -67,6 +79,12 @@ fun SearchScreen(
             )
         }
 
+        // Filter chips — date presets, place categories, transport modes
+        SearchFilterBar(
+            filters = uiState.filters,
+            onIntent = viewModel::onIntent,
+        )
+
         // Loading indicator
         if (uiState.isSearching) {
             LinearProgressIndicator(
@@ -92,6 +110,7 @@ fun SearchScreen(
                         VoyagerCard(
                             modifier = Modifier.fillMaxWidth(),
                             onClick = { onPlaceClick(place.placeId) },
+                            variant = CardVariant.GLASS,
                             padding = 12.dp
                         ) {
                             Row(
@@ -101,7 +120,7 @@ fun SearchScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        place.displayName,
+                                        highlightMatch(place.displayName, uiState.query),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         color = VoyagerColors.OnSurface
@@ -141,10 +160,11 @@ fun SearchScreen(
                     items(results.visits) { visit ->
                         VoyagerCard(
                             modifier = Modifier.fillMaxWidth(),
+                            variant = CardVariant.GLASS,
                             padding = 12.dp
                         ) {
                             Text(
-                                visit.placeDisplayName,
+                                highlightMatch(visit.placeDisplayName, uiState.query),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = VoyagerColors.OnSurface
@@ -168,6 +188,8 @@ fun SearchScreen(
                     items(results.days) { day ->
                         VoyagerCard(
                             modifier = Modifier.fillMaxWidth(),
+                            onClick = { onDayClick(day.dayKey) },
+                            variant = CardVariant.GLASS,
                             padding = 12.dp
                         ) {
                             Text(
@@ -228,7 +250,8 @@ fun SearchScreen(
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(32.dp)
                 ) {
                     Icon(
                         Icons.Default.SearchOff,
@@ -239,10 +262,113 @@ fun SearchScreen(
                     Text(
                         "No results for \"${uiState.query}\"",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = VoyagerColors.OnSurfaceVariant
+                        color = VoyagerColors.OnSurface
+                    )
+                    Text(
+                        "Try a different place, a date like 2026-06, or widen your search.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VoyagerColors.OnSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
             }
         }
+    }
+}
+
+/**
+ * Horizontally-scrollable filter row: a Clear chip (when any filter is active), rolling date
+ * presets, place-category chips, and transport-mode chips. Each dispatches the matching
+ * [SearchIntent] so the repository can narrow results.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchFilterBar(
+    filters: SearchFilters,
+    onIntent: (SearchIntent) -> Unit,
+) {
+    val today = LocalDate.now()
+    val datePresets = remember(today) {
+        listOf(
+            "7 days" to DateRange(today.minusDays(6).toString(), today.toString()),
+            "30 days" to DateRange(today.minusDays(29).toString(), today.toString()),
+            "This year" to DateRange(LocalDate.of(today.year, 1, 1).toString(), today.toString()),
+        )
+    }
+    val categories = remember { PlaceCategory.values().filter { it != PlaceCategory.UNKNOWN } }
+    val transports = remember {
+        listOf(SegmentType.WALK, SegmentType.RUN, SegmentType.CYCLE, SegmentType.DRIVE, SegmentType.TRANSIT, SegmentType.FLIGHT)
+    }
+
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (!filters.isEmpty()) {
+            item {
+                AssistChip(
+                    onClick = { onIntent(SearchIntent.ClearFilters) },
+                    label = { Text("Clear") },
+                    leadingIcon = { Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    colors = AssistChipDefaults.assistChipColors(
+                        labelColor = VoyagerColors.Primary,
+                        leadingIconContentColor = VoyagerColors.Primary,
+                    ),
+                )
+            }
+        }
+        items(datePresets) { (label, range) ->
+            SearchChip(
+                label = label,
+                selected = filters.dateRange == range,
+                onClick = { onIntent(SearchIntent.SetDateRange(if (filters.dateRange == range) null else range)) },
+            )
+        }
+        items(categories) { category ->
+            SearchChip(
+                label = category.displayName,
+                selected = filters.placeCategories?.contains(category) == true,
+                onClick = { onIntent(SearchIntent.ToggleCategoryFilter(category)) },
+            )
+        }
+        items(transports) { mode ->
+            SearchChip(
+                label = mode.name.lowercase().replaceFirstChar { it.uppercase() },
+                selected = filters.transportModes?.contains(mode) == true,
+                onClick = { onIntent(SearchIntent.ToggleTransportFilter(mode)) },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label) },
+        colors = FilterChipDefaults.filterChipColors(
+            labelColor = VoyagerColors.OnSurfaceVariant,
+            selectedContainerColor = VoyagerColors.Primary,
+            selectedLabelColor = VoyagerColors.OnPrimary,
+        ),
+    )
+}
+
+/** Highlights the matched query substring in a result label (case-insensitive). */
+private fun highlightMatch(text: String, query: String): AnnotatedString {
+    val q = query.trim()
+    if (q.isBlank()) return AnnotatedString(text)
+    val idx = text.indexOf(q, ignoreCase = true)
+    if (idx < 0) return AnnotatedString(text)
+    return buildAnnotatedString {
+        append(text.substring(0, idx))
+        withStyle(SpanStyle(color = VoyagerColors.Primary, fontWeight = FontWeight.Bold)) {
+            append(text.substring(idx, idx + q.length))
+        }
+        append(text.substring(idx + q.length))
     }
 }

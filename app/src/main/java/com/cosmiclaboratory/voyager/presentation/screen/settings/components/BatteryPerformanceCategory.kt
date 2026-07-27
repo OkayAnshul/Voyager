@@ -10,6 +10,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.cosmiclaboratory.voyager.presentation.theme.CardVariant
+import com.cosmiclaboratory.voyager.presentation.theme.VoyagerCard
 import com.cosmiclaboratory.voyager.domain.model.UserPreferences
 import kotlin.math.roundToInt
 
@@ -26,7 +28,7 @@ fun BatteryPerformanceCategory(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Card(modifier = modifier.fillMaxWidth()) {
+    VoyagerCard(modifier = modifier.fillMaxWidth(), variant = CardVariant.GLASS, padding = 0.dp) {
         Column(modifier = Modifier.padding(16.dp)) {
             // Category header
             Row(

@@ -50,6 +50,35 @@ object PolylineEncoder {
         return if (allPoints.isEmpty()) "" else encode(allPoints)
     }
 
+    /**
+     * Delta-encodes a plain integer series with the same signed-varint scheme used for
+     * coordinates. Used to store the per-point time-offset and altitude streams of a
+     * recorded workout compactly, parallel to its [encode]d lat/lng polyline (so a route
+     * keeps its `<time>`/`<ele>` without a child table). Round-trips with [decodeInts].
+     */
+    fun encodeInts(values: List<Int>): String {
+        val result = StringBuilder()
+        var prev = 0
+        for (v in values) {
+            encodeValue(v - prev, result)
+            prev = v
+        }
+        return result.toString()
+    }
+
+    fun decodeInts(encoded: String): List<Int> {
+        val result = mutableListOf<Int>()
+        var index = 0
+        var cur = 0
+        while (index < encoded.length) {
+            val (delta, next) = decodeValue(encoded, index)
+            index = next
+            cur += delta
+            result.add(cur)
+        }
+        return result
+    }
+
     private fun decodeValue(encoded: String, startIndex: Int): Pair<Int, Int> {
         var index = startIndex
         var result = 0

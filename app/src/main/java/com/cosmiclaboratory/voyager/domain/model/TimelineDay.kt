@@ -44,8 +44,24 @@ data class TimelinePlace(
     val lng: Double,
     val geocodeHints: List<GeocodeHint> = emptyList(),
     val emoji: String? = null,
-    val visitCount: Int = 0
-)
+    val visitCount: Int = 0,
+    /** 0..1 repeatability of visits to this place (C1). Null when no place evidence yet. */
+    val repeatabilityScore: Float? = null,
+    /** Average dwell at this place across visits, for "you usually stay ~Xm" hints. */
+    val typicalDwellMs: Long? = null,
+    /** Short human recurrence label ("Part of your routine"), null when not recurring. */
+    val recurrenceLabel: String? = null,
+    /** True once the user has explicitly confirmed this place (lifecycle CONFIRMED).
+     *  A confirmed place is never "needs review", even if still uncategorised. */
+    val isConfirmed: Boolean = false
+) {
+    /**
+     * True when this place needs the user's attention — unknown category or low
+     * confidence — and the user hasn't already confirmed it. Drives the review queue.
+     */
+    fun needsReview(threshold: Float = 0.7f): Boolean =
+        !isConfirmed && (category == PlaceCategory.UNKNOWN || confidence < threshold)
+}
 
 /**
  * An alternative geocode candidate shown as a hint in the timeline.

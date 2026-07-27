@@ -74,7 +74,9 @@ class PlaceReviewViewModel @Inject constructor(
          */
         internal fun pendingReviewPlaces(places: List<TimelinePlace>): List<TimelinePlace> =
             places
-                .filter { it.confidence < CONFIDENCE_THRESHOLD || it.category == PlaceCategory.UNKNOWN }
+                // A confirmed place is done — never re-surface it, even if uncategorised
+                // (confirming raises confidence but can't invent a category).
+                .filter { !it.isConfirmed && (it.confidence < CONFIDENCE_THRESHOLD || it.category == PlaceCategory.UNKNOWN) }
                 .sortedBy { it.confidence }
     }
 }

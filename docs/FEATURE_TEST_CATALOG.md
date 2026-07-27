@@ -473,11 +473,15 @@ All file paths are relative to `app/src/main/java/com/cosmiclaboratory/voyager/`
 **Flagship bar:** Photo permission asked JIT; correlation is accurate; feels like a story.
 **Verification (2026-06-12, code-level):** ✅ Correlation is sound — a photo pins to the visit whose `[arrival, departure]` window (open visit → end-of-day) contains its capture time; among overlapping visits a geotagged photo picks the spatially nearest place (`hasLocation` guards the EXIF `!!`, null centroids deprioritised) and an untagged one the tightest window. The story orders places by arrival and photos by capture time, omits photo-less visits, buckets out-of-window photos as `unplacedPhotos`, and `totalPhotoCount` counts all. Permission is reported via `hasPhotoPermission` (JIT on the screen). `BuildDayStoryUseCaseTest` 7 → 9 cases (added multi-photo/multi-place narrative ordering + photo-less-visit omission, and the "Unknown place" fallback). Photo enumeration is `MediaStorePhotoLibrary` (Android) → device-verify EXIF/`ACCESS_MEDIA_LOCATION`.
 
-### W6.8 — Workout recording · Status: [x] verified (code-level) 2026-06-12  · [x] improved 2026-06-12
-**What it does:** Live-records a run/walk/cycle route with stats.
-**Key functions / files:** `domain/usecase/WorkoutRecorder.kt`, `WorkoutStatsCalculator`, `ActivityDao`.
-**How to travel-test:** Record a short run; confirm distance/pace and the saved route.
-**Flagship bar:** Strava-grade live stats; clean GPX-per-activity (ties to Part C D1 fitness subsystem).
+### W6.8 — Workout recording (D1 fitness subsystem) · Status: [x] verified (code-level) 2026-06-12  · [x] improved 2026-06-12  · [x] **built out to Strava parity 2026-07 (D1 Phases 0–5)**
+**What it does:** Live-records a run/walk/cycle route with stats — now with a **live route map,
+auto-pause + moving-time pace, per-km splits, elevation (barometric when available), an
+activity-detail screen, GPX import + export (`<ele>`/`<time>`), on-device personal records +
+best-efforts, private race-yourself segments, and auto-suggestion of a workout from passively-
+tracked segments.**
+**Key functions / files:** `domain/usecase/{WorkoutRecorder,WorkoutStatsCalculator,PersonalRecordsUseCase,SuggestWorkoutUseCase,SegmentMatchUseCase,ImportGpxUseCase}`, `platform/export/{ActivityGpxExporter,GpxImporter}`, `capture/BaroCapture`, `presentation/screen/workout/*` (Record/Activities/ActivityDetail/Segments), `ActivityDao`/`WorkoutSegmentDao` (DB v10→v13).
+**How to travel-test:** Record a real ~2 km run; confirm the live route grows on the map, auto-pause fires at a stop, splits are per-km, elevation is sane, the detail screen renders the profile, GPX opens elsewhere with ele+time, a PR fires on a faster repeat, a passive run offers "save as workout", and a saved segment times a re-run.
+**Flagship bar:** Strava-parity recording — but *more accurate* (Kalman + glitch rejection + barometric elevation + accuracy-gated distance + auto-pause) and *private* (records/segments never leave the device; no public leaderboards, by design).
 **Verification (2026-06-12, code-level):** ✅ `WorkoutRecorder` switches to the WORKOUT tier on `start`, accumulates plausible legs into live stats, persists an `ActivityEntity` (encoded polyline, day-key) and restores the prior tier on `stop`, discarding routes with < 2 points.
 > - **Improvement — saved distance now matches the live distance (glitch consistency):** `WorkoutStatsCalculator.summarize` (the authoritative save-time summary) added *every* leg's distance, gating only `maxSpeed` on plausibility — so a GPS glitch leg (~1 km in 100 ms) was dropped from peak speed but still **inflated the saved total distance**, disagreeing with the live number the user watched (the recorder already gates distance). Fixed `summarize` to drop implausible (> 50 m/s) and out-of-order (dt ≤ 0) legs from distance too, matching the recorder.
 > - **Tests:** `WorkoutStatsCalculatorTest` 3 → 5 (glitch excluded from distance, out-of-order leg contributes nothing) + `WorkoutRecorderTest` 2 → 3 (a glitch fix inflates neither live nor persisted distance; the two now agree).
@@ -678,7 +682,7 @@ its own P0–P3 roadmap. IDs are 1:1 with that doc.
 - **C6** Evidence prominence · **E1** Baseline Profiles · **E2** Lazy engine init · **E3** Recomposition audit · **L3** Microcopy pass · **L4** Notification copy & cadence
 
 ### P2 — Differentiators & depth (each its own plan)
-- **D1** Fitness/workout subsystem (unblocks Athlete persona; extends W6.8)
+- **D1** Fitness/workout subsystem ✅ **BUILT 2026-07 (Phases 0–5)** — unblocks the Athlete persona; folded into W6.8 above (live map, auto-pause, splits, elevation/baro, activity detail, GPX in/out, personal records, private race-yourself segments, auto-suggest from passive tracking). Public social/leaderboards deliberately out of scope (moat).
 - **C1** POI prior into confirmation ◐ 2026-06-14 (confidence + naming POI prior already at discovery; added the **repeatability** half — `PlaceRepeatability` makes recurring places resist decay via `PlaceConfidenceDecay`/`ConfidenceDecayWorker`; remaining: "confirm faster" in `DetectVisitUseCase`) · **C2** Accelerometer signature ✅ 2026-06-14 (pure `AccelSignatureClassifier` + fusion vote + burst-sampling `AccelCapture`; ON_FOOT/STILL vote, SMOOTH_MOTION silent so cyclists aren't misread; device-verify) · **C3** Trip storytelling depth · **C5** Offline tiles + camera persistence · **C4** "On this day"
 - **A8** Iconography & illustration set · **B5** Progressive Insights tabs · **B6** Privacy-first modifier · **B8** Internationalization · **L1** Geocoding quality · **L2** Category-inference quality
 - **D4** OSM contribution loop · **D2** Family one-bit handshake ⊘ _(security review)_ · **D3** Duress mode / panic-wipe ⊘ _(security review)_
@@ -711,7 +715,7 @@ Source: [`research/competitor-analysis.md`](research/competitor-analysis.md). Vo
 | Polished mode-detection timeline UX | Arc | ◐ W3.1 → **A4** ribbon redesign |
 | Raw GPX / MQTT location stream | OwnTracks, GeoTracker | ✅ W7.1 (GPX export) |
 | Family / safety location sharing | Life360 | ✗ → **D2** ⊘ (security review) |
-| Workouts / segments / leaderboards | Strava | ◐ W6.8 → **D1** fitness subsystem |
+| Workouts / segments / leaderboards | Strava | ✅ W6.8 / **D1 built** — full recording, splits, elevation, GPX in/out, personal records + **private** race-yourself segments; public leaderboards out of scope (moat) |
 | Auto-mileage classification + IRS PDF | MileIQ, Everlance, Hurdlr, Stride | ✅ W6.4–W6.6 (+ per-row GPS evidence) |
 | Mood / journal with location pins | Daylio, Day One | ✗ (out of scope; nearest = W6.7) |
 | Photo-by-location timeline | PhotoMap, Memories | ◐ W6.7 |
