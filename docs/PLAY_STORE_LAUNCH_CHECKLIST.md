@@ -18,7 +18,7 @@ tagged **[you]** (needs your Google account / secrets — I can't do it for you)
 | `versionCode 1` / `versionName 1.0.0` | ✅ Ready |
 | Privacy policy (public URL) | ⛳ Hosted by the website (`/privacy.html`) — linked in-app (Settings ▸ Privacy Policy); **add the URL to the listing** |
 | Store listing copy | ✅ Drafted below |
-| Screenshots / feature graphic / 512 icon | ✅ Screenshots + 1024×500 feature graphic done · ⛳ 512 icon to export |
+| Screenshots / feature graphic / 512 icon | ✅ Screenshots + 1024×500 feature graphic + 512 icon all done |
 | Release **keystore** | ⛳ **[you]** must create it |
 | Data Safety form | ✅ Answers drafted below · **[you]** submit |
 | Background-location declaration + review video | ⛳ Draft below · **[you]** record + submit |
@@ -111,7 +111,7 @@ tracking anytime, and export or delete everything whenever you want.
 |---|---|---|
 | Phone screenshots (2–8) | ≥1080 px, PNG/JPG | ✅ Raw + framed set in `docs/screenshots/` & `docs/marketing/` |
 | Feature graphic | 1024 × 500 PNG | ✅ `docs/marketing/feature-graphic.png` |
-| App icon | 512 × 512 PNG | ⛳ Export from `mipmap-xxxhdpi` (note: icon redraw recommended — see should-fixes) |
+| App icon | 512 × 512 PNG | ✅ `docs/marketing/store-icon-512.png` (launcher icon also rebranded to match) |
 
 ## 5. Data Safety form  *(answers to submit — **[you]**)*
 
