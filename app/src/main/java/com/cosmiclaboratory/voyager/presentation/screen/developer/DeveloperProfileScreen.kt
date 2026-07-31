@@ -343,7 +343,7 @@ fun DeveloperProfileScreen(
                             label = "LinkedIn",
                             handle = "anshulisworking",
                             onClick = {
-                                uriHandler.openUri("https://www.linkedin.com/in/anshulisworking")
+                                uriHandler.openUri("https://www.linkedin.com/in/builderanshul")
                             }
                         )
 
