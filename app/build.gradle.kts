@@ -27,7 +27,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.cosmiclaboratory.voyager"
+        applicationId = "com.okayanshul.voyager"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

@@ -7,7 +7,7 @@
 > **Every feature described here is free.** Voyager ships with no paywall today. (The billing
 > layer stays dormant in the code so optional subscriptions can return later without a rebuild.)
 
-- **Package:** `com.cosmiclaboratory.voyager`
+- **Package:** `com.okayanshul.voyager`
 - **Platform:** Android 8.0+ (minSdk 26), targets Android 16 (targetSdk 36)
 - **UI:** 100% Jetpack Compose + Material 3, custom "deep-space nebula" dark design system
 - **Storage:** Room, **encrypted at rest with SQLCipher** (key in the Android Keystore) from day one
