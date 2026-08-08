@@ -1,40 +1,33 @@
-# Screenshots & Media
+# Screenshots
 
-Place all screenshots and demo media here. The main README references these files.
+The main [README](../../README.md) references every file here.
 
-## Required Screenshots
+| File | Screen |
+|---|---|
+| `00-splash.png` | Splash |
+| `01-today.png` | Today — live tracking, stats, top places, anomalies |
+| `02-timeline.png` | Timeline — visits and movements in order, gaps included |
+| `03-map.png` | Map — routes and visit markers on OpenStreetMap |
+| `04-insights-overview.png` | Insights → Overview |
+| `05-insights-weekly.png` | Insights → Weekly, with the tracking streak |
+| `06-insights-routines.png` | Insights → Patterns / routines |
+| `07-insights-carbon.png` | Insights → Carbon |
+| `08-proof.png` | Proof — the evidence hub |
+| `09-mileage.png` | Mileage — classified drives and deductible value |
+| `10-trips.png` | Trips — auto-detected multi-day journeys |
+| `11-activities.png` | Activities — rings, workout feed, segments |
+| `12-activity-detail.png` | Activity detail — splits and elevation profile |
 
-| Filename | Screen | Notes |
-|----------|--------|-------|
-| `dashboard.png` | Home/Dashboard | Show active tracking, hero ring, streak |
-| `timeline.png` | Timeline | Show a day with mixed segments (walk, drive, visit) |
-| `map.png` | Map | Show route polylines + place markers |
-| `insights.png` | Insights/Statistics | Show weekly comparison chart |
-| `settings.png` | Settings | Show the 4-tab settings panel |
-| `place_detail.png` | Place Detail Sheet | Show a confirmed place with visit history |
+All captures are portrait, 1080 × 2400.
 
-## Optional Screenshots
+## Capturing more
 
-| Filename | Screen |
-|----------|--------|
-| `onboarding_1.png` | Feature walkthrough page 1 |
-| `onboarding_2.png` | Feature walkthrough page 2 |
-| `export.png` | Export format picker |
-| `segment_detail.png` | Segment detail bottom sheet |
-| `search.png` | Search screen |
+Put Do Not Disturb on first, so the status bar is clean.
 
-## Video Demo
+```bash
+adb exec-out screencap -p > docs/screenshots/13-whatever.png
+```
 
-| Filename | Description |
-|----------|-------------|
-| `demo_thumb.png` | Thumbnail for the YouTube/Loom demo link |
-
-## Capture Tips
-
-- Use portrait orientation, 1080×2340 resolution
-- Enable "Do Not Disturb" before capturing — hide notification bar clutter
-- Use Android Studio's Device Mirror or `adb shell screencap` for clean captures:
-  ```bash
-  adb shell screencap -p /sdcard/screen.png && adb pull /sdcard/screen.png docs/screenshots/dashboard.png
-  ```
-- Compress PNG files before committing: `pngcrush` or `optipng`
+Compress before committing — `optipng` or `pngcrush`. Then add the file to the table above and
+reference it from the main README, so this directory never drifts out of sync with what the
+README claims exists.

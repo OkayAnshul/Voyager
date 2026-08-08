@@ -24,12 +24,35 @@ leaving the device.
 
 </div>
 
-<p align="center">
-  <img src="docs/screenshots/01-today.png" width="185" alt="Today">
-  <img src="docs/screenshots/02-timeline.png" width="185" alt="Timeline">
-  <img src="docs/screenshots/03-map.png" width="185" alt="Map">
-  <img src="docs/screenshots/04-insights-overview.png" width="185" alt="Insights">
-</p>
+<div align="center">
+
+### The six tabs
+
+| Today | Timeline | Map |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/01-today.png" width="215" alt="Today — live tracking control, today's stats and top places"> | <img src="docs/screenshots/02-timeline.png" width="215" alt="Timeline — the day as visits and movements"> | <img src="docs/screenshots/03-map.png" width="215" alt="Map — routes and visit markers on an OpenStreetMap basemap"> |
+| Live tracking, today's stats, anomalies | Visits and movements in order, gaps included | Routes and markers, synced to the timeline |
+
+| Insights | Proof | Activities |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/04-insights-overview.png" width="215" alt="Insights — period summary"> | <img src="docs/screenshots/08-proof.png" width="215" alt="Proof — the evidence hub"> | <img src="docs/screenshots/11-activities.png" width="215" alt="Activities — rings and workout feed"> |
+| Nine lenses, told as a storybook | Audit-ready records, computed on-device | Rings, workout feed, segments |
+
+### Insights, lens by lens
+
+| Weekly | Routines | Carbon |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/05-insights-weekly.png" width="215" alt="Weekly — this week versus last, plus your streak"> | <img src="docs/screenshots/06-insights-routines.png" width="215" alt="Routines — recurring patterns with human labels"> | <img src="docs/screenshots/07-insights-carbon.png" width="215" alt="Carbon — estimated CO2 by travel mode"> |
+| This week vs last, and your streak | Routines it has learned, in plain words | Estimated CO₂ by travel mode |
+
+### Records and detail
+
+| Mileage | Trips | Activity detail | Splash |
+|:---:|:---:|:---:|:---:|
+| <img src="docs/screenshots/09-mileage.png" width="165" alt="Mileage — classified drives with deductible value"> | <img src="docs/screenshots/10-trips.png" width="165" alt="Trips — auto-detected multi-day journeys"> | <img src="docs/screenshots/12-activity-detail.png" width="165" alt="Activity detail — splits and elevation profile"> | <img src="docs/screenshots/00-splash.png" width="165" alt="Splash"> |
+| Drives classified, with deductible value | Multi-day journeys, auto-detected | Splits and elevation profile | — |
+
+</div>
 
 ---
 
