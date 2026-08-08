@@ -67,6 +67,75 @@ pipelines, where a visit is committed while the segmenter is still deciding whet
 
 ---
 
+## What you actually get
+
+Six tabs, behind a first-run flow — Splash → Intro → Permissions → Persona → Main — where the
+persona (Everyday, Commuter or Athlete) sets your default tracking preset.
+
+| Tab | What lives there |
+|---|---|
+| **Today** | Live tracking control, today's stats, top places, insight teasers, anomaly flags |
+| **Timeline** | The day as visits and movements, in order, with honest gaps |
+| **Map** | Dark cartographic OSM map — the day's routes and visit markers, synced to the timeline |
+| **Insights** | Nine analytics lenses, told as a storybook |
+| **Proof** | Evidence hub — mileage, trips and export, framed as audit-ready records |
+| **Activities** | Athlete home — activity rings, workout feed, record button, segments |
+
+Plus global search, a review-bell for places awaiting confirmation, and settings.
+
+### Tracking
+
+| Feature | Detail |
+|---|---|
+| **Adaptive sampling** | 90 s still · 10 s moving · 15 s charging, scaled ×0.5 / ×1.0 / ×2.0 by preset |
+| **Dormancy** | GPS stands down when you stop, with an entry threshold and a two-minute exit grace so it cannot thrash at the boundary |
+| **Segmentation** | WALK · RUN · CYCLE · DRIVE · TRANSIT · GAP |
+| **Visit detection** | Dwell-based, committed through a single serialized channel |
+| **Honest gaps** | An explicit GAP row when tracking was interrupted, rather than a faked smooth line |
+| **Spoof resistance** | Teleport detection beyond the OS mock-provider flag |
+| **Places** | Geocoded via OpenStreetMap and Nominatim; renameable, re-categorisable, with a correction workflow |
+
+### Insights — nine lenses
+
+**Overview** (period summary) · **Weekly** (this week vs last, plus your streak) ·
+**Highlights** (records and "on this day") · **Patterns** (learned routines with human labels) ·
+**Rhythm** (day rhythm, sleep windows, routine breaks) · **Movement** (place stats and an
+exploration score) · **Balance** (a time budget across life categories) · **Carbon** (estimated
+CO₂ by travel mode) · **Anomalies** (days that do not fit).
+
+Behind them: commute analysis, next-place prediction, a heatmap and a Year-in-Review.
+
+### Activities
+
+A private, on-device analogue to a fitness tracker. Live recorder for run, walk, cycle and hike
+with a route map. **Auto-pause**, so traffic lights do not dilute your pace. Elevation gain with a
+hysteresis band to reject jitter. Per-kilometre splits and an elevation profile. Personal records.
+And **race-yourself segments** — save a stretch, and efforts are matched against your own recorded
+activities on the fly. No leaderboard, no cloud. Any activity exports as GPX.
+
+### Proof — mileage, trips, export
+
+| Feature | Detail |
+|---|---|
+| **Mileage log** | Classify drives (business / personal / medical) with deductible value from configurable IRS- or HMRC-style rates, in your currency |
+| **Vehicles** | Fuel type and efficiency drive fuel-cost and CO₂ estimates, with automatic drive attribution |
+| **Evidence-backed** | Every row carries the GPS trace and rule version that produced it, so the log survives scrutiny |
+| **Trips** | Auto-detected multi-day journeys away from home, each opening as a shareable story |
+| **Export** | Voyager JSON, GPX, GeoJSON, CSV |
+| **Import** | **Google Timeline JSON**, GPX, and full `.voyager` restore |
+
+### Also
+
+A **photo day story** pinning your device's own photos (MediaStore + EXIF, read on-device) to the
+places you visited. Full-text search across places and days, with date, category and mode filters.
+And every inference is explainable — any timeline row can say why it was classified that way,
+including the counter-evidence.
+
+**Every feature is free.** There is no paid tier.
+→ Full catalogue in **[docs/FEATURES.md](docs/FEATURES.md)**
+
+---
+
 ## Engineering
 
 **68,099 lines of Kotlin across 520 files** — 413 main, **107 test**.
@@ -219,6 +288,12 @@ are gitignored, as are build outputs.
 No account, no server, no telemetry. Location data is written to a SQLCipher-encrypted Room
 database on the device and never uploaded — there is nowhere to upload it to. Maps come from
 OpenStreetMap, so there is no Maps API key and no request to Google carrying your coordinates.
+
+## Stack
+
+Kotlin 2.0.21 · AGP 8.13 · Jetpack Compose (Material 3) · Hilt · Room 2.6.1 with SQLCipher ·
+WorkManager · DataStore · Ktor 2.3.12 · kotlinx.serialization · OSMDroid 6.1.18 · Coroutines and
+Flow throughout. No Google Play Services, no Maps SDK, no analytics.
 
 ## Licence
 
