@@ -12,7 +12,6 @@ Track everywhere you go. Own all your data. Understand your life's movement.
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-2024.09-4285F4?style=flat&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-24%20(Android%207)-brightgreen)](https://developer.android.com/tools/releases/platforms)
 [![Target SDK](https://img.shields.io/badge/Target%20SDK-36%20(Android%2016)-blue)](https://developer.android.com/tools/releases/platforms)
-[![License](https://img.shields.io/badge/License-MIT-orange)](LICENSE)
 
 </div>
 
@@ -28,44 +27,10 @@ It runs an **8-stage real-time processing pipeline** entirely on-device: raw GPS
 
 ---
 
-## Screenshots
+## See it
 
-> **Note:** Replace placeholders below with actual screenshots. Recommended: 5–6 screenshots in portrait (1080×2340), hosted in `/docs/screenshots/`.
-
-<div align="center">
-
-| Dashboard | Timeline | Map |
-|:---------:|:--------:|:---:|
-| <img src="docs/screenshots/dashboard.png" width="200" alt="Dashboard" /> | <img src="docs/screenshots/timeline.png" width="200" alt="Timeline" /> | <img src="docs/screenshots/map.png" width="200" alt="Map" /> |
-| Live tracking stats, streak counter, activity rings | Day-by-day movement with segment cards | Interactive OSM map with route overlays |
-
-| Insights | Settings | Place Detail |
-|:--------:|:--------:|:------------:|
-| <img src="docs/screenshots/insights.png" width="200" alt="Insights" /> | <img src="docs/screenshots/settings.png" width="200" alt="Settings" /> | <img src="docs/screenshots/place_detail.png" width="200" alt="Place Detail" /> |
-| Weekly comparison, trends, anomaly detection | 4-tab deep-configuration panel | Visit history, rename, category correction |
-
-</div>
-
----
-
-## Video Demo
-
-> **Note:** Add a demo GIF or link to a YouTube/Loom recording here.
-
-```
-[Demo video placeholder — record a 30–60 second screen recording showing:
-  1. App opening with animated splash
-  2. Live tracking active on dashboard
-  3. Timeline scrolling through a day's segments
-  4. Tapping a place to see visit history
-  5. Map view with route polylines
-]
-```
-
-<!--
-Once recorded, replace the block above with:
-[![Voyager Demo](docs/screenshots/demo_thumb.png)](https://youtu.be/YOUR_VIDEO_ID)
--->
+Screens, the architecture write-up and the full feature tour are on the site:
+**[okayanshul.github.io/voyager-site](https://okayanshul.github.io/voyager-site/)**
 
 ---
 
@@ -265,9 +230,9 @@ See [`docs/appendices/DESIGN_EVOLUTION.md`](docs/appendices/DESIGN_EVOLUTION.md)
 
 ---
 
-## License
+## Licence
 
-MIT — see [LICENSE](LICENSE)
+All rights reserved. This repository is published for portfolio and review purposes.
 
 ---
 
