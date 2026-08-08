@@ -1,273 +1,225 @@
 <div align="center">
 
-<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="96" alt="Voyager Logo" />
+<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="96" alt="Voyager">
 
 # Voyager
 
-**Privacy-first travel intelligence for Android**
+**Where you went, worked out on your phone.**
 
-Track everywhere you go. Own all your data. Understand your life's movement.
+Voyager reconstructs your day from raw GPS — where you stopped, how long you stayed, how you
+travelled between places — without a Maps API key, without an account, and without a single byte
+leaving the device.
 
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=flat&logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![Compose](https://img.shields.io/badge/Jetpack%20Compose-2024.09-4285F4?style=flat&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
-[![Min SDK](https://img.shields.io/badge/Min%20SDK-26%20(Android%208)-brightgreen)](https://developer.android.com/tools/releases/platforms)
-[![Target SDK](https://img.shields.io/badge/Target%20SDK-36%20(Android%2016)-blue)](https://developer.android.com/tools/releases/platforms)
-[![Price](https://img.shields.io/badge/Price-100%25%20Free-3B82F6)](#)
-[![License](https://img.shields.io/badge/License-All%20rights%20reserved-lightgrey)](LICENSE)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![Compose](https://img.shields.io/badge/Compose%20BOM-2024.09-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
+[![minSdk](https://img.shields.io/badge/minSdk-26-3DDC84?logo=android&logoColor=white)](https://developer.android.com/tools/releases/platforms)
+[![compileSdk](https://img.shields.io/badge/compileSdk-36-3DDC84?logo=android&logoColor=white)](https://developer.android.com/tools/releases/platforms)
+[![Tests](https://img.shields.io/badge/tests-653%20passing-success)](#building)
+[![Builds](https://img.shields.io/badge/flavours-Play%20·%20F--Droid-blue)](#two-builds-one-codebase)
 
-</div>
-
----
-
-## What is Voyager?
-
-Voyager is a local-first, privacy-first Android app that reconstructs your daily life as a meaningful timeline — where you went, how long you stayed, how you got there — without sending a single byte to the cloud.
-
-It runs an **8-stage real-time processing pipeline** entirely on-device: raw GPS samples flow through Kalman filtering, quality scoring, deduplication, activity fusion, visit detection, movement segmentation, and place linking — all in a single-threaded serial channel to prevent race conditions.
-
-**No Google Maps API. No cloud. No tracking by us.**
-
----
-
-## Screenshots
-
-<div align="center">
-
-| Today | Timeline | Map |
-|:---------:|:--------:|:---:|
-| <img src="docs/screenshots/01-today.png" width="200" alt="Today" /> | <img src="docs/screenshots/02-timeline.png" width="200" alt="Timeline" /> | <img src="docs/screenshots/03-map.png" width="200" alt="Map" /> |
-| Live tracking, top places, daily rings | Honest timeline with real gaps | Your routes on a dark basemap |
-
-| Insights | Mileage | Fitness |
-|:--------:|:--------:|:------------:|
-| <img src="docs/screenshots/04-insights-overview.png" width="200" alt="Insights" /> | <img src="docs/screenshots/09-mileage.png" width="200" alt="Mileage" /> | <img src="docs/screenshots/12-activity-detail.png" width="200" alt="Activity detail" /> |
-| Nine explainable insight lenses | GPS-evidence-backed mileage log | Splits, elevation, personal records |
+[Live site](https://okayanshul.github.io/voyager-site/) ·
+[Case study](docs/CASE_STUDY.md) ·
+[Features](docs/FEATURES.md) ·
+[Privacy](docs/privacy-policy.md)
 
 </div>
 
-> Framed marketing versions of every screen live in [`docs/marketing/`](docs/marketing).
+<p align="center">
+  <img src="docs/screenshots/01-today.png" width="185" alt="Today">
+  <img src="docs/screenshots/02-timeline.png" width="185" alt="Timeline">
+  <img src="docs/screenshots/03-map.png" width="185" alt="Map">
+  <img src="docs/screenshots/04-insights-overview.png" width="185" alt="Insights">
+</p>
 
 ---
 
-## Every feature is free
+## The problem
 
-Voyager ships with **no paywall** — tracking, timeline, map, all nine Insights lenses, mileage,
-trips, fitness recording, export and evidence are all free.
+A phone knows where it is several times a minute. It does **not** know that you were at work, that
+you walked to the station, or that Tuesday was unusual. Between a stream of noisy coordinates and
+"you spent four hours at the office" sits every hard problem in this app: GPS jitter, tunnels,
+battery, indoor drift, spoofing, and the fact that a stop and a traffic jam look identical to a
+sensor.
 
-📖 **[Complete Feature Guide](docs/FEATURES.md)** ·
-🛠️ **[Development Timeline & Process](docs/DEVELOPMENT_TIMELINE.md)** ·
-🚀 **[Play Store Launch Checklist](docs/PLAY_STORE_LAUNCH_CHECKLIST.md)** ·
-🔒 **[Privacy Policy](docs/privacy-policy.md)**
+Voyager is the pipeline that closes that gap, running entirely on the device.
 
----
+## What happens to a single GPS fix
 
-## Features
-
-### Real-Time Location Intelligence
-
-| Feature | Detail |
-|---------|--------|
-| **Adaptive GPS sampling** | 90s when still, 12s walking, 7s driving — auto-adjusts to motion state |
-| **Dormant mode** | GPS shuts off after 4.5 min stationary; wakes on significant motion sensor |
-| **Visit detection** | Dwell-based state machine (3-min threshold, hysteresis, return detection within 30 min) |
-| **Movement segmentation** | Classifies WALK / RUN / CYCLE / DRIVE / TRANSIT / GAP with speed thresholds |
-| **Activity fusion** | Merges Activity Recognition API, pedometer, and speed heuristics into a single motion state |
-| **WiFi fingerprinting** | Supplementary SSID/BSSID signal for indoor place matching |
-
-### Privacy & Security
-
-- **100% local** — no cloud sync, no analytics SDKs, no third-party data sharing
-- **SQLCipher encryption** on the Room database from day one
-- **Background location** used only for tracking; no silent location access
-- **No API keys required** — OpenStreetMap + Android Geocoder + Nominatim (all free)
-- **Correction system** — every inference is evidence-backed and user-correctable
-
-### Screens & UI
-
-- **Dashboard** — ActivityRings hero card, streak counter, top places, anomaly flags
-- **Timeline** — Day-navigable movement timeline with segment cards and gradient rail
-- **Map** — MapLibre OSM map, route overlays, geofence visualisation, place bottom sheet
-- **Insights** — Weekly comparison, visit frequency, distance trends, time-of-day patterns
-- **Settings** — 4-tab configuration: General, Detection, Privacy, Advanced (16 modular sections)
-- **Place review** — Workflow to rename, recategorize, and correct inferred places
-- **Export** — GPX, GeoJSON, CSV, and VoyagerJSON formats with share intent
-- **Onboarding** — 3-page animated feature walkthrough + permission flow
-
----
-
-## Architecture
-
-Voyager uses **Clean Architecture** across 6 layers, with a stream-first processing pipeline as the core runtime:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Presentation Layer                    │
-│   Jetpack Compose · MVVM · SharedUiState · Navigation   │
-├─────────────────────────────────────────────────────────┤
-│                      Domain Layer                        │
-│   Use Cases · Repository Interfaces · Domain Models     │
-├──────────────────────┬──────────────────────────────────┤
-│      Data Layer      │         Platform Layer           │
-│  Repositories (15)   │  Foreground Service · Workers   │
-│  Geocoding (3 APIs)  │  Notifications · Receivers      │
-├──────────────────────┴──────────────────────────────────┤
-│                     Pipeline Layer                       │
-│                                                         │
-│  GPS/AR/Steps → [Normalize → Kalman → Quality →        │
-│                  Dedup → Fuse → VisitDetect →           │
-│                  Segment → Commit] → PlaceLink          │
-│                                                         │
-│              Single-threaded serial channel             │
-├─────────────────────────────────────────────────────────┤
-│                     Storage Layer                        │
-│     Room + SQLCipher · DataStore · TimelineStateStore   │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A["Raw fix<br/><i>lat · lng · accuracy · provider</i>"] --> B["SampleNormalizer"]
+    B --> C["SpoofHeuristics<br/><i>could a human get here?</i>"]
+    C --> D["QualityScorer"]
+    D --> E["DedupSuppressor"]
+    E --> F["LocationKalmanFilter<br/><i>4-state, constant velocity</i>"]
+    F --> G["StepRateCalculator"]
+    G --> H["IndoorOutdoorClassifier"]
+    H --> I["Segmenter<br/><i>WALK · RUN · CYCLE · DRIVE · TRANSIT · GAP</i>"]
+    I --> J["StateCommitter"]
+    J --> K["PlaceLinkingService"]
+    K --> L[("Room + SQLCipher<br/>on-device only")]
+    M["GapWatchdogPolicy<br/><i>silence is also data</i>"] -.-> J
 ```
 
-### Key Design Decisions
-
-| Decision | Rationale |
-|----------|-----------|
-| Single-threaded pipeline | Eliminates race conditions in visit/segment state machines |
-| SQLCipher from day 1 | Privacy-first — never store plaintext location history |
-| MapLibre over Google Maps | No API key, no cost, OSM-powered |
-| 3 geocoding providers | Android Geocoder (free/offline) → Photon → Nominatim fallback chain |
-| Evidence-backed inference | Every place/visit decision stores supporting evidence entities |
-| WorkManager for background | 9 typed workers for rollup, geocoding, integrity repair, export |
+Nine stages, one consumer. Everything funnels through a single `Channel` with a state-commit
+mutex, so no two stages can ever interleave a write — the classic failure mode for sensor
+pipelines, where a visit is committed while the segmenter is still deciding whether it was one.
 
 ---
 
-## Tech Stack
+## Engineering
 
-| Category | Library / Tool | Version |
-|----------|---------------|---------|
-| Language | Kotlin | 2.0.21 |
-| UI | Jetpack Compose + Material 3 | BOM 2024.09 |
-| DI | Hilt | 2.51.1 |
-| Database | Room + SQLCipher | 2.6.1 / 4.5.4 |
-| Location | Google Play Services Location | 21.3.0 |
-| Activity | Google Activity Recognition | 21.1.0 |
-| Map | MapLibre Android | 11.8.0 |
-| Background | WorkManager | 2.9.0 |
-| Network | Retrofit + OkHttp + Ktor | 2.11 / 4.12 / 2.3.12 |
-| Serialization | Kotlinx Serialization | 1.7.1 |
-| Coroutines | Kotlin Coroutines | 1.8.1 |
-| Fonts | Inter · Great Vibes · JetBrains Mono | — |
-| Testing | JUnit 4 · MockK · Turbine · Truth | — |
+**68,099 lines of Kotlin across 520 files** — 413 main, **107 test**.
+
+| Area | What's there |
+|---|---|
+| **Pipeline** | 9 stages behind one serialized channel; pure, injectable, individually unit-tested |
+| **Persistence** | Room with **SQLCipher from the first commit** · 31 entities · 30 DAOs |
+| **Maps** | OSMDroid over OpenStreetMap — **no Google Maps API key**, so no billing account and no third party watching |
+| **Power** | Adaptive sampling driven by motion state, plus dormancy and a post-dormant settle window |
+| **Integrity** | Spoof detection beyond the OS mock flag; a gap watchdog that records what *wasn't* observed |
+| **Distribution** | Two flavours — Play and **F-Droid**, which forces the dependency graph to stay free of proprietary libraries |
+| **Tests** | **653 tests across 102 files**, green on both flavours in debug and release |
 
 ---
 
-## Getting Started
+## Five decisions worth defending
 
-### Prerequisites
+### Detecting spoofing the OS misses
 
-- Android Studio Hedgehog+ (2023.1.1 or later)
-- JDK 11+
-- Android device / emulator running **Android 8.0+ (API 26)**
+`Location.isFromMockProvider` only catches apps that go through Android's official mock-location
+API. Rooted-device injectors feed coordinates *without* setting that flag. The tell they leave is
+**teleportation** — fixes at a normal cadence, at coordinates no body could have reached.
 
-### Build
+The threshold is **340 m/s, roughly Mach 1**, deliberately far above a jet's ~250 m/s cruise so
+real flights never trip it. It ignores sub-second deltas (too noisy to judge) and deltas over ten
+minutes (the two fixes straddle a tracking gap, so the implied speed is meaningless). Conservative
+on purpose: the rare false positives it does drop are gross GPS glitches, which are samples you
+would not want anyway.
+→ [`SpoofHeuristics.kt`](app/src/main/java/com/cosmiclaboratory/voyager/pipeline/stage/SpoofHeuristics.kt)
+
+### Recording the silence, not just the signal
+
+A stretch with no samples is ambiguous: the phone was off, or in a tunnel, or tracking broke. Most
+apps interpolate straight through it and quietly invent a journey. Voyager writes an explicit
+**GAP** instead — but only when active GPS was genuinely running, the silence exceeded both five
+times the expected cadence *and* a ten-minute floor, and it isn't the post-dormant window where
+GPS is still warming up.
+
+Saying "I don't know what happened here" is more useful than a confident straight line.
+→ [`GapWatchdogPolicy.kt`](app/src/main/java/com/cosmiclaboratory/voyager/pipeline/GapWatchdogPolicy.kt)
+
+### A Kalman filter instead of averaging
+
+Four-state — position and velocity, `[x, y, vx, vy]` on a local tangent plane, constant-velocity
+process model. It removes 5–15 m of jitter, but the reason it earns its complexity is the
+*derived* outputs: velocity-based speed is more stable than the GPS speed field, and
+velocity-based bearing is continuous, where raw GPS bearing needs movement to mean anything at
+all. Large innovations are weighted down, so outliers dampen themselves.
+→ [`LocationKalmanFilter.kt`](app/src/main/java/com/cosmiclaboratory/voyager/pipeline/stage/LocationKalmanFilter.kt)
+
+### Sampling that follows what you're doing
+
+**90 s when still, 10 s when moving, 15 s on charger**, scaled by a user-chosen preset
+(×0.5 high accuracy, ×1.0 balanced, ×2.0 battery saver). Below that sits a dormant state with an
+entry threshold and a two-minute exit grace, because the expensive mistake is not sampling too
+often — it is thrashing between states at a boundary and paying the GPS warm-up cost repeatedly.
+→ [`AdaptiveSamplingPolicy.kt`](app/src/main/java/com/cosmiclaboratory/voyager/capture/AdaptiveSamplingPolicy.kt)
+
+### A classifier that refuses to decide
+
+The indoor/outdoor classifier returns a probability in `[0..1]` and nothing else — no boolean, no
+threshold. Its two callers want different confidence: the segmenter refining RUN → TREADMILL can
+afford to be wrong, power management dropping the GPS rate cannot. Baking one threshold into the
+classifier would have forced the cautious caller to live with the reckless one's tolerance.
+→ [`IndoorOutdoorClassifier.kt`](app/src/main/java/com/cosmiclaboratory/voyager/pipeline/stage/IndoorOutdoorClassifier.kt)
+
+---
+
+## Two builds, one codebase
+
+`play` and `fdroid` flavours share every line of logic. The F-Droid build exists as a constraint
+as much as a channel: F-Droid will not package proprietary dependencies, so having it green is a
+continuously-enforced proof that the app really does run without Google Play Services or a Maps
+key — a claim that is easy to make and easy to quietly break.
+
+---
+
+## If you're reviewing this code
+
+| File | Why |
+|---|---|
+| [`pipeline/PipelineSerializer.kt`](app/src/main/java/com/cosmiclaboratory/voyager/pipeline/PipelineSerializer.kt) | The whole concurrency story in 40 lines — one channel, one mutex |
+| [`pipeline/stage/SpoofHeuristics.kt`](app/src/main/java/com/cosmiclaboratory/voyager/pipeline/stage/SpoofHeuristics.kt) | Pure, stateless, and every constant carries its reasoning |
+| [`pipeline/GapWatchdogPolicy.kt`](app/src/main/java/com/cosmiclaboratory/voyager/pipeline/GapWatchdogPolicy.kt) | Policy extracted from the coroutine loop precisely so it can be tested |
+| [`pipeline/stage/Segmenter.kt`](app/src/main/java/com/cosmiclaboratory/voyager/pipeline/stage/Segmenter.kt) | Where motion becomes a labelled journey |
+| [`capture/AdaptiveSamplingPolicy.kt`](app/src/main/java/com/cosmiclaboratory/voyager/capture/AdaptiveSamplingPolicy.kt) | The battery/accuracy trade-off, in one place |
+
+The policy objects are pure and stateless on purpose — that is why 107 test files can cover this
+without an emulator.
+
+---
+
+## Building
 
 ```bash
-# Clone
 git clone https://github.com/OkayAnshul/Voyager.git
 cd Voyager
-
-# Debug build
-./gradlew assembleDebug
-
-# Install on connected device
-./gradlew installDebug
-
-# Run unit tests
-./gradlew testDebugUnitTest
+./gradlew assemblePlayDebug      # or assembleFdroidDebug
 ```
 
-> No API keys needed. The app uses only free, open-source services.
+JDK 17 and the Android SDK (compileSdk 36). minSdk 26.
 
-### Permissions
+> Task names are flavour-qualified. `./gradlew testDebugUnitTest` is **ambiguous** and will fail —
+> use `testPlayDebugUnitTest`, or `./gradlew test` for everything.
 
-Voyager requests these at runtime:
+```bash
+./gradlew test    # 653 tests across 102 files, both flavours
+./gradlew lint
+```
 
-| Permission | Purpose |
-|-----------|---------|
-| `ACCESS_FINE_LOCATION` | GPS tracking |
-| `ACCESS_BACKGROUND_LOCATION` | Continuous background tracking |
-| `ACTIVITY_RECOGNITION` | Motion state detection |
-| `POST_NOTIFICATIONS` | Foreground service notification (Android 13+) |
+### Release
 
-Grant **"Allow all the time"** for background location to enable continuous tracking.
+Copy `keystore.properties.example` to `keystore.properties` and fill it in. That file and `*.jks`
+are gitignored, as are build outputs.
+
+```bash
+./gradlew bundlePlayRelease
+```
 
 ---
 
-## Project Structure
+## Known limitations
 
-```
-app/src/main/java/com/cosmiclaboratory/voyager/
-├── capture/          # GPS, activity, steps, WiFi, geofence capture
-├── pipeline/         # 8-stage processing pipeline + place linking
-│   └── stage/        # Normalizer, Kalman, Quality, Dedup, Committer, Segmenter
-├── domain/
-│   ├── model/        # Domain entities + enums
-│   ├── repository/   # Repository interfaces (15)
-│   └── usecase/      # Business logic (DetectVisit, FuseActivity, MatchPlace…)
-├── data/
-│   ├── api/          # Geocoding services (Android, Nominatim, Photon, Overpass)
-│   ├── geocoding/    # Provider implementations + registry
-│   └── repository/   # Repository implementations (15)
-├── storage/
-│   ├── database/     # Room schema — 20 entities, 20 DAOs
-│   └── encryption/   # SQLCipher key management
-├── platform/
-│   ├── service/      # LocationCaptureService (foreground)
-│   ├── worker/       # 9 WorkManager workers
-│   ├── coordinator/  # TrackingRuntimeCoordinator, PermissionMonitor
-│   └── map/          # MapLibreMapEngine
-├── presentation/
-│   ├── screen/       # 18 screens with paired ViewModels
-│   ├── theme/        # VoyagerColors, VoyagerComponents, VoyagerGradients
-│   ├── components/   # Shared UI primitives
-│   └── state/        # SharedUiState, DayNavigationStateHolder
-└── di/               # 8 Hilt modules
-```
+- **Room schema is still version 1.** No migrations have been needed yet, which also means the
+  migration path is untested in anger. The first real schema change is the one to be careful with.
+- **Instrumented coverage is thin.** The unit suite is strong and the pipeline is pure enough to
+  test properly; UI and end-to-end device coverage is not at the same standard.
+- **Place linking depends on OSM data quality.** Where OpenStreetMap is sparse, a visit gets
+  coordinates and a dwell time but no name.
+- **Indoor/outdoor is heuristic**, not sensor fusion. It is good enough for a treadmill and for
+  dropping the GPS rate at a known place; it is not a positioning system.
+- **Battery cost is real.** Adaptive sampling and dormancy reduce it; nothing eliminates it for an
+  app whose job is knowing where you are.
 
 ---
 
 ## Documentation
 
-| Document | Description |
-|---------|-------------|
-| [Architecture](docs/architecture/ARCHITECTURE.md) | Clean Architecture layers and data flow |
-| [Domain Models](docs/architecture/DOMAIN_MODELS.md) | All domain entities and enumerations |
-| [Stream-First vs Visit-First](docs/research/STREAM_FIRST_VS_VISIT_FIRST_ARCHITECTURE_FINDINGS.md) | Architecture research findings |
-| [Place Detection](docs/algorithms/PLACE_DETECTION.md) | Visit detection and place matching algorithms |
-| [Design Evolution](docs/appendices/DESIGN_EVOLUTION.md) | 1-year development history |
-| [Technology Stack](docs/appendices/TECHNOLOGY_STACK.md) | Tech choices and trade-offs |
-| [QA Guide](docs/resources/QA_GUIDE.md) | Manual testing procedures |
+| Document | What's in it |
+|---|---|
+| [CASE_STUDY.md](docs/CASE_STUDY.md) | The product and engineering story end to end |
+| [FEATURES.md](docs/FEATURES.md) | Full feature catalogue |
+| [architecture/](docs/architecture/) | Design documents and decision records |
+| [algorithms/](docs/algorithms/) | The pipeline maths written out |
+| [privacy-policy.md](docs/privacy-policy.md) | What is collected, and where it stays |
 
----
+## Privacy
 
-## Development History
+No account, no server, no telemetry. Location data is written to a SQLCipher-encrypted Room
+database on the device and never uploaded — there is nowhere to upload it to. Maps come from
+OpenStreetMap, so there is no Maps API key and no request to Google carrying your coordinates.
 
-Voyager was built over ~1 year of continuous development with two major architectural versions:
+## Licence
 
-- **V1 (Aug–Feb 2025):** Visit-first architecture — AppStateManager, DBSCAN clustering, basic pipeline
-- **V2 (Mar 2026–present):** Stream-first architecture — 8-stage serial pipeline, Kalman filter, evidence layer, adaptive dormant mode
-
-See [`docs/appendices/DESIGN_EVOLUTION.md`](docs/appendices/DESIGN_EVOLUTION.md) for the full story, and [`docs/appendices/FLAWS_AND_ADVANCES.md`](docs/appendices/FLAWS_AND_ADVANCES.md) for an honest technical assessment.
-
----
-
-## License
-
-**Proprietary — all rights reserved.** See [LICENSE](LICENSE). This source is shared for review only;
-no reuse, copying, or redistribution without written permission.
-
----
-
-<div align="center">
-
-Built for people who want to understand where their life actually happens — without handing that data to anyone else.
-
-**[OkayAnshul](https://github.com/OkayAnshul)**
-
-</div>
+All rights reserved. This repository is published for portfolio and review purposes.
